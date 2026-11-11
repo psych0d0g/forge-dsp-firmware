@@ -33,6 +33,7 @@ Alle betreffen Fehlerpfade oder Werte außerhalb des gültigen Bereichs. Gültig
 |---|---|---|
 | `preset.copy/erase/select/loaded` akzeptieren die Preset-Anzahl selbst: mit 4 Presets löscht `preset.erase=4` Preset 0, mit 8 Presets wird hinter den Adresstabellen gelesen | nur 0 … Anzahl−1 | #33 |
 | Typwechsel eines MODC-Blocks N löscht die Event-Felder N, N+32, N+64 und N+96, also auch fremde wie Remote-Out (3) oder Shutdown (4) | nur der Ausgang des Blocks (96+N) | #38 |
+| `system.boot` startet nur neu: Die Bootloader-Sequenz (EEPROM 0/1 = 0xAA/0x55) ist deklariert, wird aber nie geschrieben, der Bootloader startet nur per Taster | schreibt die Sequenz, der Forge geht ohne Taster in den Bootloader ([docs/bootloader.md](bootloader.md)) | #22 |
 | V30-96ELN: `chk_hardware_other` erwartet den Taktbaustein (Bit 11), den der Build nicht hat, und nicht DAC/CT7302 #20 (Bits 2, 3), die er erkennt. Die Prüfung am Ende von `systeminit` schlägt immer fehl, die Ausgänge bleiben stumm | erwartet 0x007D (wie V40-96ELN ohne Si5338), auch in `system.feature.attributes.hw` | #32 |
 | Nie gespeichertes Preset (Mixer-Position 0xFF): `api_set_mix_reg` liest weit hinter den Mixerdaten und schreibt RAM-Inhalt als Koeffizienten in den DSP | übersprungen | |
 | Ungültiger Mux-Wert liest hinter der Mux-Tabelle | geprüft | |
@@ -83,7 +84,7 @@ Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `get modc
 
 ## Prüfstand
 
-- Nativ: 99 Tests, alle 7 Varianten (Protokoll, EEPROM-Layout gegen die Release-HEX, Biquads gegen eine unabhängige
+- Nativ: 100 Tests, alle 7 Varianten (Protokoll, EEPROM-Layout gegen die Release-HEX, Biquads gegen eine unabhängige
   Referenz, Peripherie auf einem I2C-Modell, SD-Karte als FAT-Image).
 - Am Gerät (DEV-Forge V40-96ELN): Start auf dem EEPROM des Originals ohne Werks-Reset, alle Bausteine erkannt,
   Biquad-Koeffizienten aus dem DSP bitgenau gleich der Referenz, Abschalten über Remote-In (#39).

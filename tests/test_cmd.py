@@ -1751,6 +1751,17 @@ class LoudnessTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class BootEntryTest(unittest.TestCase):
+    """system.boot writes the bootloader sequence 0xAA/0x55 to EEPROM 0/1 (entry without the key)."""
+
+    def test_sequence(self):
+        for f in FLAVOURS:
+            p, ee = run(f, ["1|set.1 system.boot"], eeprom=image(f), want_eeprom=True)
+            self.assertIn("system.boot ok", p.stdout, f)
+            self.assertEqual(ee[0:2], b"\xAA\x55", f)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class BootSectionTest(LinesMixin, unittest.TestCase):
     """Diagnostics for #22: read-only dump of the boot section, 64 bytes per block."""
 

@@ -35,11 +35,18 @@ void mcu_reset_delayed(void);  /* power.c: debug_close, waitms 1000, software re
 
 /* --- set ----------------------------------------------------------------------- */
 
+/* system.boot: restart. PORT fix: the original declares eeprom_bootloader_seq_1/2 (0xAA, 0x55
+ * at EEPROM 0/1) but never writes them, so system.boot only restarted. The Forge bootloader
+ * (chip45boot3 build of the original) starts when the application is empty, the key at PB6 is
+ * pressed, or EEPROM 0/1 = 0xAA/0x55; it sets both back to 0xFF when it starts the application.
+ * Writing them here lets system.boot enter the bootloader without the key. */
 static void cmd_set_system_boot(void)
 {
 	if (req_w(cmd_req_word_three) != 0x0000) {
 		cmd_error_unknown();
 	} else {
+		eram_wb(ERAM_EEPROM_BOOTLOADER_SEQ_1, 0xAA);  /* bootloader_seq_1 */
+		eram_wb(ERAM_EEPROM_BOOTLOADER_SEQ_2, 0x55);  /* bootloader_seq_2 */
 		cmd_answer_ok();
 		mcu_reset_delayed();
 	}
