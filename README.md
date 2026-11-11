@@ -28,8 +28,9 @@ Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `tools/c45b3-host` un
 `tools/c45b3-host/tests/ctarget/upstream` stehen unter MIT (chip45boot3, Erik Lins).
 
 ## VS Code / PlatformIO
-0. Einmalig `tools/get-toolchain.sh`: lädt avr-gcc 16.1 (Linux x86_64, ZakKemble/avr-gcc-build, sha256 im
-   Skript) und verlinkt ihn nach `.toolchain/avr-gcc`. Grund: BASCOM rechnet Biquads in 64-Bit-`double`, das
+0. Einmalig `tools/get-toolchain.sh`: lädt avr-gcc 16.2.1 mit einem Compiler-Fix (Release
+   `toolchain-avr-gcc-16.2.1-p1` dieses Repos, Linux x86_64, sha256 im Skript) und verlinkt ihn nach
+   `.toolchain/avr-gcc`. Patch, Testfall und Build-Skript: `tools/toolchain/`. Grund: BASCOM rechnet Biquads in 64-Bit-`double`, das
    PlatformIO-Paket (avr-gcc 7.3) kann nur 32 Bit. Gebaut wird mit `-mdouble=64`.
 1. Projekt öffnen, unten in der Statusleiste die Umgebung (= Variante) wählen.
 2. `upload_port` in `platformio.ini` fest auf den CP2102 des Forge setzen (`/dev/serial/by-id/usb-Silicon_Labs_CP2102…`).
