@@ -202,7 +202,11 @@ def restore_identity(port, args, timeout=90.0):
     else:
         raise SystemExit("identity: the new firmware does not answer; set it by hand: "
                          f'set.1 system.key.info="{ident}"')
-    got = parse_key_info(app_query(port, args, "get.1 system.key.info"))
+    got = None
+    while time.monotonic() < t_end and not got:  # ping answers before the preset load blocks it
+        got = parse_key_info(app_query(port, args, "get.1 system.key.info", wait=1.0))
+        if not got:
+            time.sleep(1)
     if got and "-".join(got) == ident:
         log(f"identity: {ident} (unchanged)")
         return
@@ -228,6 +232,83 @@ def enter_bootloader(port, args, settle=ENTER_SETTLE):
         log("application answered: " + ans.strip())
     time.sleep(settle)
     port.reset_input_buffer()
+
+
+def cmd_tuning(port, args):
+    from . import tuning
+    app = tuning.App(port, args.app_baud, log)
+    if args.cmd == "export-tuning":
+        model, entries = tuning.export(app)
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(args.out, "w", encoding="latin-1") as f:
+            f.write(tuning.to_cfg(model, entries, [f"Forge tuning export {stamp}, c45b3"]))
+        log(f"tuning: {len(entries)} values of {model} -> {args.out}")
+        return
+    with open(args.cfg, encoding="latin-1") as f:
+        model, entries = tuning.parse_cfg(f.read())
+    if args.cmd == "compare-tuning":
+        have_model, have = tuning.export(app)
+        diff = tuning.compare(entries, have)
+        for reg, a, b in diff:
+            print(f"{reg}: file {a} device {b}")
+        log(f"tuning: {len(diff)} differences ({model} file, {have_model} device)")
+        if diff:
+            raise SystemExit(1)
+        return
+    if not args.allow_write:
+        raise SystemExit("restore-tuning writes to the device: add --allow-write")
+    written, errors = tuning.restore(app, model, entries, log)
+    log(f"tuning: {written} values written, {errors} errors")
+    if errors:
+        raise SystemExit(1)
+
+
+def save_tuning(port, args, tag):
+    """Export before an update; returns (model, entries) or None when the firmware does not answer."""
+    from . import tuning
+    os.makedirs(args.keep_tuning, exist_ok=True)
+    app = tuning.App(port, args.app_baud, log)
+    try:
+        model, entries = tuning.export(app)
+    except SystemExit as e:
+        log(f"tuning: no export ({e}); continuing without")
+        return None
+    finally:
+        try:
+            port.baudrate = args.baud
+        except AttributeError:
+            pass
+    path = os.path.join(args.keep_tuning, f"tuning-{tag}.cfg")
+    with open(path, "w", encoding="latin-1") as f:
+        f.write(tuning.to_cfg(model, entries, [f"Forge tuning {tag} update {time.strftime('%Y-%m-%d %H:%M:%S')}"]))
+    log(f"tuning: {len(entries)} values saved to {path}")
+    return model, entries
+
+
+def check_tuning(port, args, before):
+    """After the start of the new firmware: export again, compare, optionally write back."""
+    from . import tuning
+    app = tuning.App(port, args.app_baud, log)
+    if not app.ready():
+        raise SystemExit("tuning: the new firmware does not answer; the export before the update is "
+                         f"in {args.keep_tuning}")
+    model, entries = tuning.export(app)
+    with open(os.path.join(args.keep_tuning, "tuning-after.cfg"), "w", encoding="latin-1") as f:
+        f.write(tuning.to_cfg(model, entries, ["Forge tuning after update"]))
+    diff = tuning.compare(before[1], entries)
+    if not diff:
+        log("tuning: unchanged by the update")
+        return
+    for reg, a, b in diff[:20]:
+        log(f"tuning: {reg}: before {a} now {b}")
+    log(f"tuning: {len(diff)} values differ after the update")
+    if not args.restore_tuning:
+        log(f"tuning: write them back with: restore-tuning {args.keep_tuning}/tuning-before.cfg --allow-write")
+        return
+    tuning.restore(app, before[0], before[1], log)
+    _, again = tuning.export(app)
+    left = tuning.compare(before[1], again)
+    log(f"tuning: written back, {len(left)} differences left")
 
 
 def cmd_backup(bl, args):
@@ -292,6 +373,13 @@ def main(argv=None):
     sub.add_parser("info", help="bootloader and firmware version")
     sub.add_parser("start", help="leave the bootloader, start the application")
     sub.add_parser("identify", help="MODEL-PCB of the running firmware (system.key.info)")
+    te = sub.add_parser("export-tuning", help="loaded preset + device settings into a GUI .cfg (read only)")
+    te.add_argument("out", help=".cfg file")
+    tc = sub.add_parser("compare-tuning", help="compare the device with a .cfg (read only)")
+    tc.add_argument("cfg")
+    tr = sub.add_parser("restore-tuning", help="write a .cfg with set commands (needs --allow-write)")
+    tr.add_argument("cfg")
+    tr.add_argument("--allow-write", action="store_true")
     bk = sub.add_parser("backup", help="versions + flash + EEPROM into DIR (one session)")
     bk.add_argument("dir")
     for what in ("flash", "eeprom"):
@@ -305,6 +393,12 @@ def main(argv=None):
         w.add_argument("--allow-write", action="store_true")
         w.add_argument("--no-verify", dest="verify", action="store_false",
                        help="skip read-back after writing")
+        if what == "flash":
+            w.add_argument("--keep-tuning", metavar="DIR",
+                           help="export the tuning before flashing into DIR, compare it after the "
+                                "start and report differences (needs the running firmware)")
+            w.add_argument("--restore-tuning", action="store_true",
+                           help="with --keep-tuning: write differences back after the start")
     args = ap.parse_args(argv)
 
     port = open_port(args)
@@ -317,6 +411,15 @@ def main(argv=None):
             raise SystemExit("identify: no answer to get.1 system.key.info")
         print("-".join(got))
         return
+    if args.cmd in ("export-tuning", "compare-tuning", "restore-tuning"):
+        try:
+            cmd_tuning(port, args)
+        finally:
+            port.close()
+        return
+    tuning_before = None
+    if args.cmd == "write-flash" and args.keep_tuning and not args.resume:
+        tuning_before = save_tuning(port, args, "before")
     bl = Bootloader(port, timeout=args.timeout, log=log)
     try:
         if args.expect_device and not args.resume:
@@ -344,6 +447,8 @@ def main(argv=None):
             log("application started")
             if args.cmd == "write-flash" and args.keep_identity:
                 restore_identity(bl.port, args)
+            if tuning_before is not None:
+                check_tuning(bl.port, args, tuning_before)
     except BootloaderError as e:
         raise SystemExit(f"error: {e}")
     finally:

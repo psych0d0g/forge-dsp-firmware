@@ -1,13 +1,16 @@
 # PlatformIO extra script: upload and helper targets through chip45boot3 (forge-tools/c45b3).
 #
 # Upload (VS Code: PlatformIO -> Upload, CLI: pio run -t upload):
-#   while "waiting for the bootloader" is shown: switch the Forge off, hold the key next to the
-#   USB port, switch it on and hold the key until the orange LED blinks. The bootloader does not
-#   answer after a software reset (system.boot), only with the key (checked on a device).
+#   exports the tuning into backups/<date>/tuning-before.cfg, enters the bootloader by command
+#   (port firmware; with the original firmware: key next to the USB port while switching on),
+#   flashes, starts, and compares the tuning afterwards (#30; option [forge] restore_tuning = yes
+#   writes differences back).
 # Custom targets (VS Code: PlatformIO -> Project Tasks -> Custom):
 #   forge_info      bootloader/firmware version, then start the application
 #   forge_backup    flash + EEPROM into backups/<date> (as far as the bootloader allows)
 #   flash_release   program the official firmware 1.11.6000 of this flavour (way back)
+#   forge_tuning_export   loaded preset + device settings into backups/<date>/tuning.cfg (GUI format)
+#   forge_tuning_compare  compare the device with the newest tuning.cfg in backups/
 
 import datetime
 import os
@@ -56,7 +59,13 @@ def need_port(target, source, env):
               "the USB port, switch it on, keep holding until the orange LED blinks.")
 
 
-env.Replace(UPLOADCMD=base + " --keep-identity write-flash $SOURCE --allow-write")
+stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+backup_root = os.path.join(proj, opt("backup_dir", "backups"))
+backup_dir = os.path.join(backup_root, stamp)
+tuning_opts = ' --keep-tuning "%s"' % backup_dir
+if opt("restore_tuning", "no").lower() in ("yes", "1", "true"):
+    tuning_opts += " --restore-tuning"
+env.Replace(UPLOADCMD=base + " --keep-identity write-flash $SOURCE --allow-write" + tuning_opts)
 env.AddPreAction("upload", need_port)
 
 env.AddCustomTarget(
@@ -67,14 +76,40 @@ env.AddCustomTarget(
     description="Read bootloader and firmware version, then start the application",
 )
 
-stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-backup_dir = os.path.join(proj, opt("backup_dir", "backups"), stamp)
 env.AddCustomTarget(
     name="forge_backup",
     dependencies=None,
     actions=[need_port, base + ' backup "%s"' % backup_dir],
     title="Forge: backup",
     description="Read flash and EEPROM through the bootloader (if the build allows it)",
+)
+
+app_cmd = '"$PYTHONEXE" -m c45b3 --port "$UPLOAD_PORT" --app-baud %s' % app_baud
+env.AddCustomTarget(
+    name="forge_tuning_export",
+    dependencies=None,
+    actions=[need_port, 'mkdir -p "%s"' % backup_dir,
+             app_cmd + ' export-tuning "%s"' % os.path.join(backup_dir, "tuning.cfg")],
+    title="Forge: export tuning",
+    description="Loaded preset and device settings as a GUI .cfg (read only)",
+)
+
+
+def newest_tuning():
+    found = []
+    for root, _, files in os.walk(backup_root):
+        for f in files:
+            if f in ("tuning.cfg", "tuning-before.cfg"):
+                found.append(os.path.join(root, f))
+    return max(found, key=os.path.getmtime) if found else ""
+
+
+env.AddCustomTarget(
+    name="forge_tuning_compare",
+    dependencies=None,
+    actions=[need_port, app_cmd + ' compare-tuning "%s"' % newest_tuning()],
+    title="Forge: compare tuning",
+    description="Compare the device with the newest exported tuning (read only)",
 )
 
 # identity -> official HEX of that variant (one build may serve several, #31)

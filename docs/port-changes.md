@@ -25,6 +25,7 @@ bewusste Unterschiede. Im Quelltext sind die Stellen mit `PORT:` markiert.
 | **Boot-Sektion lesen** (Diagnose, nur lesend): 64 Byte je Block aus 0x40000, zeigt ob die Lockbits das Auslesen des Bootloaders aus der Anwendung erlauben; Skript `tools/dump_bootsection.py` | `get system.hardware.boot.N` (N 1–128) | #22 |
 | **IR-Befehl 2** (im Original frei, „maybe use later“): schaltet zum nächsten Eingang (`mixer.in`) der aktiven Mixer-Position, nach dem letzten wieder auf 1. Die Java-GUI hat für Platz 2 keinen Eintrag; anlernen per Befehl | `set extender.ir.custom.2=[header,adresse,befehl]` | #27 |
 | **Bootloader-Versionsstring**: Der Bootloader liest die Firmware-Version (`FW_VERSION:xx.yy`); das Original enthält keinen | chip45boot3 0x12 | |
+| **Abstimmung sichern/vergleichen/zurückschreiben** im Flasher, Format = `.cfg` der Original-GUI (auch vom SD-Lader lesbar). Der Upload sichert vorher und vergleicht danach; Zurückschreiben nur der Unterschiede, nur bei passendem Modell. Am Gerät geprüft (1009 Werte, Export 15 s) | `c45b3 export-tuning / compare-tuning / restore-tuning`, Tasks *Forge: export/compare tuning*, `[forge] restore_tuning` | #30 |
 | **Linux-Flasher** chip45boot3 mit Backup, Gerätecheck und Rückweg auf 1.11.6000, eingebunden in PlatformIO/VS Code | `tools/c45b3-host`, *Forge:*-Tasks | |
 
 ## Behobene Fehler des Originals
