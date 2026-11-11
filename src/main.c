@@ -19,6 +19,7 @@
 #include "store.h"
 #include "expander.h"
 #include "si5338.h"
+#include "flavour_systeminit.h"
 #include <util/delay.h>
 #include "tick.h"
 #include "version.h"
@@ -26,6 +27,11 @@
 
 /* found by chip45boot3 CMD_READ_VERSION_FIRMWARE */
 const char fw_version_c45b3[] PROGMEM __attribute__((used)) = FW_VERSION_C45B3;
+
+/* hooks of the generated systeminit sequence */
+void interrupts_enable(void) { sei(); }
+void watchdog_start(void) { watchdog_enable_8s(); }
+void watchdog_kick(void) { watchdog_reset(); }
 
 /* router hooks */
 uint8_t iface_hook_ir_master_online(void)
@@ -54,11 +60,17 @@ int main(void)
 	iface_init();
 	i2c_bus_init(1);   /* libs/interface/V40/5/init.bas: open "twic", 100 kHz */
 	i2c_bus_init(2);   /* .../6/init.bas: open "twie" */
-	si5338_detect_and_init();  /* libs/clock/si5338/init.bas (V40/V41) */
+#if FORGE_BRINGUP && FLAVOUR_SYSTEMINIT_COMPLETE
+	/* peripheral part of systeminit.bas (generated): clock, store, expanders and their
+	 * power-up bits, DAC (muted), DSP program EEPROMs, peripheral resets, DSP cores, SPDIF */
+	flavour_systeminit_peripherals();
+#else
+	/* safe state: only detection; peripheral resets held, power-up bits off */
+	si5338_detect_and_init();
 	at24c512_detect();
-	/* PORT: store init (preset load) follows; the power-up steps of systeminit
-	 * (pca955x bit 6/7, peripheral resets) stay off until the DSP init is ported (#3) */
+	store_init();
 	expander_init();
+#endif
 	cmd_init();
 	/* config priority = roundrobin, lo/med/hi enabled, vectors in application */
 	CCP = CCP_IOREG_gc;

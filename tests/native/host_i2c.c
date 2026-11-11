@@ -21,12 +21,12 @@ static uint8_t cur_dev[3], state[3];  /* state: 0 idle, 1 addr hi, 2 addr lo, 3 
 
 /* simple register devices ("#i2cdev=<bus>,<addr hex>"): first written byte = register pointer */
 struct regdev { uint8_t bus, addr, ptr, regs[256], used; };
-static struct regdev devs[8];
+static struct regdev devs[16];
 static struct regdev *cur_rd[3];
 
 void host_i2c_add(uint8_t bus, uint8_t addr)
 {
-	for (int i = 0; i < 8; i++)
+	for (int i = 0; i < 16; i++)
 		if (!devs[i].used) {
 			devs[i].used = 1;
 			devs[i].bus = bus;
@@ -37,7 +37,7 @@ void host_i2c_add(uint8_t bus, uint8_t addr)
 
 uint8_t *host_i2c_regs(uint8_t bus, uint8_t addr)
 {
-	for (int i = 0; i < 8; i++)
+	for (int i = 0; i < 16; i++)
 		if (devs[i].used && devs[i].bus == bus && devs[i].addr == (addr & 0xFE))
 			return devs[i].regs;
 	return NULL;
@@ -45,7 +45,7 @@ uint8_t *host_i2c_regs(uint8_t bus, uint8_t addr)
 
 static struct regdev *find(uint8_t bus, uint8_t addr)
 {
-	for (int i = 0; i < 8; i++)
+	for (int i = 0; i < 16; i++)
 		if (devs[i].used && devs[i].bus == bus && devs[i].addr == (addr & 0xFE))
 			return &devs[i];
 	return NULL;

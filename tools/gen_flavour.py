@@ -149,6 +149,122 @@ def data_tables(r):
     return {k: v for k, v in tables.items() if v[1]}
 
 
+# init.bas includes of the peripheral part of systeminit.bas -> C call.
+# "" = covered by the parent call; "TODO:..." = not ported yet (emitted as comment).
+INIT_MAP = {
+    "libs/sys/init.bas": "",
+    "libs/sys/init/init.bas": "TODO: sys_init_init (stored command sets, M4)",
+    "libs/clock/init.bas": "",
+    "libs/clock/si5338/init.bas": "si5338_detect_and_init();",
+    "libs/eeprom/init.bas": "",
+    "libs/eeprom/at24c512/init.bas": "at24c512_detect();",
+    "libs/store/init.bas": "store_init();",
+    "libs/store/cores/init.bas": "", "libs/store/cores/1/init.bas": "", "libs/store/cores/2/init.bas": "",
+    "libs/store/cores/3/init.bas": "",
+    "libs/expander/init.bas": "expander_init();",
+    "libs/expander/pca9554/init.bas": "", "libs/expander/pca9554/41/init.bas": "",
+    "libs/expander/pca9554/4F/init.bas": "", "libs/expander/pca9555/init.bas": "",
+    "libs/expander/pca9555/4F/init.bas": "",
+    "libs/da/init.bas": "dac_init();",
+    "libs/da/es90x8pro/init.bas": "", "libs/da/es9018/init.bas": "",
+    "libs/da/cs4385/init.bas": "TODO: cs4385 (V30-96LN)",
+    "libs/dsp/tas3108/at24c512/init.bas": "",
+    "libs/dsp/tas3108/at24c512/1/init.bas": "dsp_eeprom_init(1);",
+    "libs/dsp/tas3108/at24c512/2/init.bas": "dsp_eeprom_init(2);",
+    "libs/dsp/tas3108/at24c512/3/init.bas": "dsp_eeprom_init(3);",
+    "libs/dsp/tas3108/cores/1/init.bas": "dsp_core_init(1);",
+    "libs/dsp/tas3108/cores/2/init.bas": "dsp_core_init(2);",
+    "libs/dsp/tas3108/cores/3/init.bas": "dsp_core_init(3);",
+    "libs/ad/init.bas": "", "libs/ad/pcm4202/init.bas": "",
+    "libs/ad/cs536x/init.bas": "TODO: cs5366 (V30-96LN)",
+    "libs/ad/cs536x/6channel/init.bas": "TODO: cs5366 6 channel (V30-96LN)",
+    "libs/spdif/init.bas": "spdif_init();",
+    "libs/spdif/ct7302/init.bas": "", "libs/spdif/ct7302/20/init.bas": "", "libs/spdif/ct7302/22/init.bas": "",
+    "libs/spdif/src43x2/init.bas": "TODO: src43x2 (V30-96LN)",
+    "libs/spdif/cs8416/init.bas": "TODO: cs8416 (V30-96LN)",
+}
+INIT_LATER = ("libs/extender/", "libs/api/", "libs/ctrl/", "libs/cmd/", "libs/file/", "libs/loopcall/")
+HW_TODO = ("cs4385", "cs5366", "src43x2", "cs8416")
+
+
+def systeminit_sequence(r, fid):
+    """Peripheral part of devices/<flavour>/systeminit.bas (from 'config watchdog = 8000' to
+    'call debug_error()') as C statements, in source order."""
+    out, active, complete = [], False, True
+    for line in r.flat:
+        m = re.search(r"'((?:devices|libs)/[^']*):(\d+)$", line)
+        if line.startswith("'>>> "):
+            path = line[5:].strip()
+            if not active:
+                continue
+            if path in INIT_MAP:
+                c = INIT_MAP[path]
+                if c.startswith("TODO"):
+                    out.append(f"\t/* PORT {c} ({path}) */")
+                    if any(h in c for h in HW_TODO):
+                        complete = False
+                elif c:
+                    out.append(f"\t{c}  /* {path} */")
+            elif path.startswith(INIT_LATER):
+                if path.endswith("init.bas"):
+                    out.append(f"\t/* PORT later: {path} */")
+            elif path.endswith("init.bas"):
+                raise SystemExit(f"{fid}: unmapped init include in systeminit: {path}")
+            continue
+        if not m or not m.group(1).endswith("systeminit.bas"):
+            continue
+        code = strip_comment(line[:m.start()])
+        src = f"{m.group(1)}:{m.group(2)}"
+        if re.match(r"^config\s+watchdog\s*=\s*8000$", code, re.I):
+            active = True
+            continue
+        if not active or not code:
+            continue
+        if re.match(r"^call\s+debug_error\(\)", code, re.I):
+            break
+        if re.search(r"debugtext|debugout|registers\(reg_debugmode\)", code, re.I) or re.match(r"^end if$", code, re.I):
+            continue
+        mm = re.match(r"^(pca955[45])_(bits|value)\s*=\s*(.+)$", code, re.I)
+        if mm:
+            out.append(f"\t{mm.group(1).lower()}_{mm.group(2).lower()} = 0x{r.value(mm.group(3)):X};  /* {src} */")
+            continue
+        mm = re.match(r"^call\s+(pca955[45]_4F_set_output)\(\)$", code, re.I)
+        if mm:
+            out.append(f"\t{mm.group(1)}();  /* {src} */")
+            continue
+        mm = re.match(r"^waitms\s+(\w+)$", code, re.I)
+        if mm:
+            out.append(f"\tdelay_ms({r.value(mm.group(1))});  /* {src} */")
+            continue
+        mm = re.match(r"^(set|reset)\s+(peripheral_devices_reset[12])$", code, re.I)
+        if mm:
+            op = "PIN_SET" if mm.group(1).lower() == "set" else "PIN_CLR"
+            out.append(f"\t{op}(PIN_{mm.group(2).upper()});  /* {src} */")
+            continue
+        mm = re.match(r"^call\s+i2c([12])_sda_wait4silence\((\w+)\s*,\s*(\w+)\)$", code, re.I)
+        if mm:
+            out.append(f"\ti2c_sda_wait4silence({mm.group(1)}, {r.value(mm.group(2))}, {r.value(mm.group(3))});  /* {src} */")
+            continue
+        if re.match(r"^enable\s+interrupts$", code, re.I):
+            out.append(f"\tinterrupts_enable();  /* {src} */")
+            continue
+        if re.match(r"^start\s+watchdog$", code, re.I):
+            out.append(f"\twatchdog_start();  /* {src} */")
+            continue
+        if re.match(r"^reset\s+watchdog$", code, re.I):
+            out.append("\twatchdog_kick();")
+            continue
+        if re.match(r"^(enable|disable)\s+PORT[A-F]_INT[01]\b", code, re.I):
+            out.append(f"\t/* PORT later (events, M4): {code} ({src}) */")
+            continue
+        if re.search(r"cs4385|cs536|src43|cs8416", code, re.I):
+            out.append(f"\t/* PORT TODO: {code.replace('*/', '* /')} ({src}) */")
+            complete = False
+            continue
+        raise SystemExit(f"{fid}: {src}: unhandled systeminit statement: {code}")
+    return out, complete
+
+
 def generate(main):
     r = Resolver(main).run()
     fid = flavour_id(main)
@@ -236,6 +352,18 @@ def generate(main):
         e.append(f"#define {N}_COUNT {n}")
         e.append(f"#define {N}_SIZE {size}")
     e.append("\n#endif")
+    seq, complete = systeminit_sequence(r, fid)
+    si = [HEADER, '#include "flavour_systeminit.h"', "",
+          "/* peripheral part of systeminit.bas, generated in source order */",
+          "void flavour_systeminit_peripherals(void)", "{"] + seq + ["}"]
+    sih = [HEADER, "#ifndef FLAVOUR_SYSTEMINIT_H_\n#define FLAVOUR_SYSTEMINIT_H_\n",
+           '#include "board.h"', '#include "ct7302.h"', '#include "dac.h"', '#include "expander.h"',
+           '#include "i2c.h"', '#include "si5338.h"', '#include "store.h"', '#include "tas3108.h"', "",
+           "/* 1 = every hardware module of the sequence is ported; else the peripheral resets stay",
+           " * held (the caller checks this) */",
+           f"#define FLAVOUR_SYSTEMINIT_COMPLETE {int(complete)}",
+           "void interrupts_enable(void);", "void watchdog_start(void);", "void watchdog_kick(void);",
+           "void flavour_systeminit_peripherals(void);", "\n#endif"]
     tables = data_tables(r)
     d = [HEADER, "#ifndef FLAVOUR_DATA_H_\n#define FLAVOUR_DATA_H_\n", "#include <stdint.h>",
          '#include "bas_data.h"', "",
@@ -250,7 +378,7 @@ def generate(main):
         d.append(f"#define {label}_ITEMS {len(items)}")
     d.append("\n#endif")
     return (fid, "\n".join(h) + "\n", "\n".join(c) + "\n", "\n".join(e) + "\n", layout,
-            "\n".join(d) + "\n")
+            "\n".join(d) + "\n", "\n".join(si) + "\n", "\n".join(sih) + "\n")
 
 
 def main():
@@ -264,10 +392,11 @@ def main():
         raise SystemExit("no devices/*/*/*/main.bas found")
     bad = 0
     for main in mains:
-        fid, h, c, e, _, dt = generate(main)
+        fid, h, c, e, _, dt, si, sih = generate(main)
         d = os.path.join(a.out, fid)
         for name, text in (("flavour.h", h), ("flavour_pins.c", c), ("flavour_eram.h", e),
-                           ("flavour_data.h", dt)):
+                           ("flavour_data.h", dt), ("flavour_systeminit.c", si),
+                           ("flavour_systeminit.h", sih)):
             p = os.path.join(d, name)
             if a.check:
                 old = open(p).read() if os.path.exists(p) else None

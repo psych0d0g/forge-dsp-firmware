@@ -19,6 +19,10 @@
 #include "tas3108.h"
 #include "dac.h"
 #include "ct7302.h"
+#include "flavour_systeminit.h"
+void interrupts_enable(void) { printf("@sei\n"); }
+void watchdog_start(void) {}
+void watchdog_kick(void) {}
 struct ee { uint8_t bus, addr; uint8_t *mem; uint32_t writes; };
 extern struct ee ees[4];
 extern uint8_t dspee[3][65536];
@@ -78,6 +82,9 @@ static void store_cmd(const char *l)
 	} else if (!strncmp(l, "#dsp_core=", 10)) {
 		dsp_core_init((uint8_t)atoi(l + 10));
 		printf("@dsp_core: hw=%04X\n", hardware_dsp);
+	} else if (!strcmp(l, "#systeminit")) {
+		flavour_systeminit_peripherals();
+		printf("@hw:%04X dsp:%04X\n", hardware_other, hardware_dsp);
 	} else if (!strcmp(l, "#spdif_init")) {
 		spdif_init();
 		printf("@hw:%04X\n", hardware_other);

@@ -16,6 +16,8 @@ extern uint16_t store_chksum_error;
 extern uint16_t hardware_other;
 
 void at24c512_detect(void);         /* libs/eeprom/at24c512/init.bas */
+void store_init(void);              /* libs/store/init.bas */
+extern uint8_t storage_flags, storage_flags_check;
 void store_load_values_all(void);
 void store_save_values_all(void);
 void store_load_bqtv(void);         /* -> buffer_bytes(1..10), backwards as BASCOM */

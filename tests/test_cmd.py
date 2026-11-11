@@ -588,5 +588,43 @@ class Ct7302Test(unittest.TestCase):
         self.assertEqual([l for l in out if l.startswith("@regs")], ["@regs:0000000003137802"])
 
 
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class SysteminitTest(unittest.TestCase):
+    """Generated peripheral sequence of systeminit.bas on a fully populated bus model."""
+    ALL = ["#i2cdev=1,E0", "#i2cdev=1,40", "#i2cdev=1,4E", "#i2cdev=2,90", "#i2cdev=1,20",
+           "#i2cdev=1,22", "#i2cdev=1,68", "#i2cdev=2,68", "#i2cdev=2,6A"]
+
+    def complete(self, f):
+        return "COMPLETE 1" in pathlib.Path(HERE, "..", "src", "flavours", f, "flavour_systeminit.h").read_text()
+
+    def test_detected_hardware_matches_original_check(self):
+        for f in FLAVOURS:
+            if not self.complete(f):
+                continue
+            p, _ = run(f, self.ALL + ["#systeminit"], eeprom=image(f), want_eeprom=True)
+            line = [l for l in p.stdout.splitlines() if l.startswith("@hw:")][0]
+            other, dsp = consts(f, "CHK_HARDWARE_OTHER", "CHK_HARDWARE_DSP")
+            if f == "V30-96ELN":
+                # original: chk_hardware_other expects the Si5338 (bit 11), which this build does
+                # not have, and not the DAC/SPDIF bits (2, 3) it detects -> mismatch (issue #32)
+                self.assertEqual(other, 0x0871)
+                self.assertEqual(line, f"@hw:007D dsp:{dsp:04X}", f)
+                continue
+            self.assertEqual(line, f"@hw:{other:04X} dsp:{dsp:04X}", f)
+
+    def test_reset_order_96eln3(self):
+        f = "V41-96ELN-3"
+        p, _ = run(f, self.ALL + ["#i2clog=1", "#systeminit"], eeprom=image(f), want_eeprom=True)
+        ev = [l for l in p.stdout.splitlines() if l.startswith(("@pin", "@sei")) or
+              l in ("@i2c1: S 4E 02 7F P", "@i2c1: S 4E 02 FF P") or l.startswith("@i2c2: S 90 16 FF")]
+        # bit 6 on, DAC mute, interrupts, reset 1, bit 7 on, reset 2
+        self.assertEqual(ev, ["@i2c1: S 4E 02 7F P", "@i2c2: S 90 16 FF P", "@sei",
+                              "@pin:PIN_PERIPHERAL_DEVICES_RESET1=1", "@i2c1: S 4E 02 FF P",
+                              "@pin:PIN_PERIPHERAL_DEVICES_RESET2=1"])
+
+    def test_96ln_is_marked_incomplete(self):
+        self.assertFalse(self.complete("V30-96LN"))
+
+
 if __name__ == "__main__":
     unittest.main()

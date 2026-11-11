@@ -13,6 +13,7 @@ uint8_t store_preset;
 uint16_t store_bq_nr;
 uint16_t store_chksum_error;
 uint16_t hardware_other;
+uint8_t storage_flags, storage_flags_check;
 
 #define STORE_RDY (hardware_other & (1u << BAS_AT24C512_STORE_RDY))
 #define BUS 1  /* #5 */
@@ -28,6 +29,17 @@ void at24c512_detect(void)
 	else
 		errorcount((uint8_t)(BAS_AT24C512_STORE_RDY + BAS_ERRORCOUNT_OFFSET_OTHER));
 	twi_stop(BUS);
+}
+
+void store_init(void)
+{
+	storage_flags = 0;
+	storage_flags_check = 0;
+	/* PORT: at sysinit the original erases preset 1 and copies it to all presets
+	 * (store_erase_preset, store_copy_preset). Not done until the factory reset is
+	 * ported completely: the port keeps startup_state at sysinit for now, and this
+	 * branch would wipe the tuning at every start. */
+	store_preset = 0xFF;  /* preset not loaded */
 }
 
 uint16_t storage_chksum_get(void)
