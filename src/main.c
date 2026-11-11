@@ -18,6 +18,7 @@
 #include "i2c.h"
 #include "store.h"
 #include "expander.h"
+#include "si5338.h"
 #include <util/delay.h>
 #include "tick.h"
 #include "version.h"
@@ -53,8 +54,9 @@ int main(void)
 	iface_init();
 	i2c_bus_init(1);   /* libs/interface/V40/5/init.bas: open "twic", 100 kHz */
 	i2c_bus_init(2);   /* .../6/init.bas: open "twie" */
+	si5338_detect_and_init();  /* libs/clock/si5338/init.bas (V40/V41) */
 	at24c512_detect();
-	/* PORT: si5338 and store init (preset load) follow; the power-up steps of systeminit
+	/* PORT: store init (preset load) follows; the power-up steps of systeminit
 	 * (pca955x bit 6/7, peripheral resets) stay off until the DSP init is ported (#3) */
 	expander_init();
 	cmd_init();

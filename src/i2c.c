@@ -3,6 +3,7 @@
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
 #include "i2c.h"
+#include "bas_data.h"
 
 uint8_t buffer_bytes[BAS_BUFFER_BYTES_MAX + 1];
 uint8_t i2c_device_addr;
@@ -169,4 +170,26 @@ void i2c_rbuffer_highreg(uint8_t bus)
 	twi_repstart(bus);
 	twi_wbyte(bus, (uint8_t)(i2c_device_addr + 1));
 	read_backwards(bus);
+}
+
+void i2c_wbyte_sequence(uint8_t bus, const uint8_t *table)
+{
+	bas_reader r = BAS_RESTORE(table);
+	uint16_t data_size = (uint16_t)(bas_read_w(&r) / 3);
+	for (uint16_t w = 1; w <= data_size; w++) {
+		i2c_reg = bas_read_b(&r);
+		uint8_t value = bas_read_b(&r);
+		uint8_t mask = bas_read_b(&r);
+		if (mask == 0x00)
+			continue;
+		if (mask == 0xFF) {
+			buffer_byte = value;
+			i2c_wbyte(bus);
+		} else {
+			value &= mask;
+			i2c_rbyte(bus);
+			buffer_byte = (uint8_t)((buffer_byte & (uint8_t)~mask) | value);
+			i2c_wbyte(bus);
+		}
+	}
 }

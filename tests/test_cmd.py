@@ -344,5 +344,102 @@ class ExpanderTest(unittest.TestCase):
         self.assertEqual(out, ["@hw:0001"])
 
 
+def table_bytes(flavour, label):
+    import re
+    t = pathlib.Path(HERE, "..", "src", "flavours", flavour, "flavour_data.h").read_text()
+    body = re.search(rf"BAS_DATA_TABLE\({label}, \d+\) = \{{(.*?)\}};", t, re.S).group(1)
+    return bytes(int(x, 16) for x in re.findall(r"0x([0-9A-F]{2})", body))
+
+
+def si5338_expected(flavour, mclk, fine, best, clocks):
+    """libs/clock/si5338 with IEEE doubles exactly as BASCOM computes them."""
+    import math
+    regs = [0] * 256
+    data = table_bytes(flavour, "si5338_data")
+    n = int.from_bytes(data[:2], "little") // 3
+    for i in range(n):
+        r, v, m = data[2 + 3 * i:5 + 3 * i]
+        if m == 0xFF:
+            regs[r] = v
+        elif m:
+            regs[r] = (regs[r] & ~m & 0xFF) | (v & m)
+    fvco = 25000000000.0
+    if 1 <= best <= 4:
+        da = float(clocks[best - 1])
+        if int(math.fmod(fvco, da)) > 0:
+            fvco = float(int(fvco / da) + 1) * da
+    msn = table_bytes(flavour, "si5338_calc_msn_reg")
+    out = {}
+    for number, c in [(5, (mclk + fine) & 0xFFFFFFFF)] + [(i + 1, clocks[i]) for i in range(4)]:
+        dc = float(c)
+        a = int(fvco / dc) & 0xFFFF
+        b = int(math.fmod(fvco, dc))
+        g = math.gcd(b, c) if b and c else 1
+        if b == 0:
+            c = 1
+        elif g > 1:
+            b //= g
+            c //= g
+        da = float(a) * float(c) + float(b)
+        p1 = int((da * 128) / float(c) - 512) & 0x3FFFF
+        p2 = int(math.fmod(float(b) * 128, float(c)))
+        p3 = c & 0x3FFFFFFF
+        reg = msn[number]
+        old_top = regs[reg + 9]
+        val = p1 | (p2 << 18)
+        bs = bytearray(val.to_bytes(6, "little")) + bytearray(p3.to_bytes(4, "little"))
+        bs[9] |= old_top
+        out[reg] = bytes(bs)
+    return out
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class Si5338Test(unittest.TestCase):
+    def regs_after_load(self, flavour, eeprom):
+        p, _ = run(flavour, ["#i2cdev=1,E0", "#si5338", "#regs=1,E0,256"], eeprom=eeprom, want_eeprom=True)
+        line = [l for l in p.stdout.splitlines() if l.startswith("@regs:")][0]
+        return bytes.fromhex(line[6:])
+
+    def eeprom_with_clock(self, flavour, mclk, fine, best, clocks):
+        L = layout(flavour)
+        ee = bytearray(image(flavour))
+        a = L["si5338_mclk_eram"][0]
+        ee[a:a + 4] = mclk.to_bytes(4, "little")
+        a = L["si5338_custom_mclk_fine_tune"][0]
+        ee[a:a + 2] = (fine & 0xFFFF).to_bytes(2, "little")
+        ee[L["si5338_out_best_jitter_eram"][0]] = best
+        a = L["si5338_out_clock_eram"][0]
+        for i, c in enumerate(clocks):
+            ee[a + 4 * i:a + 4 * i + 4] = c.to_bytes(4, "little")
+        return bytes(ee)
+
+    def test_defaults_after_sysinit(self):
+        for f in ("V40-96ELN", "V40-CORED8", "V41-96ELN-3"):
+            init = table_bytes(f, "si5338_out_clock_init")
+            clocks = [int.from_bytes(init[4 * i:4 * i + 4], "little") for i in range(1, 5)]
+            mclk, best = consts(f, "SI5338_MCLK_INIT", "SI5338_OUT_BEST_JITTER_INIT")
+            regs = self.regs_after_load(f, None)  # blank EEPROM -> sysinit defaults
+            for reg, bs in si5338_expected(f, mclk, 0, best, clocks).items():
+                self.assertEqual(regs[reg:reg + 10].hex(), bs.hex(), f"{f} reg {reg}")
+
+    def test_custom_clocks_match_double_math(self):
+        f = "V41-96ELN-3"
+        cases = [
+            (491520000, 0, 4, [245760000, 225792000, 122880000, 1000000000]),
+            (491520000, -37, 1, [245760000, 225792000, 122880000, 1000000000]),
+            (451584000, 12, 2, [112896000, 225792000, 61440000, 270000000]),
+            (491520000, 0, 3, [245760001, 225792007, 199999999, 3]),
+        ]
+        for mclk, fine, best, clocks in cases:
+            regs = self.regs_after_load(f, self.eeprom_with_clock(f, mclk, fine, best, clocks))
+            for reg, bs in si5338_expected(f, mclk, fine, best, clocks).items():
+                self.assertEqual(regs[reg:reg + 10].hex(), bs.hex(), f"{mclk} {clocks} reg {reg}")
+
+    def test_not_fitted(self):
+        p, _ = run("V40-CORED8", ["#si5338", "1|get.1 system.errors"], want_eeprom=True)
+        self.assertIn("system.errors=[[", p.stdout)  # si5338_rdy + offset_other
+        self.assertIn("@hw:0001", p.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

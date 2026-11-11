@@ -15,6 +15,7 @@
 #include "i2c.h"
 #include "store.h"
 #include "expander.h"
+#include "si5338.h"
 void host_i2c_add(uint8_t bus, uint8_t addr);
 uint8_t *host_i2c_regs(uint8_t bus, uint8_t addr);
 
@@ -55,6 +56,9 @@ static void store_cmd(const char *l)
 		for (unsigned i = 0; i < n; i++)
 			printf("%02X", r ? r[i] : 0);
 		printf("\n");
+	} else if (!strcmp(l, "#si5338")) {
+		si5338_detect_and_init();
+		printf("@hw:%04X\n", hardware_other);
 	} else if (!strcmp(l, "#expander_init")) {
 		expander_init();
 		printf("@hw:%04X\n", hardware_other);

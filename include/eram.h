@@ -18,6 +18,8 @@ static inline uint16_t eram_rw(uint16_t a) { return eram_hw_read(a) | (uint16_t)
 /* PORT: identical bytes are not rewritten (same content as BASCOM, less wear) */
 static inline void eram_wb(uint16_t a, uint8_t v) { if (eram_hw_read(a) != v) eram_hw_write(a, v); }
 static inline void eram_ww(uint16_t a, uint16_t v) { eram_wb(a, v & 0xFF); eram_wb(a + 1, v >> 8); }
+static inline uint32_t eram_rd(uint16_t a) { return eram_rw(a) | (uint32_t)eram_rw(a + 2) << 16; }
+static inline void eram_wd(uint16_t a, uint32_t v) { eram_ww(a, v & 0xFFFF); eram_ww(a + 2, v >> 16); }
 /* BASCOM "string * n" in ERAM: n + 1 bytes, read up to NUL, write chars + NUL */
 void eram_read_str(uint16_t a, uint8_t size, char *dst);  /* dst: size bytes */
 void eram_write_str(uint16_t a, uint8_t size, const char *s);

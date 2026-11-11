@@ -35,6 +35,10 @@ void i2c_rbyte(uint8_t bus);
 void i2c_rbuffer(uint8_t bus);
 void i2c_rbyte_highreg(uint8_t bus);
 void i2c_rbuffer_highreg(uint8_t bus);
+/* "read data_size" (word), then data_size/3 triples reg, value, mask:
+ * mask 0 = skip, 0xFF = write, else read-modify-write. r points at "restore <label>" */
+struct bas_reader_s;
+void i2c_wbyte_sequence(uint8_t bus, const uint8_t *table);
 
 /* low level, as BASCOM i2cstart / i2cwbyte / i2crepstart / i2crbyte / i2cstop;
  * provided by i2c_twi.c (AVR) or the host test harness */

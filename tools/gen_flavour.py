@@ -132,6 +132,20 @@ def data_tables(r):
                 raw += struct.pack("<H", int(v) & 0xFFFF); items.append(("w", int(v)))
             else:
                 raw += bytes([int(v) & 0xFF]); items.append(("b", int(v)))
+    # $inc label , size , "file": binary file as DATA, with its length as word in front
+    root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(r.main)), "../../../.."))
+    for line in r.flat:
+        m = re.search(r"'((?:libs|devices)/[^']*):(\d+)$", line)
+        if not m:
+            continue
+        im = re.match(r'^\s*\$inc\s+(\w+)\s*,\s*size\s*,\s*"([^"]+)"', line[:m.start()], re.I)
+        if im:
+            src = os.path.normpath(os.path.join(root, os.path.dirname(m.group(1)), im.group(2).replace("\\", "/")))
+            if not os.path.exists(src):
+                # the path is relative to main.bas in BASCOM
+                src = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(r.main)), im.group(2).replace("\\", "/")))
+            blob = open(src, "rb").read()
+            tables[im.group(1)] = (bytearray(len(blob).to_bytes(2, "little") + blob), [("w", len(blob))] + [("b", x) for x in blob])
     return {k: v for k, v in tables.items() if v[1]}
 
 
