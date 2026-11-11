@@ -20,10 +20,11 @@ void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s) { (void)bus; (voi
 static uint8_t cur_dev[3], state[3];  /* state: 0 idle, 1 addr hi, 2 addr lo, 3 data */
 
 /* simple register devices ("#i2cdev=<bus>,<addr hex>"): first written byte = register pointer */
-struct regdev { uint8_t bus, addr, ptr, regs[256], used; };
+struct regdev { uint8_t bus, addr, ptr, regs[256], used, readonly; };
 static struct regdev devs[16];
 static struct regdev *cur_rd[3];
 
+void host_i2c_readonly(uint8_t bus, uint8_t addr);
 void host_i2c_add(uint8_t bus, uint8_t addr)
 {
 	for (int i = 0; i < 16; i++)
@@ -87,8 +88,10 @@ void twi_wbyte(uint8_t bus, uint8_t b)
 		if (state[bus] == 1) {
 			cur_rd[bus]->ptr = b;
 			state[bus] = 3;
-		} else {
+		} else if (!cur_rd[bus]->readonly) {
 			cur_rd[bus]->regs[cur_rd[bus]->ptr++] = b;
+		} else {
+			cur_rd[bus]->ptr++;
 		}
 		return;
 	}
@@ -123,4 +126,11 @@ void twi_stop(uint8_t bus)
 	lg(bus, " P%.0u", 0);
 	if (host_i2c_log && logged[bus]) { printf("\n"); logged[bus] = 0; }
 	state[bus] = 0;
+}
+
+void host_i2c_readonly(uint8_t bus, uint8_t addr)
+{
+	struct regdev *d = find(bus, addr);
+	if (d)
+		d->readonly = 1;
 }

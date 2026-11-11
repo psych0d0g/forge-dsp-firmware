@@ -21,6 +21,7 @@
 #include "ct7302.h"
 #include "flavour_systeminit.h"
 #include "biquad.h"
+#include "dsp.h"
 void interrupts_enable(void) { printf("@sei\n"); }
 void watchdog_start(void) {}
 void watchdog_kick(void) {}
@@ -30,6 +31,7 @@ extern uint8_t dspee[3][65536];
 static const char *dspee_out[3];
 void host_i2c_add(uint8_t bus, uint8_t addr);
 uint8_t *host_i2c_regs(uint8_t bus, uint8_t addr);
+void host_i2c_readonly(uint8_t bus, uint8_t addr);
 
 uint8_t iface_buart_channel[iface_ch_max + 1] = { 0, 0, 2, 1, 3 };
 volatile uint8_t iface_todo[iface_ch_max + 1];
@@ -98,6 +100,29 @@ static void store_cmd(const char *l)
 		uint32_t raw[6];
 		dsp_bq_convert2raw(raw);
 		printf("@bq:%08X %08X %08X %08X %08X\n", raw[1], raw[2], raw[3], raw[4], raw[5]);
+	} else if (!strncmp(l, "#dsp_bq=", 8)) {   /* #dsp_bq=<virt nr>,type,f,gain,q,b,flags */
+		int nr, t, f, g, q, b, fl;
+		sscanf(l + 8, "%d,%d,%d,%d,%d,%d,%d", &nr, &t, &f, &g, &q, &b, &fl);
+		dsp_bq_cache_values[1] = f;
+		dsp_bq_cache_values[3] = g; dsp_bq_cache_values[3] = dsp_bq_cache_values[3] / 10;
+		dsp_bq_cache_values[2] = q; dsp_bq_cache_values[2] = dsp_bq_cache_values[2] / 1000;
+		dsp_bq_cache_values[4] = b;
+		dsp_bq_calc_type((fl & 0x80) ? (uint8_t)t : 0);
+		dsp_bq_calcto5coeff();
+		uint32_t raw[6];
+		dsp_bq_convert2raw(raw);
+		dsp_bq_virt_nr = (uint16_t)nr;
+		dsp_calc_core();
+		dsp_calc_reg();
+		dsp_set_biquad(raw);
+		printf("@dsp: core=%u reg=%02X verify_errors=%u\n", dsp_core, dsp_reg, iface_verify_error_count);
+	} else if (!strncmp(l, "#i2cro=", 7)) {      /* #i2cro=<bus>,<addr hex>: writes are ignored */
+		unsigned bus, addr;
+		sscanf(l + 7, "%u,%x", &bus, &addr);
+		host_i2c_readonly((uint8_t)bus, (uint8_t)addr);
+	} else if (!strcmp(l, "#dsp_detect")) {
+		for (uint8_t n = 1; n <= BAS_MODUL_TAS3108_CORES; n++)
+			dsp_core_init(n);
 	} else if (!strcmp(l, "#systeminit")) {
 		flavour_systeminit_peripherals();
 		printf("@hw:%04X dsp:%04X\n", hardware_other, hardware_dsp);

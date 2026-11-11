@@ -764,5 +764,33 @@ class BiquadTest(unittest.TestCase):
         self.assertTrue(out[0][0].startswith("@bq:0F"), out)
 
 
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class DspWriteTest(unittest.TestCase):
+    def test_biquad_write_path(self):
+        f = "V41-96ELN-3"
+        core_t = table_bytes(f, "data_flow_dsp_bq_core")
+        reg_t = table_bytes(f, "data_flow_dsp_bq_reg")
+        for nr in (1, 37, 200, 536):
+            core, reg = core_t[nr], reg_t[nr]
+            bus, adr = {1: (1, 0x68), 2: (2, 0x68), 3: (2, 0x6A)}[core]
+            p, _ = run(f, ["#i2cdev=1,68", "#i2cdev=2,68", "#i2cdev=2,6A", "#dsp_detect", "#i2clog=1",
+                           f"#dsp_bq={nr},1,1000,35,1414,0,128"], eeprom=image(f), want_eeprom=True)
+            lines = [l for l in p.stdout.splitlines() if l.startswith(("@i2c", "@dsp"))]
+            raw = bq_reference(f, 1, 1000, 35, 1414, 0, 0x80)  # A2, A1, B2, B1, B0
+            data = b"".join(v.to_bytes(4, "big") for v in reversed(raw))  # B0 first, MSB first
+            self.assertEqual(lines[0], f"@i2c{bus}: S {adr:02X} {reg:02X} " + " ".join(f"{x:02X}" for x in data) + " P", nr)
+            self.assertTrue(lines[1].startswith(f"@i2c{bus}: S {adr:02X} {reg:02X} Sr {adr + 1:02X}"), nr)
+            self.assertEqual(lines[-1], f"@dsp: core={core} reg={reg:02X} verify_errors=0", nr)
+
+    def test_verify_error_is_counted_and_limited(self):
+        f = "V41-96ELN-3"
+        nr = next(i for i, c in enumerate(table_bytes(f, "data_flow_dsp_bq_core")) if c == 1 and i > 0)
+        # core 1 ignores writes: every read-back differs, the write is retried (max. 8 in the port)
+        p, _ = run(f, ["#i2cdev=1,68", "#i2cro=1,68", "#dsp_detect", f"#dsp_bq={nr},1,1000,35,1414,0,128",
+                       "1|get.1 system.errors"], eeprom=image(f), want_eeprom=True)
+        self.assertIn("verify_errors=8", p.stdout)
+        self.assertIn(",[129,8]]", p.stdout)  # errorcount_fw_iface_verify (3, 5: cores 2, 3 missing)
+
+
 if __name__ == "__main__":
     unittest.main()
