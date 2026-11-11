@@ -44,7 +44,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
   (`set.1 system.startup.1="set.1 gain.out.2:150"`, #40).
 - **IR-Fernbedienung, Taste 2** schaltet den Eingang weiter (#27).
 - **Loudness** (gehörrichtige Lautstärke) als neuer MODC-Block: hebt Bass und Höhen an, je leiser gehört wird,
-  folgt der Lautstärke in 0,2-dB-Schritten (M6, #6; [Konfiguration](docs/port-changes.md#loudness-m6-6)).
+  folgt der Lautstärke in 0,2-dB-Schritten, einstellbar im vorhandenen Loudness-Dialog der Original-GUI
+  (M6, #6; [Konfiguration](docs/port-changes.md#loudness-m6-6)).
 - **Biquad-Typ 17 BandPass**, im Original geplant, aber nie umgesetzt (#20).
 - **microSD wieder aktiv** (im Original aus Lizenzgründen entfernt): In der Original-GUI gespeicherte `.cfg`-Dateien
   als `preset_1.cfg` … auf die Karte kopieren, der Forge übernimmt sie beim nächsten Start in die Presets (#24,

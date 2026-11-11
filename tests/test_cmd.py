@@ -1665,7 +1665,7 @@ class IdentityTest(LinesMixin, unittest.TestCase):
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class LoudnessTest(LinesMixin, unittest.TestCase):
-    """M6 (#6): MODC type 0x6C loudness on the last two biquads of channels 35/36."""
+    """M6 (#6): MODC type 0x6C loudness, field layout of the original GUI (CTRL_LOUDNESS_Settings)."""
 
     PRE = ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect", "#pin=PIN_CPU_POWER_CTRL_IN,1",
            "#events_init", "#modc_init"]
@@ -1691,7 +1691,7 @@ class LoudnessTest(LinesMixin, unittest.TestCase):
 
     def test_boost_ramp_disable(self):
         for f in ("V40-96ELN", "V40-96ELN-3", "V30-96LN"):
-            cfg = "1|set.1 modc.9=[1,108,00232400,70,0,0,0,DF280F18]"   # ref 223, 40 %, 15 %, max 12 dB
+            cfg = "1|set.1 modc.9=[1,108,10DF280F,70,0,0,0,00000000]"   # input 35/36, ref 223, 0.40, 0.15
             reads = self.blocks(f, 35, None) + self.blocks(f, 36, None)
             out = self.lines(f, self.PRE + [cfg, "1|set.1 event.70.value=183", "#modc"] + reads   # -20 dB
                              + ["1|set.1 event.70.value=193", "#modc"] + reads                      # -15 dB: ramp
@@ -1708,7 +1708,7 @@ class LoudnessTest(LinesMixin, unittest.TestCase):
         f = "V40-96ELN"
         reads = self.blocks(f, 35, None)
         out = self.lines(f, self.PRE + ["1|set.1 gain.spdif.1=223",                          # 0 dB: no boost
-                                        "1|set.1 modc.9=[1,108,00000000,0,0,0,0,00000000]",  # all defaults
+                                        "1|set.1 modc.9=[1,108,10000000,0,0,0,0,00000000]",  # input path, defaults
                                         "#modc", "1|set.1 gain.spdif.1=203", "#modc"] + reads
                                        + ["#modc"] * 25 + reads)
         b = [l[7:] for l in out if l.startswith("@block:")]
@@ -1724,11 +1724,26 @@ class LoudnessTest(LinesMixin, unittest.TestCase):
         self.assertEqual(out[0].split("[")[1].split(",")[12], "20")      # 0x6C & 0x3F = 44 = ac + 12
         self.assertIn("<.1 modc.9.type=108", out[2])
         reads = self.blocks(f, 35, None)
-        out = self.lines(f, self.PRE + ["1|set.1 modc.9=[1,108,00232400,70,0,0,0,DF64001E]",  # 100 %, max 30 -> 24
+        out = self.lines(f, self.PRE + ["1|set.1 modc.9=[1,108,10006400,70,0,0,0,00000000]",  # slope 1.00
                                         "1|set.1 event.70.value=100", "#modc"] + reads)
         b = [l[7:] for l in out if l.startswith("@block:")]
         self.assertEqual(b[0], self.ref(f, 14, 100, 120))                # capped at 12 dB
-        self.assertEqual(b[1], self.ref(f, 15, 10000, 92))               # set 3 = 0: default 15 % of 61.5 dB
+        self.assertEqual(b[1], self.ref(f, 15, 10000, 92))               # flags 4 = 0: default 0.15 x 61.5 dB
+
+    def test_output_pairs_frequency_and_mask_change(self):
+        """GUI layout: flags 1 bits 0..3 = output pairs, sets 1+2 / 3+4 = shelf frequencies."""
+        f = "V40-96ELN"
+        r12 = self.blocks(f, 1, None) + self.blocks(f, 2, None)
+        r34 = self.blocks(f, 3, None) + self.blocks(f, 4, None)
+        cfg = "1|set.1 modc.9=[1,108,01DF280F,70,0,0,0,5000A00F]"     # pair 1, bass 80 Hz, treble 4000 Hz
+        out = self.lines(f, self.PRE + [cfg, "1|set.1 event.70.value=183", "#modc"] + r12 + r34
+                         + ["1|set.1 modc.9.flags=02DF280F", "#modc"] + r12 + r34)
+        b = [l[7:] for l in out if l.startswith("@block:")]
+        bass, treb, flat = self.ref(f, 14, 80, 80), self.ref(f, 15, 4000, 30), self.ref(f, 0, 0, 0)
+        self.assertEqual(b[0:4], [bass, treb, bass, treb])                # outputs 1 and 2
+        self.assertNotIn(bass, b[4:8])                                    # outputs 3/4 untouched
+        self.assertEqual(b[8:12], [flat] * 4)                             # pair 1 dropped: flat again
+        self.assertEqual(b[12:16], [bass, treb, bass, treb])              # pair 2 now
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")

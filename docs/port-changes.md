@@ -17,7 +17,7 @@ bewusste Unterschiede. Im Quelltext sind die Stellen mit `PORT:` markiert.
 | **Rohwert-Biquads** werden wirklich übernommen (Original nutzt die Werte des vorherigen Befehls) | `biquad.CH.N.raw=["A2","A1","B2","B1","B0"]` | #35 |
 | **microSD wieder aktiv** (im Original für die Lizenz entfernt, AVR-DOS): Beim Start werden `preset_1.cfg` … `preset_N.cfg` von der Karte in die Presets geladen, wenn sich das Dateidatum geändert hat. Die Dateien sind die `.cfg`-Dateien der Original-GUI (Abschnitt mit dem Modellnamen, Zeilen `x = "…"`). FatFs R0.16 statt AVR-DOS. Slot auf der USB-Audio-Platine (V40/V41), SPIE, Kartenschalter PD0 | Bring-up-Variante, Karte FAT12/16/32 | #24 |
 | **Vier Builds statt sieben**: Varianten mit identischer Firmware teilen sich einen Build, die Kennung (Modell, PCB) steht im EEPROM (0xF00) und wird beim Upload aus der alten Firmware übernommen | `get system.key.info.list`, `set system.key.info="MODEL-PCB"`, Upload `--keep-identity` | #31 |
-| **Loudness** (MODC-Typ 0x6C, im Original deklariert, nie umgesetzt): hebt Bass (100 Hz) und Höhen (10 kHz) an, je tiefer die Lautstärke unter einem Referenzwert liegt (gehörrichtige Lautstärke, ISO 226 angenähert). Führt in 0,2-dB-Schritten nach, ohne Stummschaltung und ohne EEPROM-Schreiben, belegt die letzten zwei Biquads der gewählten Kanäle (Vorgabe 35/36 = Eingangsweg) | `set modc.N=[1,108,00KKLL00,E,0,0,0,RRBBTTMM]`, Details unten | #6 |
+| **Loudness** (MODC-Typ 0x6C, im Original deklariert, nie umgesetzt; Feldlayout wie der Loudness-Dialog der Original-GUI): hebt Bass und Höhen per Shelf an, je tiefer die Lautstärke unter einem Referenzwert liegt (gehörrichtige Lautstärke). Belegt die letzten zwei Biquads der gewählten Ausgangspaare, führt in 0,2-dB-Schritten nach, ohne Stummschaltung und ohne EEPROM-Schreiben | Original-GUI (MODC „CTRL-LOUDNESS“) oder `set modc.N=[1,108,…]`, Details unten | #6 |
 | **Startbefehle** (im Original angelegt, aber nie ausgeführt und nicht setzbar): bis zu 8 Befehle à 32 Zeichen im EEPROM, laufen einmal nach dem ersten Preset-Laden eines Starts. `=` im Befehl als `:` schreiben (der Parser behält nur den Text nach dem letzten `=`); Neustart/Werks-Reset werden abgelehnt | `set system.startup.N="set.1 gain.out.2:150"`, `get system.startup.N`/`.*`, `""` löscht | #40 |
 | **IR-Befehl 2** (im Original frei, „maybe use later“): schaltet zum nächsten Eingang (`mixer.in`) der aktiven Mixer-Position, nach dem letzten wieder auf 1. Die Java-GUI hat für Platz 2 keinen Eintrag; anlernen per Befehl | `set extender.ir.custom.2=[header,adresse,befehl]` | #27 |
 | **Bootloader-Versionsstring**: Der Bootloader liest die Firmware-Version (`FW_VERSION:xx.yy`); das Original enthält keinen | chip45boot3 0x12 | |
@@ -81,30 +81,35 @@ Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `get modc
 
 ## Prüfstand
 
-- Nativ: 95 Tests, alle 7 Varianten (Protokoll, EEPROM-Layout gegen die Release-HEX, Biquads gegen eine unabhängige
+- Nativ: 96 Tests, alle 7 Varianten (Protokoll, EEPROM-Layout gegen die Release-HEX, Biquads gegen eine unabhängige
   Referenz, Peripherie auf einem I2C-Modell, SD-Karte als FAT-Image).
 - Am Gerät (DEV-Forge V40-96ELN): Start auf dem EEPROM des Originals ohne Werks-Reset, alle Bausteine erkannt,
   Biquad-Koeffizienten aus dem DSP bitgenau gleich der Referenz, Abschalten über Remote-In (#39).
 
 ## Loudness (M6, #6)
 
-MODC-Block vom Typ 108 (0x6C). Konfiguration wie bei allen Blöcken über `set.1 modc.N=[an,108,FLAGS,E1,E2,E3,E4,SETS]`
-(FLAGS und SETS je 4 Bytes hex):
+MODC-Block vom Typ 108 (0x6C). Die Felder folgen dem Loudness-Dialog, den die Original-GUI schon enthält
+(`CTRL_LOUDNESS_Settings`), damit sie den Block einstellen kann. Konfiguration per Befehl:
+`set.1 modc.N=[an,108,FLAGS,E1,E2,E3,E4,SETS]` (FLAGS und SETS je 4 Bytes hex).
 
 | Feld | Bedeutung | 0 = Vorgabe |
 |---|---|---|
-| Event 1 | Quelle der Lautstärke, 0–255 in der Skala von `gain.*` (0,5 dB je Schritt, 223 = 0 dB), z. B. der Ausgang eines Lautstärke- oder IR-Blocks | `gain.spdif.1` |
-| Set 1 | Referenz: ab diesem Wert keine Anhebung | 223 (0 dB) |
-| Set 2 | Bass-Anhebung in % der Dämpfung | 40 % |
-| Set 3 | Höhen-Anhebung in % der Dämpfung | 15 % |
-| Set 4 | höchste Anhebung in 0,5-dB-Schritten (höchstens 24 = 12 dB) | 24 |
-| Flags 2 / 3 | Biquad-Kanäle, deren letzte zwei Biquads belegt werden (vorletzter: Bass-Shelf, letzter: Höhen-Shelf) | 35 / 36 |
+| Flags 1, Bits 0–3 | Ausgangspaare 1/2, 3/4, 5/6, 7/8: deren letzte zwei Biquads werden belegt (vorletzter Bass-Shelf, letzter Höhen-Shelf). Port: Bit 4 = Eingangsweg 35/36 | keine |
+| Flags 3 / Flags 4 | Bass- / Höhen-„Gain“ 1–250 (GUI zeigt /100): Anhebung in dB je dB Dämpfung unter der Referenz | 0,40 / 0,15 |
+| Sets 1+2 / Sets 3+4 | Frequenz des Bass- / Höhen-Shelfs in Hz (Low-Byte zuerst) | 100 / 10 000 Hz |
+| Event 1 | „Loudness Input“: Lautstärke 0–255 in der Skala von `gain.*` (0,5 dB je Schritt, 223 = 0 dB), z. B. ein Lautstärke- oder IR-Block | `gain.spdif.1` |
+| Flags 2 (Port, in der GUI ausgeblendet) | Referenz: ab diesem Wert keine Anhebung | 223 (0 dB) |
 | Ausgang (Event 96+N) | aktuelle Bass-Anhebung in 0,5-dB-Schritten | |
 
-Beispiel: `set.1 modc.9=[1,108,00232400,70,0,0,0,DF280F18]` folgt Event 70; bei 20 dB unter der Referenz werden
-Bass +8 dB und Höhen +3 dB angehoben.
+Höchstens 12 dB Anhebung. Beispiel: `set.1 modc.9=[1,108,01DF280F,70,0,0,0,5000A00F]` = Ausgänge 1/2, folgt Event 70, Bass
+80 Hz × 0,40, Höhen 4 kHz × 0,15; 20 dB unter der Referenz ergibt Bass +8 dB und Höhen +3 dB.
 
-Hinweise: Die belegten Biquads überschreibt der Block; Filter, die die GUI dort anzeigt, wirken nicht. Nach dem Laden
-eines Presets setzt der Block die Shelves neu. Die GUI kennt den Typ nicht und zeigt ihn nur als Nummer. Offen: ob der
-TAS3108 einen Koeffizientenblock ohne Knacken übernimmt (Messung am Gerät).
+Auslegung: Die GUI nennt die Flags 3/4 „Gain“ (Anzeige x,xx dB). Als feste Anhebung wären 0,01–2,5 dB zu wenig, deshalb
+gilt der Wert hier als Anstieg je dB Dämpfung. Die Bedeutung von Event 1 („de/aktiviert über Event“ im Dialog,
+„Loudness Input“ in der Liste) ist im Original nicht festgelegt; hier ist es die Lautstärke, ein- und ausgeschaltet wird
+über den Block selbst.
+
+Hinweise: Die belegten Biquads überschreibt der Block; Filter, die die GUI dort anzeigt, wirken nicht. Wird ein
+Ausgangspaar abgewählt, gehen seine Shelves auf 0 dB. Nach dem Laden eines Presets setzt der Block die Shelves neu.
+Offen: ob der TAS3108 einen Koeffizientenblock ohne Knacken übernimmt (Messung am Gerät).
 

@@ -659,16 +659,21 @@ uint8_t modc_type_version(uint8_t t)
 
 /* --- loudness (M6, #6) ----------------------------------------------------------------------
  * Equal-loudness compensation: the lower the volume below a reference, the more bass and treble
- * are raised (ISO 226 approximated by two shelves, 100 Hz and 10 kHz). Uses the last two
- * biquads of the chosen biquad channels (default 35/36 = stereo input path before the mixer),
- * these slots are reserved for it. Follows the volume in steps of 0.2 dB per MODC pass, writes
- * only the DSP (no EEPROM, no mute).
- *   event 1: volume source (0..255, gain scale 0.5 dB/step, 223 = 0 dB); 0 = gain.spdif.1
- *   set 1: reference (no boost at or above), 0 = 223      set 2/3: bass/treble boost in % of the
- *   attenuation (0 = 40/15)                               set 4: max boost in 0.5 dB (0 = 24, <= 24)
- *   flags 2/3: biquad channels (0 = 35/36)                output: bass boost in 0.5 dB steps */
+ * are raised (bass and treble shelf, ISO 226 approximated). Field layout as the loudness dialog
+ * of the original GUI (CTRL_LOUDNESS_Settings, "pro Kanalpaar"):
+ *   flags 1 bits 0..3  output pairs 1/2, 3/4, 5/6, 7/8: their last two biquads are used
+ *                      (second to last: bass shelf, last: treble shelf); PORT: bit 4 = input
+ *                      path 35/36 (before the mixer)
+ *   flags 3 / 4        bass / treble "gain" 1..250 (GUI: /100): boost in dB per dB of
+ *                      attenuation below the reference (0 = 0.40 / 0.15)
+ *   sets 1+2 / 3+4     bass / treble shelf frequency in Hz, little endian (0 = 100 / 10000)
+ *   event 1            "Loudness Input": volume, 0..255 in the gain scale (0.5 dB/step,
+ *                      223 = 0 dB); 0 = gain.spdif.1
+ *   PORT: flags 2      reference (no boost at or above), 0 = 223
+ * The boost is capped at 12 dB (data_power_gain), follows in 0.2 dB per MODC pass, writes only
+ * the DSP (no EEPROM, no mute). Output (event 96+N): bass boost in 0.5 dB steps. */
 static int16_t ld_cur[2][MODC_N + 1];   /* tenths of dB: [0] bass, [1] treble; -1 = rewrite */
-static uint8_t ld_valid[MODC_N + 1], ld_moving[MODC_N + 1];
+static uint8_t ld_valid[MODC_N + 1], ld_moving[MODC_N + 1], ld_mask[MODC_N + 1];
 
 /* run the loudness blocks again: volume source changed (gain.spdif) or biquads rewritten */
 void modc_loudness_touch(void)
@@ -717,38 +722,56 @@ static int16_t ld_step(int16_t cur, int16_t target)
 	return target;
 }
 
+static void loudness_channels(uint8_t mask, uint8_t *chs)  /* chs: 10 entries, 0 = none */
+{
+	for (uint8_t p = 0; p < 4; p++) {
+		chs[2 * p] = (mask & (1u << p)) ? (uint8_t)(2 * p + 1) : 0;
+		chs[2 * p + 1] = (mask & (1u << p)) ? (uint8_t)(2 * p + 2) : 0;
+	}
+	chs[8] = (mask & 0x10) ? 35 : 0;
+	chs[9] = (mask & 0x10) ? 36 : 0;
+}
+
+static void loudness_apply(uint8_t mask, uint8_t k, double f, int16_t tenths)
+{
+	uint8_t chs[10];
+	loudness_channels(mask, chs);
+	for (uint8_t c = 0; c < 10; c++)
+		if (chs[c])
+			loudness_write(chs[c], (uint8_t)(1 - k),  /* bass: last-1, treble: last */
+			               k == 0 ? BAS_DSP_BQTYPE_BASS_SHELF : BAS_DSP_BQTYPE_TREBLE_SHELF, f, tenths);
+}
+
 static void modc_loudness(void)
 {
+	uint8_t mask = FLAG(1) & 0x1F;
 	uint8_t vol = EVENT(1) ? EV(EVENT(1)) : api_get_spdif_vol(1);
-	uint8_t ref = SET(1) ? SET(1) : 223;
-	uint8_t pb = SET(2) ? SET(2) : 40, pt = SET(3) ? SET(3) : 15;
-	uint8_t maxb = SET(4) ? SET(4) : 24;
-	if (maxb > 24)
-		maxb = 24;  /* data_power_gain ends at 12 dB */
+	uint8_t ref = FLAG(2) ? FLAG(2) : 223;
+	uint8_t slope[2] = {FLAG(3) ? FLAG(3) : 40, FLAG(4) ? FLAG(4) : 15};
+	uint16_t fb = (uint16_t)(SET(1) | SET(2) << 8), ft = (uint16_t)(SET(3) | SET(4) << 8);
+	double freq[2] = {fb >= 10 && fb <= 20000 ? fb : 100.0, ft >= 10 && ft <= 40000 ? ft : 10000.0};
 	int16_t target[2] = {0, 0};
 	if (modc_enable[M] > 0 && vol < ref) {
 		int16_t att = (int16_t)((ref - vol) * 5);  /* tenths of dB */
-		target[0] = (int16_t)((int32_t)att * pb / 100);
-		target[1] = (int16_t)((int32_t)att * pt / 100);
-		for (uint8_t k = 0; k < 2; k++)
-			if (target[k] > maxb * 5)
-				target[k] = (int16_t)(maxb * 5);
+		for (uint8_t k = 0; k < 2; k++) {
+			int32_t t = (int32_t)att * slope[k] / 100;
+			target[k] = (int16_t)(t > 120 ? 120 : t);  /* 12 dB */
+		}
 	}
-	if (!ld_valid[M]) {
+	if (!ld_valid[M] || ld_mask[M] != mask) {
+		if (ld_valid[M] && (ld_mask[M] & ~mask))  /* channels dropped from the block: flat */
+			for (uint8_t k = 0; k < 2; k++)
+				loudness_apply((uint8_t)(ld_mask[M] & ~mask), k, freq[k], 0);
 		ld_cur[0][M] = ld_cur[1][M] = -1;
+		ld_mask[M] = mask;
 		ld_valid[M] = 1;
 	}
-	uint8_t chs[2] = {FLAG(2) ? FLAG(2) : 35, FLAG(3) ? FLAG(3) : 36};
 	uint8_t moving = 0;
 	for (uint8_t k = 0; k < 2; k++) {
 		/* switched off: straight to 0 dB, the block does not run again to finish a ramp */
 		int16_t next = modc_enable[M] ? ld_step(ld_cur[k][M], target[k]) : target[k];
 		if (next != ld_cur[k][M]) {
-			for (uint8_t c = 0; c < 2; c++)
-				if (c == 0 || chs[1] != chs[0])
-					loudness_write(chs[c], (uint8_t)(1 - k),  /* bass: last-1, treble: last */
-					               k == 0 ? BAS_DSP_BQTYPE_BASS_SHELF : BAS_DSP_BQTYPE_TREBLE_SHELF,
-					               k == 0 ? 100.0 : 10000.0, next);
+			loudness_apply(mask, k, freq[k], next);
 			ld_cur[k][M] = next;
 		}
 		if (next != target[k])
