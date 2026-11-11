@@ -2,8 +2,8 @@
 
 Ausgelesen am 11.11.2026 auf einem Forge DSP 96ELN (PCB 4.0) mit der Port-Firmware über `get.1 system.hardware.boot.N`
 (nur lesend, `tools/dump_bootsection.py`): 8 KiB ab 0x40000, davon 3774 Byte belegt, zweimal gelesen und identisch.
-Die Lockbits lassen das Lesen aus der Anwendung zu (Boot-Sektion `BLBB` = WLOCK, nicht RWLOCK). Das Binary liegt nicht im
-Repository (Build des Herstellers; chip45boot3 selbst steht unter MIT).
+Die Lockbits lassen das Lesen aus der Anwendung zu (Boot-Sektion `BLBB` = WLOCK, nicht RWLOCK). Abbild unter
+[`bootloader/`](../bootloader/) (chip45boot3, MIT).
 
 ## Startbedingung
 
