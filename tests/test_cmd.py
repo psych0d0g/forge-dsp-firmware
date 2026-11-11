@@ -1311,6 +1311,40 @@ class I2cCmdTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class ModcStoreTest(unittest.TestCase):
+    """MODC mainclock and ess9038pro write their settings to the EEPROM like the original."""
+
+    def addr(self, f, name):
+        import re
+        t = pathlib.Path(HERE, "..", "src", "flavours", f, "flavour_eram.h").read_text()
+        return int(re.search(rf"#define ERAM_{name} (\d+)", t).group(1))
+
+    def test_mainclock(self):
+        f = "V40-96ELN"
+        clk = table_words(f, "data_modc_mainclock")
+        p, ee = run(f, ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init", "#modc_init",
+                        "1|set.1 modc.9=[1,68,00000000,0,0,0,0,F4010300]", "#modc"],
+                    eeprom=image(f), want_eeprom=True)
+        fine = self.addr(f, "SI5338_CUSTOM_MCLK_FINE_TUNE")
+        out = self.addr(f, "SI5338_OUT_CLOCK_ERAM") + 3 * 4
+        self.assertEqual(int.from_bytes(ee[fine:fine + 2], "little"), 0x01F4)
+        self.assertEqual(int.from_bytes(ee[out:out + 4], "little"), clk[6] | clk[7] << 16)  # index 3
+
+    def test_ess9038pro(self):
+        f = "V41-96ELN-3"
+        reg = self.addr(f, "ES90X8PRO_FB_SYSMUTE_ERAM")
+        init, = consts(f, "ES90X8PRO_FB_SYSMUTE_INIT")
+        p, ee = run(f, ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init", "#modc_init",
+                        "1|set.1 modc.9=[1,79,00000000,0,0,0,0,05000000]", "#modc"],
+                    eeprom=image(f), want_eeprom=True)
+        self.assertEqual(ee[reg], 5)
+        p, ee = run(f, ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init", "#modc_init",
+                        "1|set.1 modc.9=[1,79,00000000,0,0,0,0,05000000]", "#modc", "1|set.1 modc.9.enable=0",
+                        "#modc"], eeprom=image(f), want_eeprom=True)
+        self.assertEqual(ee[reg], init)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

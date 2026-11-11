@@ -1,7 +1,7 @@
 /*
  * Port of libs/ctrl/modc/v20/functions.bas and subs/ctrl_* (preset, shutdown, mute, volumen,
- * logic, select, toggle, limiter, compare, calculator, spdif, mix_i, device_sync).
- * Not ported yet (blocks of these types do nothing): mainclock, ess9038pro.
+ * logic, select, toggle, limiter, compare, calculator, spdif, mix_i, device_sync, gain,
+ * gain_quad, gain_irrc, mainclock, ess9038pro): all block types of the original.
  * PORT: at sysinit the defaults are used without writing them to the EEPROM (see store_init).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
@@ -591,8 +591,47 @@ static void modc_gain_irrc(void)
 		event_set_value(BAS_EVENTS_FIELD_IR_VOLUME, a);
 	}
 }
-static void modc_mainclock(void) {}
-static void modc_ess9038pro(void) {}
+/* main clock: sets 1/2 = fine tune (integer), set 3 = index into data_modc_mainclock; stored in
+ * the EEPROM, used by si5338 at the next start. Written only when changed, as the original. */
+static void modc_mainclock(void)
+{
+#if BAS_MODC_VERSION_MAINCLOCK == 20
+	uint16_t fine = (uint16_t)(SET(1) | SET(2) << 8);
+	if (eram_rw(ERAM_SI5338_CUSTOM_MCLK_FINE_TUNE) != fine)
+		eram_ww(ERAM_SI5338_CUSTOM_MCLK_FINE_TUNE, fine);
+	uint8_t i = SET(3);
+	if (i >= sizeof data_modc_mainclock / 4)  /* PORT: the original reads beyond the table */
+		return;
+	uint32_t clk = (uint32_t)BAS_LOOKUP_W(data_modc_mainclock, 2 * i) |
+	               (uint32_t)BAS_LOOKUP_W(data_modc_mainclock, 2 * i + 1) << 16;
+	uint16_t a = ERAM_EL(SI5338_OUT_CLOCK_ERAM, BAS_SI5338_MAX_DRIVERS);
+	if (eram_rd(a) != clk)
+		eram_wd(a, clk);
+#endif
+}
+
+/* ES9038Pro: set 1 = system mute register value (filter/mute bits); default when disabled */
+static void modc_ess9038pro(void)
+{
+#if BAS_MODC_VERSION_ESS9038PRO == 20
+	if (CHG == 0)
+		return;
+	if (CHG & (1u << BAS_MODC_BIT_CHANGED_ONOFF))
+		CHG |= 1u << BAS_MODC_BIT_SETS;
+	if (!(CHG & (1u << BAS_MODC_BIT_SETS)))
+		return;
+	uint8_t a;
+	if (modc_enable[M] == 0) {
+		SET(1) = BAS_ES90X8PRO_FB_SYSMUTE_INIT;
+		eram_wb(ERAM_EL(MODC_SETS_ERAM, M), BAS_ES90X8PRO_FB_SYSMUTE_INIT);
+		a = BAS_ES90X8PRO_FB_SYSMUTE_INIT;
+	} else {
+		a = SET(1);
+	}
+	eram_wb(ERAM_ES90X8PRO_FB_SYSMUTE_ERAM, a);
+	out(a);
+#endif
+}
 
 void ctrl_modc_mainloop(void)
 {
