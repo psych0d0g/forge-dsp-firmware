@@ -1,12 +1,20 @@
 /*
  * Port of libs/cmd/v20/common/subs/cmd_system: baud, boot, channel.name, cycles, debug.*,
- * echo, errors, firmware, info, key.*, ping.
- * Not ported yet (answer "unknown command"): cfg.change, feature, gui, poti, temperature
- * (need api/events, issue #4), hardware.memory.eram (full EEPROM test + sysinit) and
- * reinit: a factory reset is only safe once every module with sysinit defaults is ported.
+ * echo, errors, firmware, info, key.*, ping, cfg.change, feature.attributes, gui.panes,
+ * poti, temperature.
+ * Not ported yet (answer "unknown command"): hardware.memory.eram (full EEPROM test + sysinit)
+ * and reinit: a factory reset is only safe once every module with sysinit defaults is ported.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include <math.h>
 #include <string.h>
+#include "api.h"
+#include "bas_data.h"
+#include "events.h"
+#include "flavour_data.h"
+#include "i2c.h"
+#include "store.h"
+#include "tas3108.h"
 #include "cmd.h"
 #include "flavour.h"
 #include "mcuid.h"
@@ -15,8 +23,6 @@
 #include "registers.h"
 
 /* hooks into later modules */
-void api_set_out_mute_change(void) __attribute__((weak));
-void api_set_out_mute_change(void) {}
 void mcu_reset_delayed(void);  /* power.c: debug_close, waitms 1000, software reset */
 
 #define Q() out_chr('"')
@@ -117,6 +123,22 @@ static void cmd_set_system_debug(void)
 	}
 }
 
+/* system.cfg.change=on|off: off keeps the outputs muted after changes until set back
+ * (auto unmute counter "on"), on unmutes 8 passes after the last change */
+static void cmd_set_system_cfg(void)
+{
+	if (req_w(cmd_req_word_three) != 0x6368 || req_w(cmd_req_word_four) != 0x0000) {
+		cmd_error_unknown();
+		return;
+	}
+	if (!(cmd_reg_var_states[1] & (1 << cmd_reg_state_isBoolean))) {
+		cmd_error_unknown_para();
+		return;
+	}
+	api_autounmute_counter = cmd_reg_var_integers[1] == 0 ? BAS_API_AUTOUNMUTE_SET : BAS_API_AUTOUNMUTE_ON;
+	cmd_answer_ok();
+}
+
 void cmd_set_system(void)
 {
 	api_set_out_mute_change();
@@ -125,7 +147,9 @@ void cmd_set_system(void)
 	case 0x626F: cmd_set_system_boot(); break;
 	case 0x6368: cmd_set_system_channel(); break;
 	case 0x6465: cmd_set_system_debug(); break;
-	/* PORT: 0x6366 cfg (api), 0x6861 hardware and 0x7265 reinit (factory reset) later */
+	case 0x6366: cmd_set_system_cfg(); break;
+	/* PORT: 0x6861 hardware.memory (EEPROM test with sysinit) and 0x7265 reinit (factory reset)
+	 * follow with the complete factory reset */
 	default: cmd_error_unknown();
 	}
 }
@@ -308,6 +332,117 @@ static void cmd_get_system_ping(void)
 	}
 }
 
+/* lookupstr(i, label) on a table of NUL-terminated strings */
+static void out_lookupstr(const uint8_t *t, uint8_t i)
+{
+	uint16_t p = 0;
+	while (i--)
+		while (bas_data_byte(&t[p++]) != 0)
+			;
+	for (uint8_t c; (c = bas_data_byte(&t[p])) != 0; p++)
+		out_chr((char)c);
+}
+
+static void cmd_get_system_feature(void)
+{
+	if (req_w(cmd_req_word_three) != 0x6174) {  /* attributes */
+		cmd_error_unknown();
+		return;
+	}
+	uint8_t a = BAS_FEATURE_ATTRIBUTES_NULL;
+	switch (req_w(cmd_req_word_four)) {
+	case 0x0000: cmd_answer_header(); out_str(BAS_FEATURE_ATTRIBUTES); out_crlf(); return;
+	case 0x6672: a = BAS_FEATURE_ATTRIBUTES_FR; break;
+	case 0x6877: a = BAS_FEATURE_ATTRIBUTES_HW; break;
+	case 0x6F61: a = BAS_FEATURE_ATTRIBUTES_OA; break;
+	case 0x6F62: a = BAS_FEATURE_ATTRIBUTES_OB; break;
+	}
+	if (a == BAS_FEATURE_ATTRIBUTES_NULL) {
+		cmd_error_unknown();
+		return;
+	}
+	cmd_two_character = req_w(cmd_req_word_four);
+	cmd_answer_header();
+	if (a == BAS_FEATURE_ATTRIBUTES_HW) {  /* expected and found peripherals */
+		out_chr('[');
+		out_u16(BAS_CHK_CHANNEL_OPEN); out_chr(','); out_u16(channel_open); out_chr(',');
+		out_u16(BAS_CHK_HARDWARE_DSP); out_chr(','); out_u16(hardware_dsp); out_chr(',');
+		out_u16(BAS_CHK_HARDWARE_OTHER); out_chr(','); out_u16(hardware_other);
+		out_chr(']');
+	} else {
+		out_lookupstr(data_feature_attributes, a);
+	}
+	out_crlf();
+}
+
+static void cmd_get_system_gui(void)
+{
+	if (req_w(cmd_req_word_three) != 0x7061) {  /* panes */
+		cmd_error_unknown();
+		return;
+	}
+	uint8_t a = BAS_GUI_PANES_NULL;
+	switch (req_w(cmd_req_word_four)) {
+	case 0x0000: cmd_answer_header(); out_str(BAS_GUI_PANES); out_crlf(); return;
+	case 0x6271: a = BAS_GUI_PANES_BQ; break;
+	case 0x696E: a = BAS_GUI_PANES_IN; break;
+	case 0x6F75: a = BAS_GUI_PANES_OU; break;
+	case 0x7379: a = BAS_GUI_PANES_SY; break;
+	}
+	if (a == BAS_GUI_PANES_NULL) {
+		cmd_error_unknown();
+		return;
+	}
+	cmd_two_character = req_w(cmd_req_word_four);
+	cmd_answer_header();
+	out_lookupstr(data_gui_panes, a);
+	out_crlf();
+}
+
+static void cmd_get_system_poti(void)
+{
+	switch (req_w(cmd_req_word_three)) {
+	case 0x2301: cmd_answer_header(); out_u16(events_adc_values[1]); out_crlf(); break;
+	case 0x2302: cmd_answer_header(); out_u16(events_adc_values[2]); out_crlf(); break;
+	default: cmd_error_unknown();
+	}
+}
+
+/* str(d, 2) */
+static void out_fixed2(double d)
+{
+	int32_t v = (int32_t)lround(d * 100.0);
+	if (v < 0) {
+		out_chr('-');
+		v = -v;
+	}
+	out_u16((uint16_t)(v / 100));
+	out_chr('.');
+	out_chr((char)('0' + v / 10 % 10));
+	out_chr((char)('0' + v % 10));
+}
+
+static void cmd_get_system_temp(void)
+{
+	if (events_adc_values[4] < events_adc_McuMaxTempOOR) {
+		cmd_answer_header();
+		out_str("nop");
+		out_crlf();
+		return;
+	}
+	double d = (double)(int32_t)events_adc_values[4] * events_adc_temp_correction;  /* kelvin */
+	switch (req_w(cmd_req_word_three)) {
+	case 0x0000:
+	case 0x6B65: break;                                    /* kelvin */
+	case 0x6365: d -= BAS_EVENTS_ADC_KELVIN2CELCIUS; break; /* celsius */
+	case 0x6661: d = (d - BAS_EVENTS_ADC_KELVIN2CELCIUS) * 1.8 + 32; break;
+	default: cmd_error_unknown(); return;
+	}
+	cmd_answer_header();
+	out_fixed2(d);
+	out_crlf();
+}
+
 void cmd_get_system(void)
 {
 	switch (req_w(cmd_req_word_two)) {
@@ -320,7 +455,10 @@ void cmd_get_system(void)
 	case 0x696E: cmd_get_system_info(); break;
 	case 0x6B65: cmd_get_system_key(); break;
 	case 0x7069: cmd_get_system_ping(); break;
-	/* PORT: 0x6665 feature, 0x6775 gui, 0x706F poti, 0x7465 temperature follow (issue #4) */
+	case 0x6665: cmd_get_system_feature(); break;
+	case 0x6775: cmd_get_system_gui(); break;
+	case 0x706F: cmd_get_system_poti(); break;
+	case 0x7465: cmd_get_system_temp(); break;
 	default: cmd_error_unknown();
 	}
 }

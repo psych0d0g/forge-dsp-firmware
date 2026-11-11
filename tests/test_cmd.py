@@ -1345,6 +1345,38 @@ class ModcStoreTest(unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class SystemRestTest(LinesMixin, unittest.TestCase):
+    """system.cfg.change, feature.attributes, gui.panes, poti, temperature."""
+
+    def test_system_rest(self):
+        for f in FLAVOURS:
+            out = self.lines(f, ["#adc_init", "#adc=1,0,2800", "#adc=0,1,1234", "#adc_loop",
+                                 "1|get.1 system.temperature.celsius", "1|get.1 system.poti.2",
+                                 "1|get.1 system.feature.attributes", "1|get.1 system.feature.attributes.fr",
+                                 "1|get.1 system.feature.attributes.hw", "1|get.1 system.gui.panes",
+                                 "1|get.1 system.gui.panes.sy", "1|set.1 system.cfg.change=off",
+                                 "1|set.1 system.cfg.change=7", "1|get.1 system.feature.attributes.xx"])[2:]
+            t85 = 0x0A00 - 204
+            c = (2800 - 204) * ((273.15 + 85.0) / t85) - 273.15
+            self.assertEqual(out[0], f"@0: <.1 system.temperature.celsius={c:.2f}\\r\\n", f)
+            self.assertEqual(out[1], "@0: <.1 system.poti.2=1234\\r\\n", f)
+            self.assertIn('=["fr","hw","oa","ob"]', out[2], f)
+            self.assertIn("system.feature.attributes.fr=[10,22000]", out[3], f)
+            hw = consts(f, "CHK_CHANNEL_OPEN", "CHK_HARDWARE_DSP", "CHK_HARDWARE_OTHER")
+            self.assertIn(f"system.feature.attributes.hw=[{hw[0]},", out[4], f)
+            self.assertIn(f",{hw[1]},", out[4], f)
+            self.assertIn('=["in","bq","ou","sy"]', out[5], f)
+            self.assertIn("system.gui.panes.sy=[", out[6], f)
+            self.assertIn("ok", out[7], f)
+            self.assertIn("unknown para", out[8], f)
+            self.assertIn("unknown command", out[9], f)
+
+    def test_temperature_out_of_range(self):
+        out = self.lines("V40-96ELN", ["#adc_init", "#adc=1,0,300", "#adc_loop", "1|get.1 system.temperature"])
+        self.assertEqual(out[-1], "@0: <.1 system.temperature=nop\\r\\n")
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

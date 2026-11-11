@@ -225,6 +225,7 @@ void events_spdif_mainloop(void) {}
 uint16_t events_adc_values[BAS_EVENTS_ADC_CHANNELS + 1];
 uint16_t events_adc_McuMaxTempOOR, events_adc_McuMaxTemp85C, events_adc_McuMaxTemp90C,
          events_adc_McuMaxTemp95C, events_adc_McuMaxTemp100C;
+double events_adc_temp_correction;
 static uint8_t events_adc_counter;
 static uint16_t adc_buf1[BAS_EVENTS_ADC_MAX_COUNT + 1], adc_buf2[BAS_EVENTS_ADC_MAX_COUNT + 1];
 #if BAS_FEATURE_MCU_TEMP > 0
@@ -237,6 +238,7 @@ void events_adc_init(void)
 	/* the factory reading at 85 °C gives the kelvin per count factor */
 	events_adc_McuMaxTemp85C = (uint16_t)(adc_hw_tempsense() - BAS_EVENTS_ADC_DELTAV);
 	double corr = (BAS_EVENTS_ADC_KELVIN2CELCIUS + 85.0) / (double)(int32_t)events_adc_McuMaxTemp85C;
+	events_adc_temp_correction = corr;
 	events_adc_McuMaxTempOOR = (uint16_t)(int32_t)((BAS_EVENTS_ADC_KELVIN2CELCIUS - 40.0) / corr);
 	events_adc_McuMaxTemp90C = (uint16_t)(int32_t)((BAS_EVENTS_ADC_KELVIN2CELCIUS + 90.0) / corr);
 	events_adc_McuMaxTemp95C = (uint16_t)(int32_t)((BAS_EVENTS_ADC_KELVIN2CELCIUS + 95.0) / corr);

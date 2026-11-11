@@ -29,6 +29,7 @@ void events_adc_mainloop_41(void);
 extern uint16_t events_adc_values[BAS_EVENTS_ADC_CHANNELS + 1];  /* 1, 2 pots, 3 peak temp, 4 temp */
 extern uint16_t events_adc_McuMaxTempOOR, events_adc_McuMaxTemp85C, events_adc_McuMaxTemp90C,
                 events_adc_McuMaxTemp95C, events_adc_McuMaxTemp100C;
+extern double events_adc_temp_correction;  /* kelvin per count */
 void events_spdif_init(void);
 void events_spdif_mainloop(void);
 #endif
