@@ -35,9 +35,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pip install -q platformio
-          pio pkg install -g -t "platformio/toolchain-atmelavr@~1.70300.0"
-          T=~/.platformio/packages/toolchain-atmelavr/bin
+          tools/get-toolchain.sh
+          T=.toolchain/avr-gcc/bin
           gh release download 0.0.1116000 --repo "$GITHUB_REPOSITORY" --dir release-hex --pattern "*.hex"
           for f in $(ls src/flavours); do
             python3 tools/verify_eram.py "src/flavours/$f/flavour_eram.h" \
@@ -68,9 +67,13 @@ jobs:
           python-version: "3.12"
       - uses: actions/cache@v4
         with:
-          path: ~/.platformio
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          path: |
+            ~/.platformio
+            ~/.cache/forge-dsp
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini', 'tools/get-toolchain.sh') }}
       - run: pip install platformio
+      - name: avr-gcc 16.1 (pinned sha256)
+        run: tools/get-toolchain.sh
       - name: Build ${{ matrix.flavour }}
         run: pio run -e "${{ matrix.flavour }}"
       - uses: actions/upload-artifact@v4
