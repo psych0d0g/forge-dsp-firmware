@@ -248,6 +248,15 @@ static void store_cmd(const char *l)
 	} else if (!strncmp(l, "#event?", 7)) {      /* #event?N: value and change counter */
 		int n = atoi(l + 7);
 		printf("@event%d:%u,%u\n", n, events_field_value[n], events_is_changed[n]);
+	} else if (!strncmp(l, "#factory=", 9)) {     /* FORGE_FACTORY_RESET at run time */
+		extern uint8_t factory_reset_enabled;
+		factory_reset_enabled = (uint8_t)atoi(l + 9);
+	} else if (!strcmp(l, "#at24_detect")) {
+		at24c512_detect();
+		printf("@hw:%04X\n", hardware_other);
+	} else if (!strcmp(l, "#sys_init_init")) {
+		void sys_init_init(void);
+		sys_init_init();
 	} else if (!strcmp(l, "#store_init")) {
 		store_init();
 	} else if (!strcmp(l, "#mainloop")) {        /* one main loop of the audio part */

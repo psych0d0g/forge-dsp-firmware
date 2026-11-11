@@ -7,6 +7,7 @@
 #include "i2c.h"
 #include "registers.h"
 #include "store.h"
+#include "factory.h"
 #include "biquad.h"
 #include "dsp.h"
 void watchdog_kick(void);
@@ -21,6 +22,9 @@ uint8_t storage_flags, storage_flags_check;
 #define STORE_RDY (hardware_other & (1u << BAS_AT24C512_STORE_RDY))
 #define BUS 1  /* #5 */
 
+static void address(uint16_t a);
+void eeprom_init(void);
+
 void at24c512_detect(void)
 {
 	if (!(channel_open & (1u << 5)))
@@ -32,16 +36,79 @@ void at24c512_detect(void)
 	else
 		errorcount((uint8_t)(BAS_AT24C512_STORE_RDY + BAS_ERRORCOUNT_OFFSET_OTHER));
 	twi_stop(BUS);
+	eeprom_init();
+}
+
+uint8_t factory_reset_enabled = FORGE_FACTORY_RESET;
+
+/* eeprom_clear_mem: the whole AT24C512 to 0xFF in pages of 128 bytes */
+static void eeprom_clear_mem(void)
+{
+	uint16_t a = 0;
+	uint8_t page = 0;
+	twi_start(BUS);
+	twi_wbyte(BUS, BAS_EEPROM_ADR_W);
+	address(a);
+	for (uint32_t count = 0; count <= BAS_EEPROM_CLEAR_COUNT; count++) {
+		twi_wbyte(BUS, 0xFF);
+		a++;
+		page++;
+		if (page > BAS_EEPROM_PAGE_SIZE) {
+			twi_stop(BUS);
+			delay_ms(BAS_EEPROM_PAGE_WRITE_DELAY);
+			twi_start(BUS);
+			twi_wbyte(BUS, BAS_EEPROM_ADR_W);
+			address(a);
+			page = 0;
+			watchdog_kick();
+		}
+	}
+	twi_stop(BUS);
+	delay_ms(BAS_EEPROM_PAGE_WRITE_DELAY);
+}
+
+static void eeprom_check_mem(void)
+{
+	uint8_t e = 0;
+	uint16_t w = 0;
+	for (uint16_t frame = 0; frame <= BAS_EEPROM_CLEAR_COUNT / BAS_BUFFER_BYTES_MAX; frame++) {
+		i2c_device_addr = BAS_EEPROM_ADR_W;
+		i2c_addr = w;
+		i2c_size = BAS_BUFFER_BYTES_MAX;
+		i2c_rbuffer_highreg(BUS);
+		for (uint8_t i = 1; i <= BAS_BUFFER_BYTES_MAX; i++)
+			if (buffer_bytes[i] < 0xFF && e < 0xFF)
+				e++;
+		w = (uint16_t)(w + BAS_BUFFER_BYTES_MAX);
+		watchdog_kick();
+	}
+	if (e)
+		errorcount(BAS_ERRORCOUNT_SW_EEPROM);
+}
+
+/* libs/eeprom/at24c512 eeprom_init: erased and checked at a factory reset */
+void eeprom_init(void)
+{
+	if (STORE_RDY && factory_write()) {
+		eeprom_clear_mem();
+		eeprom_check_mem();
+	}
 }
 
 void store_init(void)
 {
 	storage_flags = 0;
 	storage_flags_check = 0;
-	/* PORT: at sysinit the original erases preset 1 and copies it to all presets
-	 * (store_erase_preset, store_copy_preset). Not done until the factory reset is
-	 * ported completely: the port keeps startup_state at sysinit for now, and this
-	 * branch would wipe the tuning at every start. */
+	if (factory_write()) {  /* preset 0 to defaults, copied to all presets, selected */
+		store_preset = 0x00;
+		store_erase_preset();
+		for (uint8_t count = 1; count < BAS_MODUL_MAX_PRESET; count++) {
+			store_preset_copy_from = 0;
+			store_preset_copy_to = count;
+			store_copy_preset();
+		}
+		store_set_preset();
+	}
 	store_preset = 0xFF;  /* preset not loaded */
 }
 

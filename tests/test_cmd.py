@@ -1377,6 +1377,87 @@ class SystemRestTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class FactoryResetTest(unittest.TestCase):
+    """Factory reset (sysinit) of the original, FORGE_FACTORY_RESET=1 (#factory=1 in the harness)."""
+
+    def eram(self, f, name):
+        import re
+        t = pathlib.Path(HERE, "..", "src", "flavours", f, "flavour_eram.h").read_text()
+        return int(re.search(rf"#define ERAM_{name} (\d+)", t).group(1))
+
+    def run_at24(self, f, lines, at24):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d)
+            (d / "a.bin").write_bytes(bytes(at24))
+            for n in (1, 2, 3):
+                (d / f"e{n}.bin").write_bytes(b"\x55" * 65536)
+            pre = [f"#at24={d / 'a.bin'}", f"#at24out={d / 'o.bin'}"]
+            for n in (1, 2, 3):
+                pre += [f"#dspee={n},{d / f'e{n}.bin'}", f"#dspee_out={n},{d / f'eo{n}.bin'}"]
+            p, ee = run(f, pre + lines, want_eeprom=True)   # blank internal EEPROM: sysinit
+            return p, ee, (d / "o.bin").read_bytes()
+
+    def test_preset_eeprom_erase_and_defaults(self):
+        import random
+        f = "V40-96ELN"
+        at24 = bytearray(random.Random(3).randrange(256) for _ in range(65536))
+        p, ee, o = self.run_at24(f, ["#factory=1", "#at24_detect"], at24)
+        self.assertEqual(o, b"\xff" * 65536)                       # eeprom_clear_mem
+        p, ee, o = self.run_at24(f, ["#factory=1", "#at24_detect", "#store_init"], at24)
+        fs, cb, nmax = consts(f, "STORAGE_FRAMESIZE", "STORAGE_CHKSUM_BASE", "MODUL_MAX_PRESET")
+        vin_b, vin_d = consts(f, "STORAGE_VOL_IN_BASE", "STORE_VOL_IN_DEFAULT")
+        av = table_words(f, "data_store_addr_values")
+        for n in range(nmax):
+            fr = o[av[n]:av[n] + fs]
+            self.assertEqual(fr[vin_b - 1], vin_d, n)
+            self.assertEqual(int.from_bytes(fr[cb - 1:cb + 1], "little"), xmodem(fr[:cb - 1]), n)
+        reg, = consts(f, "REG_LOAD_PRESET")
+        self.assertEqual(ee[self.eram(f, "REGISTERS_ERAM") + reg - 1], 0)   # store_set_preset
+
+    def test_without_flag_nothing_is_erased(self):
+        import random
+        f = "V40-96ELN"
+        at24 = bytearray(random.Random(3).randrange(256) for _ in range(65536))
+        p, ee, o = self.run_at24(f, ["#at24_detect", "#store_init", "#events_init", "#modc_init", "#ir_init"], at24)
+        self.assertEqual(o, bytes(at24))
+        self.assertEqual(ee[self.eram(f, "MODC_TYPE_ERAM"):self.eram(f, "MODC_TYPE_ERAM") + 32], b"\xff" * 32)
+
+    def test_internal_defaults(self):
+        f = "V40-96ELN"
+        p, ee = run(f, ["#factory=1", "#events_init", "#modc_init", "#ir_init", "#sys_init_init"], want_eeprom=True)
+        a = self.eram(f, "EVENTS_FIELD_INIT_ERAM")
+        self.assertEqual(ee[a:a + 128], table_bytes(f, "events_field_init_values"))
+        a = self.eram(f, "MODC_TYPE_ERAM")
+        self.assertEqual(ee[a:a + 32], table_bytes(f, "modc_type_default"))
+        a = self.eram(f, "MODC_SETS_ERAM")
+        self.assertEqual(ee[a:a + 128], table_bytes(f, "modc_sets_default"))
+        a = self.eram(f, "IRRECEIVER_CUSTOM_HEADER_ERAM")
+        self.assertEqual(ee[a:a + 36], b"\xff" * 36)
+        reg, = consts(f, "REG_EXT_IRSETUP")
+        self.assertEqual(ee[self.eram(f, "REGISTERS_ERAM") + reg - 1], 0)
+        a = self.eram(f, "SYS_INIT_SETS_ERAM")
+        self.assertEqual(ee[a], 0)                                    # "" = empty string
+
+    def test_reinit_and_memory_commands(self):
+        f = "V40-96ELN"
+        st, = consts(f, "REG_STARTUP_STATE")
+        p, ee = run(f, ["1|set.1 system.reinit"], eeprom=image(f), want_eeprom=True)
+        self.assertIn("unknown command", p.stdout)                   # without the flag
+        p, ee = run(f, ["#factory=1", "1|set.1 system.reinit"], eeprom=image(f), want_eeprom=True)
+        self.assertIn("*.1 system.reinit ok", p.stdout)
+        self.assertIn("@reset", p.stdout)
+        a = self.eram(f, "REGISTERS_ERAM")
+        self.assertEqual(ee[a + st - 1], 255)                         # startup_state_sysinit
+        p, ee = run(f, ["#factory=1", "1|set.1 system.hardware.memory.eram"], eeprom=image(f), want_eeprom=True)
+        self.assertIn("system.hardware.memory.eram=ok(&H0F)", p.stdout)
+        self.assertIn("system.hardware.memory.eram=ok(&HF0)", p.stdout)
+        self.assertIn("@reset", p.stdout)
+        self.assertEqual(ee[a + st - 1], 255)
+        self.assertEqual(ee[:a], b"\xf0" * a)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

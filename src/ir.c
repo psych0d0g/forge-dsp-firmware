@@ -1,7 +1,7 @@
 /*
  * Port of libs/extender/ir-receiver (functions.bas, NEC/, RC6/, SAMSUNG/, CUSTOM/) and the
  * capture parts of libs/ctrl/timer (timer_TCC1_int) and libs/interface/V40/3 (iface_ch3_rx_int).
- * PORT: at sysinit the setup register and the custom codes are not written (see store_init).
+ * At sysinit setup register and custom codes are written only with the factory reset (factory.h).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "ir.h"
@@ -10,6 +10,7 @@
 #include "events.h"
 #include "modc.h"
 #include "registers.h"
+#include "factory.h"
 #include "store.h"
 
 volatile uint8_t irreceiver_state;
@@ -40,8 +41,10 @@ static uint16_t nec_frames[4];
 
 void irreceiver_init(void)
 {
-	/* sysinit: setup register to irreceiver_setup_default; PORT: in RAM only (see store_init) */
-	if (registers[BAS_REG_STARTUP_STATE] == BAS_STARTUP_STATE_SYSINIT)
+	/* sysinit: setup register to irreceiver_setup_default (EEPROM only with the factory reset) */
+	if (factory_write())
+		set_register(BAS_REG_EXT_IRSETUP, 0x00);
+	else if (sysinit_active())
 		registers[BAS_REG_EXT_IRSETUP] = 0x00;
 	irreceiver_analyze_echo = 1;
 	irreceiver_value_min = 0x00;
@@ -54,6 +57,9 @@ void irreceiver_init(void)
 
 void ir_custom_init(void)
 {
+	if (factory_write())
+		for (uint8_t i = 1; i <= IR_CUSTOM_MAX; i++)
+			ir_custom_set(i, 0xFFFF, 0xFFFF, 0xFFFF);  /* irreceiver_custom_init */
 	for (uint8_t i = 1; i <= IR_CUSTOM_MAX; i++) {
 		irreceiver_custom[1][i] = eram_rw(ERAM_EL(IRRECEIVER_CUSTOM_HEADER_ERAM, i));
 		irreceiver_custom[2][i] = eram_rw(ERAM_EL(IRRECEIVER_CUSTOM_ADDRESS_ERAM, i));

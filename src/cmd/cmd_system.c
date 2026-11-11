@@ -1,9 +1,7 @@
 /*
  * Port of libs/cmd/v20/common/subs/cmd_system: baud, boot, channel.name, cycles, debug.*,
  * echo, errors, firmware, info, key.*, ping, cfg.change, feature.attributes, gui.panes,
- * poti, temperature.
- * Not ported yet (answer "unknown command"): hardware.memory.eram (full EEPROM test + sysinit)
- * and reinit: a factory reset is only safe once every module with sysinit defaults is ported.
+ * poti, temperature, reinit and hardware.memory.eram (both only with FORGE_FACTORY_RESET).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
 #include <math.h>
@@ -15,6 +13,8 @@
 #include "i2c.h"
 #include "store.h"
 #include "tas3108.h"
+#include "factory.h"
+void watchdog_kick(void);
 #include "cmd.h"
 #include "flavour.h"
 #include "mcuid.h"
@@ -123,6 +123,80 @@ static void cmd_set_system_debug(void)
 	}
 }
 
+/* system.reinit: factory reset at the next start (deletes all tuning). PORT: only with
+ * FORGE_FACTORY_RESET, otherwise "unknown command" (the port would only use defaults in RAM). */
+static void cmd_set_system_reinit(void)
+{
+	if (!factory_reset_enabled || req_w(cmd_req_word_three) != 0x0000) {
+		cmd_error_unknown();
+		return;
+	}
+	set_register(BAS_REG_STARTUP_STATE, BAS_STARTUP_STATE_SYSINIT);
+	cmd_answer_ok();
+	mcu_reset_delayed();
+}
+
+/* system.hardware.memory.eram: writes 0x0F and 0xF0 to the whole internal EEPROM, reads back,
+ * then factory reset. PORT: only with FORGE_FACTORY_RESET. */
+static const uint16_t memory_eram_event[cmd_req_words_max] = {0x0104, 0x7379, 0x6861, 0x6D65, 0x6572};
+
+static void hex2s(char *p, uint8_t b)
+{
+	static const char h[] = "0123456789ABCDEF";
+	p[0] = h[b >> 4];
+	p[1] = h[b & 15];
+}
+
+static void mem_pass(uint8_t v)
+{
+	uint16_t e = 0;
+	for (uint16_t w = 0; w <= BAS_MCU_ERAM_SIZE; w++) {
+		eram_wb(w, v);
+		watchdog_kick();
+	}
+	for (uint16_t w = 0; w <= BAS_MCU_ERAM_SIZE; w++) {
+		uint8_t r = eram_rb(w);
+		if (r != v) {
+			e++;
+			char t[40] = "error@addr[&H";
+			char *p = t + 13;
+			hex2s(p, (uint8_t)(w >> 8)); p += 2;  /* hex() of a word: 4 digits */
+			hex2s(p, (uint8_t)w); p += 2;
+			*p++ = ']'; *p++ = '&'; *p++ = 'H'; hex2s(p, v); p += 2;
+			*p++ = ':'; *p++ = '&'; *p++ = 'H'; hex2s(p, r); p += 2;
+			*p = 0;
+			cmd_load_header(memory_eram_event);
+			cmd_answer_header();
+			out_str(t);
+			out_crlf();
+		}
+		watchdog_kick();
+	}
+	if (e == 0) {
+		char t[12] = "ok(&H";
+		hex2s(t + 5, v);
+		t[7] = ')';
+		t[8] = 0;
+		cmd_load_header(memory_eram_event);
+		cmd_answer_header();
+		out_str(t);
+		out_crlf();
+	}
+}
+
+static void cmd_set_system_hardware(void)
+{
+	if (!factory_reset_enabled || req_w(cmd_req_word_three) != 0x6D65 || req_w(cmd_req_word_four) != 0x6572) {
+		cmd_error_unknown();
+		return;
+	}
+	cmd_answer_ok();
+	mem_pass(0x0F);
+	mem_pass(0xF0);
+	set_register(BAS_REG_STARTUP_STATE, BAS_STARTUP_STATE_SYSINIT);
+	mcu_reset_delayed();
+}
+
 /* system.cfg.change=on|off: off keeps the outputs muted after changes until set back
  * (auto unmute counter "on"), on unmutes 8 passes after the last change */
 static void cmd_set_system_cfg(void)
@@ -148,8 +222,8 @@ void cmd_set_system(void)
 	case 0x6368: cmd_set_system_channel(); break;
 	case 0x6465: cmd_set_system_debug(); break;
 	case 0x6366: cmd_set_system_cfg(); break;
-	/* PORT: 0x6861 hardware.memory (EEPROM test with sysinit) and 0x7265 reinit (factory reset)
-	 * follow with the complete factory reset */
+	case 0x6861: cmd_set_system_hardware(); break;
+	case 0x7265: cmd_set_system_reinit(); break;
 	default: cmd_error_unknown();
 	}
 }

@@ -2,7 +2,7 @@
  * Port of libs/ctrl/modc/v20/functions.bas and subs/ctrl_* (preset, shutdown, mute, volumen,
  * logic, select, toggle, limiter, compare, calculator, spdif, mix_i, device_sync, gain,
  * gain_quad, gain_irrc, mainclock, ess9038pro): all block types of the original.
- * PORT: at sysinit the defaults are used without writing them to the EEPROM (see store_init).
+ * At sysinit the defaults are written only with the factory reset enabled (factory.h).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "modc.h"
@@ -16,6 +16,7 @@
 #include "i2c.h"
 #include "iface.h"
 #include "registers.h"
+#include "factory.h"
 #include "store.h"
 #include "tick.h"
 #include "ir.h"
@@ -88,7 +89,20 @@ uint8_t modc_shutdown_enabled(void)
 
 void ctrl_modc_init(void)
 {
-	uint8_t sysinit = registers[BAS_REG_STARTUP_STATE] == BAS_STARTUP_STATE_SYSINIT;
+	uint8_t sysinit = sysinit_active();
+	if (factory_write()) {  /* defaults into the EEPROM */
+		watchdog_kick();
+		for (uint8_t i = 1; i <= MODC_N; i++) {
+			eram_wb(ERAM_EL(MODC_ENABLE_ERAM, i), BAS_LOOKUP_B(modc_enable_default, i - 1));
+			eram_wb(ERAM_EL(MODC_TYPE_ERAM, i), BAS_LOOKUP_B(modc_type_default, i - 1));
+		}
+		for (uint8_t i = 1; i <= 4 * MODC_N; i++) {
+			eram_wb(ERAM_EL(MODC_FLAGS_ERAM, i), BAS_LOOKUP_B(modc_flags_default, i - 1));
+			eram_wb(ERAM_EL(MODC_EVENTS_ERAM, i), BAS_LOOKUP_B(modc_events_default, i - 1));
+			eram_wb(ERAM_EL(MODC_SETS_ERAM, i), BAS_LOOKUP_B(modc_sets_default, i - 1));
+			watchdog_kick();
+		}
+	}
 	for (uint8_t i = 1; i <= MODC_N; i++) {
 		modc_enable[i] = sysinit ? BAS_LOOKUP_B(modc_enable_default, i - 1) : eram_rb(ERAM_EL(MODC_ENABLE_ERAM, i));
 		modc_type[i] = sysinit ? BAS_LOOKUP_B(modc_type_default, i - 1) : eram_rb(ERAM_EL(MODC_TYPE_ERAM, i));

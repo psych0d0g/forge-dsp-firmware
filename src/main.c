@@ -25,6 +25,10 @@
 #include "loopcall.h"
 #include "modc.h"
 #include "ir.h"
+#include "factory.h"
+#if FORGE_FACTORY_RESET && !FORGE_BRINGUP
+#error "FORGE_FACTORY_RESET needs FORGE_BRINGUP=1 (the modules write their defaults in the bring-up path)"
+#endif
 #include <util/delay.h>
 #include "tick.h"
 #include "version.h"
@@ -106,14 +110,23 @@ int main(void)
 	PIN_CLR(PIN_LED_RED);
 	sysinit_count_boot();
 
-	/* end of main.bas: "system.boot=ok" to COM master/USB. After a factory reset the original
-	 * first sends "system.reinit=ok", sets startup_state_done and resets; the port keeps
-	 * startup_state at sysinit until the factory reset is complete (store_init), so it
-	 * sends only the boot event. */
-	static const uint16_t bootrdy_event[cmd_req_words_max] = {0x0104, 0x7379, 0x626F, 0x0000, 0x0000};
 	cmd_req_value[0] = 'o';
 	cmd_req_value[1] = 'k';
 	cmd_req_value[2] = 0;
+#if FORGE_BRINGUP && FLAVOUR_SYSTEMINIT_COMPLETE
+	/* end of systeminit.bas after a factory reset: "system.reinit=ok", startup_state_done,
+	 * reset ("only in this case the irrc init will work right"). Without FORGE_FACTORY_RESET
+	 * the defaults were only used in RAM and startup_state stays at sysinit. */
+	if (factory_write()) {
+		static const uint16_t reinit_event[cmd_req_words_max] = {0x0104, 0x7379, 0x7265, 0x0000, 0x0000};
+		cmd_load_header(reinit_event);
+		cmd_sendevent();
+		set_register(BAS_REG_STARTUP_STATE, BAS_STARTUP_STATE_DONE);
+		mcu_reset_delayed();
+	}
+#endif
+	/* end of main.bas: "system.boot=ok" to COM master/USB */
+	static const uint16_t bootrdy_event[cmd_req_words_max] = {0x0104, 0x7379, 0x626F, 0x0000, 0x0000};
 	cmd_load_header(bootrdy_event);
 	cmd_sendevent();
 

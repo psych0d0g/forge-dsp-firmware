@@ -12,6 +12,7 @@
 #include "flavour_data.h"
 #include "i2c.h"
 #include "registers.h"
+#include "factory.h"
 
 uint8_t events_field_value[BAS_MAX_EVENTS + 1];
 uint8_t events_is_changed[BAS_MAX_EVENTS + 1];
@@ -32,11 +33,13 @@ void events_init_set(uint8_t nr, uint8_t value)
 
 void ctrl_events_init(void)
 {
-	/* PORT: at sysinit the original writes events_field_init_values to the EEPROM. The port
-	 * keeps startup_state at sysinit until the factory reset is complete (see store_init),
-	 * so it only uses the defaults here instead of writing them at every start. */
-	uint8_t sysinit = registers[BAS_REG_STARTUP_STATE] == BAS_STARTUP_STATE_SYSINIT;
+	/* at sysinit the defaults events_field_init_values; written to the EEPROM only with
+	 * the factory reset enabled (factory.h), otherwise used from RAM */
+	uint8_t sysinit = sysinit_active();
+	uint8_t write = factory_write();
 	for (uint8_t i = 1; i <= BAS_MAX_EVENTS; i++) {
+		if (write)
+			events_init_set(i, BAS_LOOKUP_B(events_field_init_values, i - 1));
 		events_field_value[i] = sysinit ? BAS_LOOKUP_B(events_field_init_values, i - 1) : events_init_get(i);
 		events_bind_modc[i] = 0;
 	}

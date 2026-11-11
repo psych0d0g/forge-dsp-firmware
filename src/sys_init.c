@@ -11,15 +11,18 @@
 #include "eram.h"
 #include "flavour.h"
 #include "registers.h"
+#include "factory.h"
 
 static uint8_t sys_init_sets_exe_count, sys_init_sets_exe_state;
 
 void sys_init_init(void)
 {
-	/* PORT: at sysinit the original clears the sets in the EEPROM (see store_init) */
 	sys_init_sets_exe_count = 0;
 	sys_init_sets_exe_state = 0;
-	if (registers[BAS_REG_STARTUP_STATE] == BAS_STARTUP_STATE_SYSINIT)
+	if (factory_write())  /* sets cleared ("") */
+		for (uint8_t i = 1; i <= ERAM_SYS_INIT_SETS_ERAM_COUNT; i++)
+			eram_write_str(ERAM_EL(SYS_INIT_SETS_ERAM, i), ERAM_SYS_INIT_SETS_ERAM_SIZE, "");
+	if (sysinit_active())
 		return;
 	for (uint8_t i = 1; i <= ERAM_SYS_INIT_SETS_ERAM_COUNT; i++) {
 		uint8_t c = eram_rb(ERAM_EL(SYS_INIT_SETS_ERAM, i));
