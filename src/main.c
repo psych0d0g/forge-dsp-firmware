@@ -23,6 +23,7 @@
 #include "api.h"
 #include "events.h"
 #include "loopcall.h"
+#include "modc.h"
 #include <util/delay.h>
 #include "tick.h"
 #include "version.h"
@@ -74,7 +75,7 @@ int main(void)
 	events_poll_pins();
 	if (PIN_READ(PIN_OPTION_SPDIF_4CH) == 0x00)
 		events_spdif_init();
-	modc_request_preset(registers[BAS_REG_LOAD_PRESET]);  /* ctrl_modc_init without MODC entries */
+	ctrl_modc_init();     /* blocks from the EEPROM; requests the preset load */
 #else
 	/* safe state: only detection; peripheral resets held, power-up bits off */
 	si5338_detect_and_init();
@@ -100,6 +101,10 @@ int main(void)
 		loopcall(loopcall_take());
 #else
 		cmd_check4buffer();
+#endif
+#if FORGE_BRINGUP && FLAVOUR_SYSTEMINIT_COMPLETE
+		/* shutdown is a MODC block (delays from its sets); fallback if none is enabled */
+		if (!modc_shutdown_enabled())
 #endif
 		power_poll(now);
 		if ((uint16_t)(now - last) >= 500) {

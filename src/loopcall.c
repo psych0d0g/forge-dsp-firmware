@@ -8,6 +8,7 @@
 #include "board.h"
 #include "cmd.h"
 #include "events.h"
+#include "modc.h"
 #include "registers.h"
 #include "store.h"
 #include "tick.h"
@@ -19,7 +20,6 @@ W void events_adc_mainloop_32(void) {}
 W void events_adc_mainloop_41(void) {}
 W void sys_init_mainloop(void) {}
 W void events_vumeter_mainloop(void) {}
-W void ctrl_modc_mainloop(void) { modc_cleanup_mainloop(); }
 void watchdog_kick(void);
 
 #define B(n) (bits & (1u << (n)))

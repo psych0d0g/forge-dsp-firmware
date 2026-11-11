@@ -128,6 +128,8 @@ void cmd_get_biquad(void);
 void cmd_set_event(void);
 void cmd_get_event(void);
 void cmd_set_com(void);
+void cmd_set_modc(void);
+void cmd_get_modc(void);
 
 /* events to the GUI: header words from a table (BASCOM: restore + read), value in cmd_req_value */
 void cmd_load_header(const uint16_t words[cmd_req_words_max]);

@@ -1098,6 +1098,109 @@ class EventTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class ModcTest(LinesMixin, unittest.TestCase):
+    """libs/ctrl/modc/v20 and cmd_modc. Block output n = event 96 + n."""
+
+    PRE = ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#pin=PIN_PERIPHERAL_AD_OVERFLOW,1", "#events_init", "#events_poll",
+           "#modc_init"]
+
+    def val(self, out, n):
+        return int([l for l in out if l.startswith(f"@event{n}:")][-1].split(":")[1].split(",")[0])
+
+    def test_defaults_listing_and_config(self):
+        for f in FLAVOURS:
+            en = table_bytes(f, "modc_enable_default")
+            ty = table_bytes(f, "modc_type_default")
+            out = self.lines(f, self.PRE + ["1|get.1 modc.*", "1|get.1 modc.32", "1|set.1 modc.32.type=0",
+                                            "1|set.1 modc.0.type=0", "1|set.1 modc.33.type=0",
+                                            "1|set.1 modc.7=[1,48,03000000,70,71,0,0,01020000]", "1|get.1 modc.7",
+                                            "1|set.1 modc.7.sets.2=9", "1|get.1 modc.7.sets", "1|get.1 modc.7.flags.1",
+                                            "1|set.1 modc.7.type=63", "1|get.1 modc.7", "1|set.1 modc.7=[1,2]"])
+            txt = "\n".join(out)
+            self.assertEqual(txt.count("<.1 modc.") - txt.count("<.1 modc.7") - 1, sum(1 for t in ty if t), f)
+            self.assertIn(f"<.1 modc.32=[{en[31]},{ty[31]},", out[1], f)
+            for i in (2, 3, 4):
+                self.assertIn("command out of range", out[i], f)       # block 32 is fixed, 0/33 invalid
+            self.assertIn("<.1 modc.7=[1,48,03000000,70,71,0,0,01020000]", txt, f)
+            self.assertIn("<.1 modc.7.sets=[1,9,0,0]", txt, f)
+            self.assertIn("<.1 modc.7.flags.1=3", txt, f)
+            self.assertIn("<.1 modc.7=[0,0,00000000,0,0,0,0,00000000]", txt, f)  # unknown type -> empty
+            self.assertIn("unknown para", out[-1], f)
+
+    def test_config_is_stored_in_eeprom(self):
+        f = "V41-96ELN-3"
+        img = bytearray(image(f))
+        p, ee = run(f, ["1|set.1 modc.7=[1,48,03000000,70,71,0,0,01020000]"], eeprom=bytes(img), want_eeprom=True)
+        import re
+        t = pathlib.Path(HERE, "..", "src", "flavours", f, "flavour_eram.h").read_text()
+        a = {n: int(re.search(rf"#define ERAM_MODC_{n}_ERAM (\d+)", t).group(1)) for n in
+             ("ENABLE", "TYPE", "FLAGS", "EVENTS", "SETS")}
+        self.assertEqual(ee[a["ENABLE"] + 6], 1)
+        self.assertEqual(ee[a["TYPE"] + 6], 48)
+        self.assertEqual(ee[a["FLAGS"] + 6], 3)
+        self.assertEqual([ee[a["EVENTS"] + 6], ee[a["EVENTS"] + 38]], [70, 71])
+        self.assertEqual([ee[a["SETS"] + 6], ee[a["SETS"] + 38]], [1, 2])
+
+    def test_shutdown_block(self):
+        for f in FLAVOURS:
+            sets = table_bytes(f, "modc_sets_default")
+            s2, s3, s4 = sets[32 + 31], sets[64 + 31], sets[96 + 31]
+            out = self.lines(f, self.PRE + ["#modc"] * 3 + ["#pin=PIN_CPU_POWER_CTRL_IN,0", "#events_poll"] +
+                             ["#modc"] * (s2 + 2))
+            txt = "\n".join(out)
+            self.assertEqual(txt.count("@shutdown:"), 1, f)
+            self.assertIn(f"@shutdown:{s3},{s4}", txt, f)       # waits before remote off / power off
+            self.assertIn("#.1 system.shutdown=ok", txt, f)
+            # power in stays high: nothing
+            out = self.lines(f, self.PRE + ["#modc"] * 10)
+            self.assertNotIn("@shutdown", "\n".join(out), f)
+
+    def test_logic_toggle_select_compare_calculator_limiter(self):
+        f = "V41-96ELN-3"
+        pre = self.PRE + [
+            "1|set.1 modc.7=[1,48,00000000,70,71,0,0,03000000]",    # logic: 70 AND-mask 3 -> any of 70/71
+            "1|set.1 modc.8=[1,50,00000000,72,0,0,0,00000000]",     # toggle on falling 72
+            "1|set.1 modc.9=[1,49,00000000,73,74,75,0,00000000]",   # select 73/74 by 75
+            "1|set.1 modc.10=[1,52,01000000,73,74,75,0,00000000]",  # compare: 75 >= 73 -> 74 else 73
+            "1|set.1 modc.11=[1,53,00840000,73,74,0,0,00000000]",   # calculator: 73 + 74
+            "1|set.1 modc.12=[1,51,00000000,73,0,0,0,C8006400]",    # limiter: 0..200 -> 0..100
+        ]
+        steps = ["1|set.1 event.70.value=1", "1|set.1 event.72.value=1", "1|set.1 event.73.value=50",
+                 "1|set.1 event.74.value=20", "#modc", "#modc", "1|set.1 event.72.value=0", "#modc", "#modc"]
+        out = self.lines(f, pre + steps + [f"#event?{96 + n}" for n in range(7, 13)])
+        self.assertEqual([self.val(out, 96 + n) for n in range(7, 13)], [1, 1, 50, 50, 70, 25])
+        out = self.lines(f, pre + steps + ["1|set.1 event.70.value=0", "1|set.1 event.75.value=60",
+                                           "1|set.1 event.72.value=1", "1|set.1 event.72.value=0", "#modc", "#modc"] +
+                         [f"#event?{96 + n}" for n in range(7, 13)])
+        self.assertEqual([self.val(out, 96 + n) for n in (7, 9, 10)], [0, 20, 20])
+
+    def test_mute_volumen_mix_preset(self):
+        f = "V41-96ELN-3"
+        volreg = table_bytes(f, "data_es90x8pro_vol_reg")
+        ovd = table_bytes(f, "data_flow_dsp_output_vol_dsp")
+        ovr = table_bytes(f, "data_flow_dsp_output_vol_reg")
+        vol = table_bytes(f, "data_dsp_vol")
+        adr = {1: (1, 0x68), 2: (2, 0x68), 3: (2, 0x6A)}
+        bus, a = adr[ovd[1]]
+        out = self.lines(f, ["#i2cdev=2,90", "#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect", "#dac_init"] +
+                         self.PRE + [
+            "1|set.1 modc.6=[1,84,05000000,70,0,0,0,00000000]",     # mute outputs 1+3 while event 70
+            "1|set.1 modc.7=[1,16,FF000000,71,71,0,0,00000000]",    # volumen: all outputs, event 71
+            "1|set.1 modc.8=[1,97,00000000,0,72,0,0,00000000]",     # mixer position 2 while event 72
+            "1|set.1 gain.out.1=200", "1|set.1 event.71.value=245", "1|set.1 event.70.value=1",
+            "1|set.1 event.72.value=1"] + ["#mainloop"] * 12 +   # incl. the auto unmute after the mixer change
+            [f"#block={bus},{a:02X},{ovr[1]:02X},4", "#regs=2,90,24",
+            "1|get.1 mixer.position", "1|get.1 gain.out.1"])
+        txt = "\n".join(out)
+        self.assertIn(f"@block:{vol[190 * 4:190 * 4 + 4][::-1].hex().upper()}", txt)   # 200 - (255 - 245)
+        self.assertIn("#.1 gain.out.state=[190,0,0,0,0,0,0,0]", txt)   # event to the GUI
+        regs = bytes.fromhex([l for l in out if l.startswith("@regs:")][0][6:])
+        self.assertEqual([regs[volreg[ch]] for ch in range(1, 9)], [0xFF, 0, 0xFF, 0, 0, 0, 0, 0])
+        self.assertIn("<.1 mixer.position=2", txt)
+        self.assertIn("<.1 gain.out.1=200", txt)     # the stored value stays
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

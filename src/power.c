@@ -12,6 +12,7 @@
 #include "board.h"
 #include "power.h"
 #include "iface.h"
+#include "modc.h"
 
 #define SHUTDOWN_DEBOUNCE_MS 50
 
@@ -56,6 +57,42 @@ static void shutdown(void)
 	PIN_SET(PIN_LED_RED);
 	watchdog_disable();
 	mcu_reset();
+}
+
+static void led_wait(uint8_t n, uint8_t yellow_red)
+{
+	for (uint8_t i = 1; i <= n; i++) {
+		if (yellow_red) { PIN_TGL(PIN_LED_YELLOW); PIN_TGL(PIN_LED_RED); }
+		else { PIN_TGL(PIN_LED_GREEN); PIN_TGL(PIN_LED_YELLOW); }
+		_delay_ms(250);
+		watchdog_reset();
+	}
+}
+
+/* modc_shutdown: sets 3/4 = waits (250 ms steps) before remote out off / before power off */
+void power_shutdown(uint8_t wait_before_remote_off, uint8_t wait_before_power_off)
+{
+	_delay_ms(100);
+	for (uint8_t b = 0; b < 4; b++)
+		iface_flush(b);  /* debug_close */
+	_delay_ms(100);
+	cli();
+	if (wait_before_remote_off > 0) {  /* led_gruen_gelb_wait */
+		PIN_CLR(PIN_LED_GREEN);
+		PIN_SET(PIN_LED_YELLOW);
+		led_wait(wait_before_remote_off, 0);
+		PIN_SET(PIN_LED_GREEN);
+		PIN_CLR(PIN_LED_YELLOW);
+	}
+	PIN_CLR(PIN_LED_GREEN);
+	PIN_CLR(PIN_CPU_POWER_CTRL_OUT);
+	if (wait_before_power_off > 0) {   /* led_gelb_rot_wait */
+		PIN_CLR(PIN_LED_YELLOW);
+		PIN_SET(PIN_LED_RED);
+		led_wait(wait_before_power_off, 1);
+		PIN_SET(PIN_LED_YELLOW);
+	}
+	shutdown();
 }
 
 void power_poll(uint16_t ms_now)

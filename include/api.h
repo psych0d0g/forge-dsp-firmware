@@ -46,8 +46,4 @@ void api_restore_mix(void);
  * remote out (amplifiers) only with FORGE_AUDIO=1 */
 void api_preset_load(uint8_t preset);
 void api_startup_delay(void);
-/* MODC preset request (modc_loadpreset + cu_loadpreset), executed by modc_cleanup_mainloop */
-extern uint8_t modc_loadpreset, modc_cleanup;
-void modc_request_preset(uint8_t preset);
-void modc_cleanup_mainloop(void);
 #endif

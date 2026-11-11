@@ -2,11 +2,11 @@
  * Port of libs/cmd/v20/common/subs/cmd_preset (version 20): preset.copy, .erase, .loaded,
  * .select (set) and .loaded, .monitor, .select (get).
  * PORT: preset numbers 0..modul_max_preset-1 only (original: up to modul_max_preset).
- * PORT: erasing the loaded preset calls modc_chk_affect in the original; that follows with MODC.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "cmd.h"
 #include "api.h"
+#include "modc.h"
 #include "flavour.h"
 #include "registers.h"
 #include "store.h"
@@ -38,6 +38,8 @@ void cmd_set_preset(void)
 		break;
 	case 0x6572:  /* erase */
 		cmd_answer_ok();
+		if (store_preset == (uint8_t)v)
+			modc_chk_affect();
 		preset = store_preset;
 		store_preset = (uint8_t)v;
 		store_erase_preset();

@@ -34,6 +34,8 @@ uint8_t *host_i2c_regs(uint8_t bus, uint8_t addr);
 void host_i2c_readonly(uint8_t bus, uint8_t addr);
 void host_i2c_block(uint8_t bus, uint8_t addr);
 #include "events.h"
+#include "modc.h"
+void power_shutdown(uint8_t a, uint8_t b) { printf("@shutdown:%u,%u\n", a, b); }
 static struct { char name[40]; int v; } pins[32];
 int host_pin_read(const char *name)
 {
@@ -167,6 +169,10 @@ static void store_cmd(const char *l)
 		int v = 0;
 		if (sscanf(l + 5, "%39[^,],%d", n, &v) == 2)
 			host_pin_set(n, v);
+	} else if (!strcmp(l, "#modc_init")) {
+		ctrl_modc_init();
+	} else if (!strcmp(l, "#modc")) {             /* one MODC pass */
+		ctrl_modc_mainloop();
 	} else if (!strcmp(l, "#events_init")) {
 		ctrl_events_init();
 		events_spdif_init();
@@ -182,7 +188,7 @@ static void store_cmd(const char *l)
 	} else if (!strcmp(l, "#store_init")) {
 		store_init();
 	} else if (!strcmp(l, "#mainloop")) {        /* one main loop of the audio part */
-		modc_cleanup_mainloop();
+		ctrl_modc_mainloop();
 		api_mainloop();
 		store_mainloop();
 	} else if (!strcmp(l, "#dsp_detect")) {

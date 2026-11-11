@@ -11,6 +11,8 @@
 #include "dac.h"
 #include "dsp.h"
 #include "eram.h"
+#include "events.h"
+#include "modc.h"
 #include "flavour.h"
 #include "flavour_data.h"
 #include "i2c.h"
@@ -147,8 +149,10 @@ void api_set_out_vol_hw(uint8_t ch, uint8_t v)
 
 void api_set_out_vol(uint8_t ch, uint8_t v)
 {
-	/* PORT: MODC "affect onOutVol" (volumen control) follows with MODC */
-	api_set_out_vol_hw(ch, v);
+	if (!(modc_active_affect & (1u << BAS_ONOUTVOL)))
+		api_set_out_vol_hw(ch, v);
+	else
+		modc_set_run(BAS_ONOUTVOL);  /* a volumen block computes the outputs */
 	if (api_store == 1) {
 		SV(BAS_STORAGE_VOL_OUT_BASE, ch) = v;
 		storage_flags++;
@@ -288,24 +292,22 @@ static void led_gruen_gelb_wait(uint8_t a)
 	PIN_CLR(PIN_LED_YELLOW);
 }
 
-static uint8_t remote_out_on;
-
 /* modc.32 sets 1 / 3: wait before and after remote out (250 ms steps) */
 void api_startup_delay(void)
 {
-	if (remote_out_on)
-		return;  /* events_field_remoteout already true */
-	/* PORT: events_field_system_shutdown follows with the events */
-	uint8_t a = eram_rb(ERAM_EL(MODC_SETS_ERAM, BAS_MAX_MODC));            /* modc_set1(max_modc) */
-	if (a > 0)
-		led_gruen_gelb_wait(a);
+	if (events_field_value[BAS_EVENTS_FIELD_REMOTEOUT] == BAS_EVENTS_STATE_FALSE &&
+	    events_field_value[BAS_EVENTS_FIELD_SYSTEM_SHUTDOWN] == BAS_EVENTS_STATE_FALSE) {
+		uint8_t a = modc_sets[BAS_MAX_MODC];                 /* modc_set1(max_modc) */
+		if (a > 0)
+			led_gruen_gelb_wait(a);
 #if FORGE_AUDIO
-	PIN_SET(PIN_CPU_POWER_CTRL_OUT);  /* remote out: amplifiers on */
+		PIN_SET(PIN_CPU_POWER_CTRL_OUT);  /* remote out: amplifiers on */
 #endif
-	remote_out_on = 1;
-	a = eram_rb(ERAM_EL(MODC_SETS_ERAM, 2 * BAS_MAX_MODC + BAS_MAX_MODC));  /* modc_set3(max_modc) */
-	if (a > 0)
-		led_gruen_gelb_wait(a);
+		event_set_value(BAS_EVENTS_FIELD_REMOTEOUT, BAS_EVENTS_STATE_TRUE);
+		a = modc_sets[2 * BAS_MAX_MODC + BAS_MAX_MODC];      /* modc_set3(max_modc) */
+		if (a > 0)
+			led_gruen_gelb_wait(a);
+	}
 	PIN_CLR(PIN_LED_YELLOW);
 }
 
@@ -313,6 +315,9 @@ void api_preset_load(uint8_t preset)
 {
 	if (preset == store_preset)
 		return;
+	if (preset >= BAS_MODUL_MAX_PRESET)  /* PORT: an invalid register value would index beyond the address tables */
+		return;
+	event_set_value(BAS_EVENTS_FIELD_SYSTEM_PRESET, preset);
 	api_set_out_mute_change();
 	store_preset = preset;
 	store_load_preset();
@@ -336,7 +341,6 @@ void api_preset_load(uint8_t preset)
 	api_store = 1;
 	api_startup_delay();  /* "first unmute must check for remote.out delay" */
 	api_set_out_mute();   /* api_restore_out_mute */
-	/* PORT: event_set_value(events_field_system_preset) follows with the events */
 	static const uint16_t ev[cmd_req_words_max] = {0x0104, 0x7072, 0x6C6F, 0x0000, 0x0000};
 	uint8_t i = 0, v = store_preset;
 	if (v >= 100) cmd_req_value[i++] = (char)('0' + v / 100);
@@ -345,22 +349,4 @@ void api_preset_load(uint8_t preset)
 	cmd_req_value[i] = 0;
 	cmd_load_header(ev);
 	cmd_sendevent();
-}
-
-/* MODC cleanup at the end of ctrl_modc_mainloop: a requested preset is loaded there */
-uint8_t modc_loadpreset;
-uint8_t modc_cleanup;
-
-void modc_request_preset(uint8_t preset)
-{
-	modc_loadpreset = preset;
-	modc_cleanup |= 1u << 0;  /* cu_loadpreset */
-}
-
-void modc_cleanup_mainloop(void)
-{
-	if (modc_cleanup & (1u << 0)) {
-		api_preset_load(modc_loadpreset);
-		modc_cleanup &= (uint8_t)~(1u << 0);
-	}
 }
