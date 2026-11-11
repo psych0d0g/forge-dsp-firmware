@@ -441,5 +441,75 @@ class Si5338Test(unittest.TestCase):
         self.assertIn("@hw:0001", p.stdout)
 
 
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class Tas3108Test(unittest.TestCase):
+    """DSP program EEPROMs: compare with the embedded program, rewrite only on mismatch."""
+
+    def program(self, f, n):
+        code = table_bytes(f, "dsp_1_code" if n == 1 else "dsp_2_code")
+        size = int.from_bytes(code[:2], "little")
+        return code[2:2 + size]
+
+    def run_dsp(self, f, ee, dspees, lines, dump=()):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            pre = []
+            for n, img in dspees.items():
+                pth = pathlib.Path(d, f"dsp{n}.bin")
+                pth.write_bytes(img)
+                pre.append(f"#dspee={n},{pth}")
+            for n in dump:
+                pre.append(f"#dspee_out={n},{d}/out{n}.bin")
+            p, _ = run(f, pre + lines, eeprom=ee, want_eeprom=True)
+            outs = {n: pathlib.Path(d, f"out{n}.bin").read_bytes() for n in dump}
+        return p.stdout, outs
+
+    def original_device(self, f):
+        cores, = consts(f, "MODUL_TAS3108_CORES")
+        ee = bytearray(image(f))
+        L = layout(f)
+        dsp = {}
+        for n in range(1, cores + 1):
+            prog = self.program(f, n)
+            dsp[n] = prog + b"\xff" * (65536 - len(prog))
+            a = L[f"dsp_{n}_eeprom_chksum_eram"][0]
+            ee[a:a + 2] = (sum(prog) & 0xFFFF).to_bytes(2, "little")
+        return cores, bytes(ee), dsp
+
+    def test_original_device_is_not_rewritten(self):
+        for f in FLAVOURS:
+            cores, ee, dsp = self.original_device(f)
+            out, _ = self.run_dsp(f, ee, dsp, [f"#dsp_eeprom={n}" for n in range(1, cores + 1)])
+            for n in range(1, cores + 1):
+                self.assertRegex(out, rf"@dsp_eeprom{n}: hw=\w+ writes=0\n", f)
+
+    def test_mismatch_rewrites_program(self):
+        f = "V41-96ELN-3"
+        cores, ee, dsp = self.original_device(f)
+        dsp[3] = b"\x00" * 65536  # damaged program EEPROM of core 3
+        out, res = self.run_dsp(f, ee, dsp, ["#dsp_eeprom=3"], dump=(3,))
+        prog = self.program(f, 3)
+        self.assertIn("@dsp_eeprom3: hw=0020 writes=56526", out)  # 32001 x 0xFF + program
+        self.assertEqual(res[3][:len(prog)], prog)
+        self.assertEqual(set(res[3][len(prog):32001]), {0xFF})
+        self.assertEqual(set(res[3][32001:]), {0x00})  # beyond dsp_eeprom_clear_count untouched
+
+    def test_sysinit_stores_checksum(self):
+        f = "V40-CORED8"
+        p, ee = run(f, ["#dsp_eeprom=1"], want_eeprom=True)  # blank ERAM -> sysinit
+        a = layout(f)["dsp_1_eeprom_chksum_eram"][0]
+        self.assertEqual(int.from_bytes(ee[a:a + 2], "little"), sum(self.program(f, 1)) & 0xFFFF)
+
+    def test_core_detection(self):
+        f = "V41-96ELN-3"
+        # core 1 answers with state 0, core 3 reports a state error, core 2 missing
+        out, _ = self.run_dsp(f, image(f), {}, ["#i2cdev=1,68", "#i2cdev=2,6A,5=1",
+                                                "#dsp_core=1", "#dsp_core=2", "#dsp_core=3",
+                                                "1|get.1 system.errors"])
+        self.assertIn("@dsp_core: hw=0011", out)  # tas3108_1_rdy (0) | tas3108_3_rdy (4)
+        # tas3108_2_rdy + errorcount_offset_dsp = 3, errorcount_sw_dsp = 34
+        self.assertIn("system.errors=[[3,1],[34,1]]", out)
+
+
 if __name__ == "__main__":
     unittest.main()

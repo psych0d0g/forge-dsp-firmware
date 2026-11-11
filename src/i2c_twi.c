@@ -6,6 +6,7 @@
  */
 #include <avr/io.h>
 #include <util/delay.h>
+#include <avr/interrupt.h>
 #include "board.h"
 #include "i2c.h"
 #include "watchdog.h"
@@ -106,4 +107,28 @@ void twi_bus_clear(uint8_t bus)
 	p->OUTSET = PIN0_bm;                       /* portc.0 = 1 */
 	t->MASTER.CTRLA |= TWI_MASTER_ENABLE_bm;
 	t->MASTER.STATUS = TWI_MASTER_BUSSTATE_IDLE_gc;
+}
+
+/* libs/interface/V40/5,6: i2cN_sda_wait4silence. The TAS3108 load their program from the
+ * EEPROM as bus masters after the reset is released; wait until SDA was quiet for s ms.
+ * PORT: "bitwait sda, reset" (DSP starts loading) gets a 2 s limit instead of waiting
+ * for the watchdog. */
+static volatile uint16_t sda_count[3];
+ISR(PORTC_INT1_vect) { sda_count[1]++; }
+ISR(PORTE_INT1_vect) { sda_count[2]++; }
+
+void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s)
+{
+	PORT_t *p = port(bus);
+	p->INT1MASK = PIN0_bm;                                   /* portX_int1mask = 1 */
+	p->INTCTRL = (p->INTCTRL & ~PORT_INT1LVL_gm) | PORT_INT1LVL_LO_gc;
+	uint16_t w = (uint16_t)(sda_count[bus] - 1);
+	delay_ms(pre);
+	for (uint16_t t = 0; (p->IN & PIN0_bm) && t < 2000; t++)
+		delay_ms(1);
+	while (w != sda_count[bus]) {
+		w = sda_count[bus];
+		delay_ms(s);
+	}
+	p->INTCTRL &= ~PORT_INT1LVL_gm;                          /* disable PORTx_INT1 */
 }

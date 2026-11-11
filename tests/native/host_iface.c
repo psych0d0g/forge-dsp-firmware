@@ -16,6 +16,11 @@
 #include "store.h"
 #include "expander.h"
 #include "si5338.h"
+#include "tas3108.h"
+struct ee { uint8_t bus, addr; uint8_t *mem; uint32_t writes; };
+extern struct ee ees[4];
+extern uint8_t dspee[3][65536];
+static const char *dspee_out[3];
 void host_i2c_add(uint8_t bus, uint8_t addr);
 uint8_t *host_i2c_regs(uint8_t bus, uint8_t addr);
 
@@ -56,6 +61,21 @@ static void store_cmd(const char *l)
 		for (unsigned i = 0; i < n; i++)
 			printf("%02X", r ? r[i] : 0);
 		printf("\n");
+	} else if (!strncmp(l, "#dspee=", 7)) {      /* #dspee=<1..3>,<file> */
+		int n = l[7] - '0';
+		FILE *f = fopen(l + 9, "rb");
+		if (!f || fread(dspee[n - 1], 1, 65536, f) != 65536) { perror(l + 9); exit(2); }
+		fclose(f);
+	} else if (!strncmp(l, "#dspee_out=", 11)) {
+		dspee_out[l[11] - '1'] = strdup(l + 13);
+	} else if (!strncmp(l, "#dsp_eeprom=", 12)) {  /* run at24c512/<n>/init */
+		int n = atoi(l + 12);
+		uint32_t before = ees[n == 1 ? 1 : n].writes;
+		dsp_eeprom_init((uint8_t)n);
+		printf("@dsp_eeprom%d: hw=%04X writes=%u\n", n, hardware_dsp, ees[n == 1 ? 1 : n].writes - before);
+	} else if (!strncmp(l, "#dsp_core=", 10)) {
+		dsp_core_init((uint8_t)atoi(l + 10));
+		printf("@dsp_core: hw=%04X\n", hardware_dsp);
 	} else if (!strcmp(l, "#si5338")) {
 		si5338_detect_and_init();
 		printf("@hw:%04X\n", hardware_other);
@@ -174,6 +194,7 @@ int main(int argc, char **argv)
 	sysinit_check(0);
 	sysinit_count_boot();
 	memset(at24, 0xFF, sizeof at24);
+	memset(dspee, 0xFF, sizeof dspee);
 	i2c_bus_init(1);
 	i2c_bus_init(2);
 	at24c512_detect();
@@ -193,6 +214,12 @@ int main(int argc, char **argv)
 		printf("--\n");
 	}
 	save_eeprom();
+	for (int i = 0; i < 3; i++)
+		if (dspee_out[i]) {
+			FILE *f = fopen(dspee_out[i], "wb");
+			fwrite(dspee[i], 1, 65536, f);
+			fclose(f);
+		}
 	if (at24_out) {
 		FILE *f = fopen(at24_out, "wb");
 		fwrite(at24, 1, sizeof at24, f);

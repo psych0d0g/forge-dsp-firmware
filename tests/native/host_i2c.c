@@ -10,8 +10,14 @@
 uint8_t i2c_err;
 int host_i2c_log;
 uint8_t at24[65536];
+/* further 24xx512: DSP program EEPROMs (1,A0), (2,A0), (2,A2) */
+struct ee { uint8_t bus, addr; uint8_t *mem; uint32_t writes; };
+uint8_t dspee[3][65536];
+struct ee ees[4] = { {1, 0xA8, at24, 0}, {1, 0xA0, dspee[0], 0}, {2, 0xA0, dspee[1], 0}, {2, 0xA2, dspee[2], 0} };
+static struct ee *cur_ee[3];
+static uint16_t eptr[3];
+void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s) { (void)bus; (void)pre; (void)s; }
 static uint8_t cur_dev[3], state[3];  /* state: 0 idle, 1 addr hi, 2 addr lo, 3 data */
-static uint16_t ptr;
 
 /* simple register devices ("#i2cdev=<bus>,<addr hex>"): first written byte = register pointer */
 struct regdev { uint8_t bus, addr, ptr, regs[256], used; };
@@ -69,7 +75,11 @@ void twi_wbyte(uint8_t bus, uint8_t b)
 		cur_dev[bus] = b;
 		state[bus] = (b & 1) ? 4 : 1;
 		cur_rd[bus] = find(bus, b);
-		if (!cur_rd[bus] && ((b & 0xFE) != 0xA8 || bus != 1))
+		cur_ee[bus] = NULL;
+		for (int i = 0; i < 4; i++)
+			if (ees[i].bus == bus && ees[i].addr == (b & 0xFE))
+				cur_ee[bus] = &ees[i];
+		if (!cur_rd[bus] && !cur_ee[bus])
 			i2c_err = 1;  /* NACK: nobody at this address */
 		return;
 	}
@@ -82,14 +92,15 @@ void twi_wbyte(uint8_t bus, uint8_t b)
 		}
 		return;
 	}
-	if (cur_dev[bus] != 0xA8 || bus != 1)
+	if (!cur_ee[bus])
 		return;
 	switch (state[bus]) {
-	case 1: ptr = (uint16_t)(b << 8); state[bus] = 2; break;
-	case 2: ptr |= b; state[bus] = 3; break;
+	case 1: eptr[bus] = (uint16_t)(b << 8); state[bus] = 2; break;
+	case 2: eptr[bus] |= b; state[bus] = 3; break;
 	case 3:
-		at24[ptr] = b;
-		ptr = (uint16_t)((ptr & ~0x7F) | ((ptr + 1) & 0x7F));  /* wrap inside the page */
+		cur_ee[bus]->mem[eptr[bus]] = b;
+		cur_ee[bus]->writes++;
+		eptr[bus] = (uint16_t)((eptr[bus] & ~0x7F) | ((eptr[bus] + 1) & 0x7F));  /* page wrap */
 		break;
 	}
 }
@@ -99,8 +110,8 @@ uint8_t twi_rbyte(uint8_t bus, uint8_t ack)
 	uint8_t v = 0xFF;
 	if (cur_rd[bus])
 		v = cur_rd[bus]->regs[cur_rd[bus]->ptr++];
-	else if (cur_dev[bus] == 0xA9 && bus == 1)
-		v = at24[ptr++];  /* sequential read crosses pages */
+	else if (cur_ee[bus])
+		v = cur_ee[bus]->mem[eptr[bus]++];  /* sequential/current-address read */
 	lg(bus, " r%02X", v);
 	if (!ack)
 		lg(bus, "N%.0u", 0);
