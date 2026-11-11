@@ -19,6 +19,8 @@
 #include "factory.h"
 #include "store.h"
 #include "tick.h"
+#include "biquad.h"
+#include "dsp.h"
 #include "ir.h"
 
 uint8_t modc_enable[MODC_N + 1], modc_type[MODC_N + 1];
@@ -170,7 +172,7 @@ void modc_set_type(uint8_t value)
 {
 	if (modc_type[M] == value)
 		return;
-	if (BAS_LOOKUP_B(data_mods_versions, value & 0x3F) == 0)
+	if (modc_type_version(value & 0x3F) == 0)
 		value = BAS_MODC_TYPE_EMPTY;
 	modc_type[M] = value;
 	eram_wb(ERAM_EL(MODC_TYPE_ERAM, M), value);
@@ -647,6 +649,114 @@ static void modc_ess9038pro(void)
 #endif
 }
 
+uint8_t modc_type_version(uint8_t t)
+{
+	if (t == (MODC_TYPE_LOUDNESS & 0x3F))
+		return 20;  /* PORT extension: loudness (M6) */
+	return BAS_LOOKUP_B(data_mods_versions, t);
+}
+
+/* --- loudness (M6, #6) ----------------------------------------------------------------------
+ * Equal-loudness compensation: the lower the volume below a reference, the more bass and treble
+ * are raised (ISO 226 approximated by two shelves, 100 Hz and 10 kHz). Uses the last two
+ * biquads of the chosen biquad channels (default 35/36 = stereo input path before the mixer),
+ * these slots are reserved for it. Follows the volume in steps of 0.2 dB per MODC pass, writes
+ * only the DSP (no EEPROM, no mute).
+ *   event 1: volume source (0..255, gain scale 0.5 dB/step, 223 = 0 dB); 0 = gain.spdif.1
+ *   set 1: reference (no boost at or above), 0 = 223      set 2/3: bass/treble boost in % of the
+ *   attenuation (0 = 40/15)                               set 4: max boost in 0.5 dB (0 = 24, <= 24)
+ *   flags 2/3: biquad channels (0 = 35/36)                output: bass boost in 0.5 dB steps */
+static int16_t ld_cur[2][MODC_N + 1];   /* tenths of dB: [0] bass, [1] treble; -1 = rewrite */
+static uint8_t ld_valid[MODC_N + 1], ld_moving[MODC_N + 1];
+
+/* run the loudness blocks again: volume source changed (gain.spdif) or biquads rewritten */
+void modc_loudness_touch(void)
+{
+	for (uint8_t i = 1; i <= MODC_N; i++)
+		if (modc_type[i] == MODC_TYPE_LOUDNESS)
+			modc_is_changed[i] |= 1u << BAS_MODC_BIT_RUN;
+}
+
+void modc_loudness_invalidate(void)
+{
+	for (uint8_t i = 1; i <= MODC_N; i++)
+		ld_valid[i] = 0;
+	modc_loudness_touch();
+}
+
+static void loudness_write(uint8_t ch, uint8_t last_offset, uint8_t type, double f, int16_t tenths)
+{
+	uint8_t lim = BAS_LOOKUP_B(data_flow_ch_bq_limits, ch);
+	if (ch < 1 || ch > BAS_FLOW_MAX_CHANNELS || lim < 2)
+		return;
+	uint32_t raw[6];
+	if (tenths <= 0) {
+		dsp_bq_default(raw);  /* 0 dB: pass through */
+	} else {
+		dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_F] = f;
+		dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_Q] = 0.7071;
+		dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_GAIN] = tenths / 10.0;
+		dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_B] = 0;
+		dsp_bq_calc_type(type);
+		dsp_bq_calcto5coeff();
+		dsp_bq_convert2raw(raw);
+	}
+	dsp_bq_virt_nr = (uint16_t)(BAS_LOOKUP_W(data_flow_ch_bq_offsets, ch) + lim - last_offset);
+	dsp_calc_core();
+	dsp_calc_reg();
+	dsp_set_biquad(raw);
+}
+
+static int16_t ld_step(int16_t cur, int16_t target)
+{
+	if (cur < 0)
+		return target;  /* first write after (re)start */
+	if (target > cur + 2) return (int16_t)(cur + 2);
+	if (target < cur - 2) return (int16_t)(cur - 2);
+	return target;
+}
+
+static void modc_loudness(void)
+{
+	uint8_t vol = EVENT(1) ? EV(EVENT(1)) : api_get_spdif_vol(1);
+	uint8_t ref = SET(1) ? SET(1) : 223;
+	uint8_t pb = SET(2) ? SET(2) : 40, pt = SET(3) ? SET(3) : 15;
+	uint8_t maxb = SET(4) ? SET(4) : 24;
+	if (maxb > 24)
+		maxb = 24;  /* data_power_gain ends at 12 dB */
+	int16_t target[2] = {0, 0};
+	if (modc_enable[M] > 0 && vol < ref) {
+		int16_t att = (int16_t)((ref - vol) * 5);  /* tenths of dB */
+		target[0] = (int16_t)((int32_t)att * pb / 100);
+		target[1] = (int16_t)((int32_t)att * pt / 100);
+		for (uint8_t k = 0; k < 2; k++)
+			if (target[k] > maxb * 5)
+				target[k] = (int16_t)(maxb * 5);
+	}
+	if (!ld_valid[M]) {
+		ld_cur[0][M] = ld_cur[1][M] = -1;
+		ld_valid[M] = 1;
+	}
+	uint8_t chs[2] = {FLAG(2) ? FLAG(2) : 35, FLAG(3) ? FLAG(3) : 36};
+	uint8_t moving = 0;
+	for (uint8_t k = 0; k < 2; k++) {
+		/* switched off: straight to 0 dB, the block does not run again to finish a ramp */
+		int16_t next = modc_enable[M] ? ld_step(ld_cur[k][M], target[k]) : target[k];
+		if (next != ld_cur[k][M]) {
+			for (uint8_t c = 0; c < 2; c++)
+				if (c == 0 || chs[1] != chs[0])
+					loudness_write(chs[c], (uint8_t)(1 - k),  /* bass: last-1, treble: last */
+					               k == 0 ? BAS_DSP_BQTYPE_BASS_SHELF : BAS_DSP_BQTYPE_TREBLE_SHELF,
+					               k == 0 ? 100.0 : 10000.0, next);
+			ld_cur[k][M] = next;
+		}
+		if (next != target[k])
+			moving = 1;
+	}
+	out((uint8_t)(ld_cur[0][M] / 5));
+	ld_moving[M] = moving;
+}
+
 void ctrl_modc_mainloop(void)
 {
 	for (M = 1; M <= MODC_N; M++) {
@@ -672,6 +782,7 @@ void ctrl_modc_mainloop(void)
 			case BAS_MODC_TYPE_MAINCLOCK:  modc_mainclock(); break;
 			case BAS_MODC_TYPE_SPDIF:      modc_spdif(); break;
 			case BAS_MODC_TYPE_ESS9038PRO: modc_ess9038pro(); break;
+			case MODC_TYPE_LOUDNESS:       modc_loudness(); break;  /* PORT extension (M6) */
 			case BAS_MODC_TYPE_VOLUMEN:    modc_volumen(); break;
 			case BAS_MODC_TYPE_MUTE:       modc_mute(); break;
 			case BAS_MODC_TYPE_MIX_I:      modc_mix_i(); break;
@@ -686,6 +797,8 @@ void ctrl_modc_mainloop(void)
 		watchdog_kick();
 		if (type != BAS_MODC_TYPE_SHUTDOWN)
 			CHG = 0x00;
+		if (type == MODC_TYPE_LOUDNESS && ld_moving[M])
+			CHG = 1u << BAS_MODC_BIT_RUN;  /* PORT (M6): keep following the volume */
 	}
 	if (modc_cleanup & (1u << BAS_CU_LOADPRESET)) {
 		api_preset_load(modc_loadpreset);

@@ -17,6 +17,7 @@ bewusste Unterschiede. Im Quelltext sind die Stellen mit `PORT:` markiert.
 | **Rohwert-Biquads** werden wirklich übernommen (Original nutzt die Werte des vorherigen Befehls) | `biquad.CH.N.raw=["A2","A1","B2","B1","B0"]` | #35 |
 | **microSD wieder aktiv** (im Original für die Lizenz entfernt, AVR-DOS): Beim Start werden `preset_1.cfg` … `preset_N.cfg` von der Karte in die Presets geladen, wenn sich das Dateidatum geändert hat. Die Dateien sind die `.cfg`-Dateien der Original-GUI (Abschnitt mit dem Modellnamen, Zeilen `x = "…"`). FatFs R0.16 statt AVR-DOS. Slot auf der USB-Audio-Platine (V40/V41), SPIE, Kartenschalter PD0 | Bring-up-Variante, Karte FAT12/16/32 | #24 |
 | **Vier Builds statt sieben**: Varianten mit identischer Firmware teilen sich einen Build, die Kennung (Modell, PCB) steht im EEPROM (0xF00) und wird beim Upload aus der alten Firmware übernommen | `get system.key.info.list`, `set system.key.info="MODEL-PCB"`, Upload `--keep-identity` | #31 |
+| **Loudness** (MODC-Typ 0x6C, im Original deklariert, nie umgesetzt): hebt Bass (100 Hz) und Höhen (10 kHz) an, je tiefer die Lautstärke unter einem Referenzwert liegt (gehörrichtige Lautstärke, ISO 226 angenähert). Führt in 0,2-dB-Schritten nach, ohne Stummschaltung und ohne EEPROM-Schreiben, belegt die letzten zwei Biquads der gewählten Kanäle (Vorgabe 35/36 = Eingangsweg) | `set modc.N=[1,108,00KKLL00,E,0,0,0,RRBBTTMM]`, Details unten | #6 |
 | **Bootloader-Versionsstring**: Der Bootloader liest die Firmware-Version (`FW_VERSION:xx.yy`); das Original enthält keinen | chip45boot3 0x12 | |
 | **Linux-Flasher** chip45boot3 mit Backup, Gerätecheck und Rückweg auf 1.11.6000, eingebunden in PlatformIO/VS Code | `tools/c45b3-host`, *Forge:*-Tasks | |
 
@@ -77,7 +78,30 @@ Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `modc_set
 
 ## Prüfstand
 
-- Nativ: 87 Tests, alle 7 Varianten (Protokoll, EEPROM-Layout gegen die Release-HEX, Biquads gegen eine unabhängige
+- Nativ: 90 Tests, alle 7 Varianten (Protokoll, EEPROM-Layout gegen die Release-HEX, Biquads gegen eine unabhängige
   Referenz, Peripherie auf einem I2C-Modell, SD-Karte als FAT-Image).
 - Am Gerät (DEV-Forge V40-96ELN): Start auf dem EEPROM des Originals ohne Werks-Reset, alle Bausteine erkannt,
   Biquad-Koeffizienten aus dem DSP bitgenau gleich der Referenz, Abschalten über Remote-In (#39).
+
+## Loudness (M6, #6)
+
+MODC-Block vom Typ 108 (0x6C). Konfiguration wie bei allen Blöcken über `set.1 modc.N=[an,108,FLAGS,E1,E2,E3,E4,SETS]`
+(FLAGS und SETS je 4 Bytes hex):
+
+| Feld | Bedeutung | 0 = Vorgabe |
+|---|---|---|
+| Event 1 | Quelle der Lautstärke, 0–255 in der Skala von `gain.*` (0,5 dB je Schritt, 223 = 0 dB), z. B. der Ausgang eines Lautstärke- oder IR-Blocks | `gain.spdif.1` |
+| Set 1 | Referenz: ab diesem Wert keine Anhebung | 223 (0 dB) |
+| Set 2 | Bass-Anhebung in % der Dämpfung | 40 % |
+| Set 3 | Höhen-Anhebung in % der Dämpfung | 15 % |
+| Set 4 | höchste Anhebung in 0,5-dB-Schritten (höchstens 24 = 12 dB) | 24 |
+| Flags 2 / 3 | Biquad-Kanäle, deren letzte zwei Biquads belegt werden (vorletzter: Bass-Shelf, letzter: Höhen-Shelf) | 35 / 36 |
+| Ausgang (Event 96+N) | aktuelle Bass-Anhebung in 0,5-dB-Schritten | |
+
+Beispiel: `set.1 modc.9=[1,108,00232400,70,0,0,0,DF280F18]` folgt Event 70; bei 20 dB unter der Referenz werden
+Bass +8 dB und Höhen +3 dB angehoben.
+
+Hinweise: Die belegten Biquads überschreibt der Block; Filter, die die GUI dort anzeigt, wirken nicht. Nach dem Laden
+eines Presets setzt der Block die Shelves neu. Die GUI kennt den Typ nicht und zeigt ihn nur als Nummer. Offen: ob der
+TAS3108 einen Koeffizientenblock ohne Knacken übernimmt (Messung am Gerät).
+

@@ -124,6 +124,7 @@ uint8_t api_get_in_vol(uint8_t ch) { return SV(BAS_STORAGE_VOL_IN_BASE, ch); }
 
 void api_set_spdif_vol(uint8_t ch, uint8_t v)
 {
+	modc_loudness_touch();  /* M6: loudness follows gain.spdif when it has no event source */
 #if BAS_MODUL_CT7302 > 0
 	ct7302_20_set_vol(ch, v);
 #elif BAS_MODUL_SRC43X2 > 0
@@ -405,6 +406,7 @@ void api_preset_load(uint8_t preset)
 		api_set_delay(ch, api_get_delay(ch));
 	dsp_ack_delay();
 	api_restore_in_input();  /* api_restore_mix + events 45..48 */
+	modc_loudness_invalidate();  /* the preset load rewrote all biquads (M6) */
 	for (uint8_t ch = 1; ch <= BAS_FLOW_MAX_OUT_CHANNEL; ch++)
 		api_set_out_vol(ch, api_get_out_vol(ch));
 	api_store = 1;

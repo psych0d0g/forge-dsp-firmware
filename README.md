@@ -40,6 +40,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
 - **Eingangswahl** `mixer.in` (und `mixer.in.max`) für die aktive Mixer-Position, mit Ereignis an die GUI; die
   dokumentierten, im Original nie gesetzten Ereignisse 45–48 (`SOURCE.1–4.MUX`) tragen jetzt die Eingangswahl je
   Position (#23).
+- **Loudness** (gehörrichtige Lautstärke) als neuer MODC-Block: hebt Bass und Höhen an, je leiser gehört wird,
+  folgt der Lautstärke in 0,2-dB-Schritten (M6, #6; [Konfiguration](docs/port-changes.md#loudness-m6-6)).
 - **Biquad-Typ 17 BandPass**, im Original geplant, aber nie umgesetzt (#20).
 - **microSD wieder aktiv** (im Original aus Lizenzgründen entfernt): In der Original-GUI gespeicherte `.cfg`-Dateien
   als `preset_1.cfg` … auf die Karte kopieren, der Forge übernimmt sie beim nächsten Start in die Presets (#24,

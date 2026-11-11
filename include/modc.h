@@ -26,7 +26,12 @@ void modc_set_type(uint8_t value);
 void modc_set_flags(uint8_t nr, uint8_t value);
 void modc_set_event(uint8_t nr, uint8_t value);
 void modc_set_set(uint8_t nr, uint8_t value);
-uint8_t modc_shutdown_enabled(void);  /* an enabled shutdown block exists */
+uint8_t modc_shutdown_enabled(void);
+/* port extension (M6, #6): MODC type 0x6C loudness, declared in the original (modc_type_loudness) */
+#define MODC_TYPE_LOUDNESS 0x6C
+uint8_t modc_type_version(uint8_t type6);  /* data_mods_versions plus the port's types */
+void modc_loudness_invalidate(void);       /* biquads were overwritten (preset load) */
+void modc_loudness_touch(void);            /* volume source changed (gain.spdif) */  /* an enabled shutdown block exists */
 
 /* hook: remote out off, peripherals into reset, release the supply, reset (power.c) */
 void power_shutdown(uint8_t wait_before_remote_off, uint8_t wait_before_power_off);

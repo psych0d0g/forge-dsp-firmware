@@ -1590,6 +1590,74 @@ class IdentityTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class LoudnessTest(LinesMixin, unittest.TestCase):
+    """M6 (#6): MODC type 0x6C loudness on the last two biquads of channels 35/36."""
+
+    PRE = ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect", "#pin=PIN_CPU_POWER_CTRL_IN,1",
+           "#events_init", "#modc_init"]
+
+    def blocks(self, f, ch, extra):
+        offs = table_words(f, "data_flow_ch_bq_offsets")
+        lim = table_bytes(f, "data_flow_ch_bq_limits")
+        core = table_bytes(f, "data_flow_dsp_bq_core")
+        reg = table_bytes(f, "data_flow_dsp_bq_reg")
+        adr = {1: (1, 0x68), 2: (2, 0x68), 3: (2, 0x6A)}
+        out = []
+        for last in (1, 0):   # bass shelf = last-1, treble shelf = last
+            nr = offs[ch] + lim[ch] - last
+            bus, a = adr[core[nr]]
+            out.append(f"#block={bus},{a:02X},{reg[nr]:02X},20")
+        return out
+
+    def ref(self, f, t, freq, tenths):
+        if tenths <= 0:
+            return "0080000000000000000000000000000000000000"
+        raw = bq_reference(f, t, freq, tenths, 707.1, 0, 0x80)
+        return b"".join(v.to_bytes(4, "big") for v in reversed(raw)).hex().upper()
+
+    def test_boost_ramp_disable(self):
+        for f in ("V40-96ELN", "V40-96ELN-3", "V30-96LN"):
+            cfg = "1|set.1 modc.9=[1,108,00232400,70,0,0,0,DF280F18]"   # ref 223, 40 %, 15 %, max 12 dB
+            reads = self.blocks(f, 35, None) + self.blocks(f, 36, None)
+            out = self.lines(f, self.PRE + [cfg, "1|set.1 event.70.value=183", "#modc"] + reads   # -20 dB
+                             + ["1|set.1 event.70.value=193", "#modc"] + reads                      # -15 dB: ramp
+                             + ["1|set.1 modc.9.enable=0", "#modc"] + reads)
+            b = [l[7:] for l in out if l.startswith("@block:")]
+            bass, treb = self.ref(f, 14, 100, 80), self.ref(f, 15, 10000, 30)
+            self.assertEqual(b[0:4], [bass, treb, bass, treb], f)        # first write: target directly
+            self.assertEqual(b[4], self.ref(f, 14, 100, 78), f)          # then 0.2 dB per pass
+            self.assertEqual(b[5], self.ref(f, 15, 10000, 28), f)
+            flat = self.ref(f, 0, 0, 0)
+            self.assertEqual(b[8:12], [flat] * 4, f)                     # off: 0 dB at once
+
+    def test_follows_gain_spdif(self):
+        f = "V40-96ELN"
+        reads = self.blocks(f, 35, None)
+        out = self.lines(f, self.PRE + ["1|set.1 gain.spdif.1=223",                          # 0 dB: no boost
+                                        "1|set.1 modc.9=[1,108,00000000,0,0,0,0,00000000]",  # all defaults
+                                        "#modc", "1|set.1 gain.spdif.1=203", "#modc"] + reads
+                                       + ["#modc"] * 25 + reads)
+        b = [l[7:] for l in out if l.startswith("@block:")]
+        self.assertEqual(b[0], self.ref(f, 14, 100, 2))    # gain.spdif triggers the block: first 0.2 dB step
+        self.assertEqual(b[1], self.ref(f, 15, 10000, 2))
+        self.assertEqual(b[2], self.ref(f, 14, 100, 40))   # end: -10 dB below 223, 40 % = 4.0 dB
+        self.assertEqual(b[3], self.ref(f, 15, 10000, 15))  # 15 % = 1.5 dB
+
+    def test_type_version_and_cap(self):
+        f = "V40-96ELN"
+        out = self.lines(f, ["1|get.1 modc.version.attributes.ac", "1|set.1 modc.9.type=108", "1|get.1 modc.9.type"])
+        self.assertIn("=[", out[0])
+        self.assertEqual(out[0].split("[")[1].split(",")[12], "20")      # 0x6C & 0x3F = 44 = ac + 12
+        self.assertIn("<.1 modc.9.type=108", out[2])
+        reads = self.blocks(f, 35, None)
+        out = self.lines(f, self.PRE + ["1|set.1 modc.9=[1,108,00232400,70,0,0,0,DF64001E]",  # 100 %, max 30 -> 24
+                                        "1|set.1 event.70.value=100", "#modc"] + reads)
+        b = [l[7:] for l in out if l.startswith("@block:")]
+        self.assertEqual(b[0], self.ref(f, 14, 100, 120))                # capped at 12 dB
+        self.assertEqual(b[1], self.ref(f, 15, 10000, 92))               # set 3 = 0: default 15 % of 61.5 dB
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

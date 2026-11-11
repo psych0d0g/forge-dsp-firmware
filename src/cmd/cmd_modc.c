@@ -177,7 +177,7 @@ static void get_version_attr(void)
 	cmd_answer_header();
 	out_chr('[');
 	for (uint8_t i = 0; i <= BAS_MODC_ATTRIBUTES_MAX; i++) {
-		out_u16(BAS_LOOKUP_B(data_mods_versions, a + i));
+		out_u16(modc_type_version((uint8_t)(a + i)));
 		if (i < BAS_MODC_ATTRIBUTES_MAX)
 			out_chr(',');
 	}
