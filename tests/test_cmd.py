@@ -592,7 +592,8 @@ class Ct7302Test(unittest.TestCase):
 class SysteminitTest(unittest.TestCase):
     """Generated peripheral sequence of systeminit.bas on a fully populated bus model."""
     ALL = ["#i2cdev=1,E0", "#i2cdev=1,40", "#i2cdev=1,4E", "#i2cdev=2,90", "#i2cdev=1,20",
-           "#i2cdev=1,22", "#i2cdev=1,68", "#i2cdev=2,68", "#i2cdev=2,6A"]
+           "#i2cdev=1,22", "#i2cdev=1,68", "#i2cdev=2,68", "#i2cdev=2,6A",
+           "#i2cdev=2,30", "#i2cdev=1,98", "#i2cdev=2,20"]  # + V30-96LN: CS4385, CS5366, CS8416
 
     def complete(self, f):
         return "COMPLETE 1" in pathlib.Path(HERE, "..", "src", "flavours", f, "flavour_systeminit.h").read_text()
@@ -622,8 +623,21 @@ class SysteminitTest(unittest.TestCase):
                               "@pin:PIN_PERIPHERAL_DEVICES_RESET1=1", "@i2c1: S 4E 02 FF P",
                               "@pin:PIN_PERIPHERAL_DEVICES_RESET2=1"])
 
-    def test_96ln_is_marked_incomplete(self):
-        self.assertFalse(self.complete("V30-96LN"))
+    def test_all_flavours_complete(self):
+        self.assertTrue(all(self.complete(f) for f in FLAVOURS))
+
+    def test_96ln_order(self):
+        f = "V30-96LN"
+        p, _ = run(f, self.ALL + ["#i2clog=1", "#systeminit"], eeprom=image(f), want_eeprom=True)
+        ev = [l for l in p.stdout.splitlines() if l.startswith(("@pin", "@sei")) or
+              l in ("@i2c2: S 30 02 9E P", "@i2c2: S 30 02 DE P", "@i2c2: S 30 02 80 P",
+                    "@i2c1: S 98 01 93 P", "@i2c1: S E0 01 3F P", "@i2c2: S 20 01 84 P")]
+        # spdif (SRC43x2, CS8416) before reset 2, CS4385 right after reset 2, "DA ready" and the
+        # ADC only after the cores
+        self.assertEqual(ev, ["@sei", "@pin:PIN_PERIPHERAL_DEVICES_RESET1=1", "@i2c1: S E0 01 3F P",
+                              "@i2c2: S 20 01 84 P", "@pin:PIN_PERIPHERAL_DEVICES_RESET2=1",
+                              "@i2c2: S 30 02 9E P", "@i2c2: S 30 02 DE P", "@i2c2: S 30 02 80 P",
+                              "@i2c1: S 98 01 93 P"])
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@
 #define FLAVOUR_SYSTEMINIT_H_
 
 #include "board.h"
+#include "adc.h"
 #include "ct7302.h"
 #include "dac.h"
 #include "expander.h"

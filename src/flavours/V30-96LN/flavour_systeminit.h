@@ -5,6 +5,7 @@
 #define FLAVOUR_SYSTEMINIT_H_
 
 #include "board.h"
+#include "adc.h"
 #include "ct7302.h"
 #include "dac.h"
 #include "expander.h"
@@ -15,7 +16,7 @@
 
 /* 1 = every hardware module of the sequence is ported; else the peripheral resets stay
  * held (the caller checks this) */
-#define FLAVOUR_SYSTEMINIT_COMPLETE 0
+#define FLAVOUR_SYSTEMINIT_COMPLETE 1
 void interrupts_enable(void);
 void watchdog_start(void);
 void watchdog_kick(void);

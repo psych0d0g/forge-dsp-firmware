@@ -21,23 +21,20 @@ void flavour_systeminit_peripherals(void)
 	dsp_core_init(1);  /* libs/dsp/tas3108/cores/1/init.bas */
 	watchdog_kick();
 	spdif_init();  /* libs/spdif/init.bas */
-	/* PORT TODO: src43x2 (V30-96LN) (libs/spdif/src43x2/init.bas) */
-	/* PORT TODO: cs8416 (V30-96LN) (libs/spdif/cs8416/init.bas) */
 	watchdog_kick();
 	PIN_SET(PIN_PERIPHERAL_DEVICES_RESET2);  /* devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:175 */
 	dac_init();  /* libs/da/init.bas */
-	/* PORT TODO: cs4385 (V30-96LN) (libs/da/cs4385/init.bas) */
 	watchdog_kick();
 	delay_ms(768);  /* devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:188 */
 	dsp_core_init(2);  /* libs/dsp/tas3108/cores/2/init.bas */
 	watchdog_kick();
 	delay_ms(100);  /* devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:205 */
-	/* PORT TODO: cs4385_reg = cs4385_reg_mode_ctrl (devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:207) */
-	/* PORT TODO: cs4385_value = cs4385_mode_ctrl_da_rdy (devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:208) */
-	/* PORT TODO: call cs4385_set_reg() (devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:209) */
+	cs4385_reg = 0x02;  /* devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:207 */
+	cs4385_value = 0x80;  /* devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:208 */
+	cs4385_set_reg();  /* devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:209 */
 	/* PORT later (events, M4): disable PORTE_INT0 (devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:218) */
 	delay_ms(10);  /* devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:220 */
-	/* PORT TODO: cs5366 6 channel (V30-96LN) (libs/ad/cs536x/6channel/init.bas) */
+	adc_init();  /* libs/ad/cs536x/6channel/init.bas */
 	watchdog_kick();
 	/* PORT later (events, M4): enable PORTE_INT0 , lo (devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:236) */
 	delay_ms(10);  /* devices/V30/96LN/BQ4x42_4x30_2x26SYM/systeminit.bas:238 */

@@ -167,7 +167,7 @@ INIT_MAP = {
     "libs/expander/pca9555/4F/init.bas": "",
     "libs/da/init.bas": "dac_init();",
     "libs/da/es90x8pro/init.bas": "", "libs/da/es9018/init.bas": "",
-    "libs/da/cs4385/init.bas": "TODO: cs4385 (V30-96LN)",
+    "libs/da/cs4385/init.bas": "",
     "libs/dsp/tas3108/at24c512/init.bas": "",
     "libs/dsp/tas3108/at24c512/1/init.bas": "dsp_eeprom_init(1);",
     "libs/dsp/tas3108/at24c512/2/init.bas": "dsp_eeprom_init(2);",
@@ -176,12 +176,12 @@ INIT_MAP = {
     "libs/dsp/tas3108/cores/2/init.bas": "dsp_core_init(2);",
     "libs/dsp/tas3108/cores/3/init.bas": "dsp_core_init(3);",
     "libs/ad/init.bas": "", "libs/ad/pcm4202/init.bas": "",
-    "libs/ad/cs536x/init.bas": "TODO: cs5366 (V30-96LN)",
-    "libs/ad/cs536x/6channel/init.bas": "TODO: cs5366 6 channel (V30-96LN)",
+    "libs/ad/cs536x/init.bas": "",
+    "libs/ad/cs536x/6channel/init.bas": "adc_init();",
     "libs/spdif/init.bas": "spdif_init();",
     "libs/spdif/ct7302/init.bas": "", "libs/spdif/ct7302/20/init.bas": "", "libs/spdif/ct7302/22/init.bas": "",
-    "libs/spdif/src43x2/init.bas": "TODO: src43x2 (V30-96LN)",
-    "libs/spdif/cs8416/init.bas": "TODO: cs8416 (V30-96LN)",
+    "libs/spdif/src43x2/init.bas": "",
+    "libs/spdif/cs8416/init.bas": "",
 }
 INIT_LATER = ("libs/extender/", "libs/api/", "libs/ctrl/", "libs/cmd/", "libs/file/", "libs/loopcall/")
 HW_TODO = ("cs4385", "cs5366", "src43x2", "cs8416")
@@ -256,6 +256,13 @@ def systeminit_sequence(r, fid):
             continue
         if re.match(r"^(enable|disable)\s+PORT[A-F]_INT[01]\b", code, re.I):
             out.append(f"\t/* PORT later (events, M4): {code} ({src}) */")
+            continue
+        mm = re.match(r"^(cs4385_reg|cs4385_value)\s*=\s*(\w+)$", code, re.I)
+        if mm:
+            out.append(f"\t{mm.group(1).lower()} = 0x{r.value(mm.group(2)):02X};  /* {src} */")
+            continue
+        if re.match(r"^call\s+cs4385_set_reg\(\)$", code, re.I):
+            out.append(f"\tcs4385_set_reg();  /* {src} */")
             continue
         if re.search(r"cs4385|cs536|src43|cs8416", code, re.I):
             out.append(f"\t/* PORT TODO: {code.replace('*/', '* /')} ({src}) */")
@@ -357,7 +364,7 @@ def generate(main):
           "/* peripheral part of systeminit.bas, generated in source order */",
           "void flavour_systeminit_peripherals(void)", "{"] + seq + ["}"]
     sih = [HEADER, "#ifndef FLAVOUR_SYSTEMINIT_H_\n#define FLAVOUR_SYSTEMINIT_H_\n",
-           '#include "board.h"', '#include "ct7302.h"', '#include "dac.h"', '#include "expander.h"',
+           '#include "board.h"', '#include "adc.h"', '#include "ct7302.h"', '#include "dac.h"', '#include "expander.h"',
            '#include "i2c.h"', '#include "si5338.h"', '#include "store.h"', '#include "tas3108.h"', "",
            "/* 1 = every hardware module of the sequence is ported; else the peripheral resets stay",
            " * held (the caller checks this) */",
