@@ -1,6 +1,5 @@
 /*
- * Port of libs/loopcall/functions.bas. Parts that are not ported yet (IR receiver, ADC,
- * VU meter, sys_init, MODC beyond the preset request) are weak no-ops here.
+ * Port of libs/loopcall/functions.bas.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "loopcall.h"
@@ -14,9 +13,8 @@
 #include "store.h"
 #include "tick.h"
 
-#define W __attribute__((weak))
-W void sys_init_mainloop(void) {}
-W void events_vumeter_mainloop(void) {}
+void sys_init_mainloop(void);
+void events_vumeter_mainloop(void);
 void watchdog_kick(void);
 
 #define B(n) (bits & (1u << (n)))

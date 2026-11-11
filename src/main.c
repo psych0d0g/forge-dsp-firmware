@@ -79,6 +79,10 @@ int main(void)
 		if ((ir & (1 << BAS_IRRECEIVER_STATE_ON)) && !(ir & (1 << BAS_IRRECEIVER_STATE_NOTINIT)))
 			ir_capture_init();  /* RS485 master RX is the IR input (iface init of the original) */
 	}
+	{
+		void sys_init_init(void);
+		sys_init_init();
+	}
 	ctrl_events_init();   /* libs/ctrl/events init parts: fields, shutdown, usb, grounds, overflow */
 	events_poll_pins();
 	events_adc_init();
