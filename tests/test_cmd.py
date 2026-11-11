@@ -1751,6 +1751,19 @@ class LoudnessTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class BootSectionTest(LinesMixin, unittest.TestCase):
+    """Diagnostics for #22: read-only dump of the boot section, 64 bytes per block."""
+
+    def test_blocks(self):
+        out = self.lines("V40-96ELN", ["1|get.1 system.hardware.boot.1", "1|get.1 system.hardware.boot.128",
+                                       "1|get.1 system.hardware.boot.0", "1|get.1 system.hardware.boot.129"])
+        self.assertRegex(out[0], r'<\.1 system\.hardware\.boot\.1="[0-9A-F]{128}"')
+        self.assertIn("system.hardware.boot.128=", out[1])
+        self.assertIn("command out of range", out[2])
+        self.assertIn("command out of range", out[3])
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class MuxITest(LinesMixin, unittest.TestCase):
     """#17: MODC type 0x60 mux_I, priority list of events as the GUI dialog "Eingangs-Umschalter"."""
 

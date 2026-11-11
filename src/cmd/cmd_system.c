@@ -5,6 +5,9 @@
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
 #include <math.h>
+#ifdef __AVR__
+#include <avr/pgmspace.h>
+#endif
 #include <string.h>
 #include "api.h"
 #include "bas_data.h"
@@ -609,6 +612,37 @@ static void cmd_get_system_temp(void)
 	out_crlf();
 }
 
+/* PORT extension (diagnostics for #22): get system.hardware.boot.N reads 64 bytes of the boot
+ * section (0x40000 + (N-1)*64, N 1..128) read-only, as hex. Shows whether the lock bits (BLBB) allow
+ * the application to read the bootloader (WLOCK) or not (RWLOCK: the MCU returns no data). */
+static void cmd_get_system_hardware(void)
+{
+	if (req_w(cmd_req_word_three) != 0x626F || REQ_B(10) != cmd_req_number) {
+		cmd_error_unknown();
+		return;
+	}
+	uint8_t n = REQ_B(9);
+	if (n < 1 || n > 128) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	uint16_t off = (uint16_t)((n - 1) * 64u);
+	cmd_answer_header();
+	Q();
+	for (uint8_t i = 0; i < 64; i++) {
+#ifdef __AVR__
+		uint8_t b = pgm_read_byte_far(0x40000UL + off + i);
+#else
+		uint8_t b = (uint8_t)(0xFF ^ ((off + i) & 0));  /* host build: no boot section */
+#endif
+		static const char hx[] = "0123456789ABCDEF";
+		out_chr(hx[b >> 4]);
+		out_chr(hx[b & 15]);
+	}
+	Q();
+	out_crlf();
+}
+
 void cmd_get_system(void)
 {
 	switch (req_w(cmd_req_word_two)) {
@@ -622,6 +656,7 @@ void cmd_get_system(void)
 	case 0x6B65: cmd_get_system_key(); break;
 	case 0x7069: cmd_get_system_ping(); break;
 	case 0x7374: cmd_get_system_startup(); break;  /* PORT extension (#40) */
+	case 0x6861: cmd_get_system_hardware(); break; /* PORT extension (#22 diagnostics) */
 	case 0x6665: cmd_get_system_feature(); break;
 	case 0x6775: cmd_get_system_gui(); break;
 	case 0x706F: cmd_get_system_poti(); break;
