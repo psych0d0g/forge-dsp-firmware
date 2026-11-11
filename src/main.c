@@ -1,5 +1,5 @@
 /*
- * Forge DSP firmware in C, all flavours. State: M0 bring-up + M1 text protocol core.
+ * Forge DSP firmware in C, all flavours. State: M0 bring-up, M1 protocol core, M2 registers/EEPROM.
  *   clock, pins and supply hold as the BASCOM firmware, watchdog 8 s,
  *   4 serial channels with the BASCOM parser, system.{boot,echo,firmware,info,key,ping}.
  * Safe state: peripherals stay in reset, remote out (amplifiers) stays off.
@@ -14,6 +14,8 @@
 #include "iface.h"
 #include "mcuid.h"
 #include "power.h"
+#include "registers.h"
+#include <util/delay.h>
 #include "tick.h"
 #include "version.h"
 #include "watchdog.h"
@@ -22,7 +24,10 @@
 const char fw_version_c45b3[] PROGMEM __attribute__((used)) = FW_VERSION_C45B3;
 
 /* router hooks */
-uint8_t iface_hook_ir_master_online(void) { return 0; }  /* PORT: registers (M2) */
+uint8_t iface_hook_ir_master_online(void)
+{
+	return (registers[BAS_REG_EXT_IRSETUP] >> BAS_IRRECEIVER_STATE_ON) & 1;
+}
 uint8_t iface_hook_usb_dtr(void) { return PIN_READ(PIN_EXT_USB_DTR); }
 void iface_hook_busy(uint8_t on) { if (on) PIN_SET(PIN_LED_YELLOW); else PIN_CLR(PIN_LED_YELLOW); }
 void iface_hook_watchdog(void) { watchdog_reset(); }
@@ -33,9 +38,14 @@ int main(void)
 	__asm__ __volatile__("" :: "r"(fw_version_c45b3));
 	clock_init();
 	board_init();
-	mcuid_init();
 	power_hold();
 	NVM.CTRLB |= NVM_EEMAPEN_bm;  /* config eeprom = mapped */
+	/* systeminit.bas: "wait a bit to use the eeprom values right" */
+	_delay_ms(250);
+	errorcount_init();
+	registers_load();
+	sysinit_check(PIN_READ(PIN_DBG_INIT_FINEST));
+	mcuid_init();
 	tick_init();
 	iface_init();
 	cmd_init();
@@ -46,6 +56,7 @@ int main(void)
 	sei();
 
 	PIN_CLR(PIN_LED_RED);
+	sysinit_count_boot();
 
 	uint16_t last = tick_ms();
 	for (;;) {

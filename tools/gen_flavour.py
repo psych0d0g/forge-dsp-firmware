@@ -7,6 +7,9 @@ For every devices/<PCB>/<model>/<flow>/main.bas:
   OUT_DIR/<PCB>-<model>/flavour.h        all numeric/string `const` of the resolved
                                           build as BAS_<NAME>, pin aliases as PIN_<NAME>_*
   OUT_DIR/<PCB>-<model>/flavour_pins.c   pin setup of pins.bas in source order
+  OUT_DIR/<PCB>-<model>/flavour_eram.h   EEPROM layout: every `dim ... as ERAM` in declaration
+                                          order from address 0 (verified against the release
+                                          HEX with tools/verify_eram.py)
 --check: fail if the generated files differ from what is on disk.
 """
 
@@ -37,6 +40,35 @@ def c_string(v):
 def flavour_id(main):
     parts = os.path.normpath(main).split(os.sep)
     return f"{parts[-4]}-{parts[-3]}"
+
+
+ERAM = re.compile(r"^dim\s+(\w+)\s*(?:\(([^)]*)\))?\s+as\s+eram\s+(\w+)(?:\s*\*\s*(\w+))?"
+                  r"(?:\s+at\s+(\w+)\s*\(([^)]*)\)\s+overlay)?\s*$", re.I)
+ERAM_SIZE = {"byte": 1, "word": 2, "integer": 2, "dword": 4, "long": 4, "single": 4, "double": 8}
+
+
+def eram_layout(r):
+    """[(name, address, count, element_size, type)] in BASCOM allocation order."""
+    out, addr, by_name = [], 0, {}
+    for line in r.flat:
+        code = strip_comment(re.sub(r"\s+'[^']*$", "", line))
+        m = ERAM.match(code)
+        if not m:
+            continue
+        name, dim, typ, strl, at_name, at_idx = m.groups()
+        n = r.value(dim) if dim else 1
+        t = typ.lower()
+        size = r.value(strl) + 1 if t == "string" else ERAM_SIZE[t]
+        if at_name:  # overlay: no allocation
+            _, base, _, esize, _ = by_name[at_name.lower()]
+            a = base + (r.value(at_idx) - 1) * esize
+        else:
+            a = addr
+            addr += n * size
+        e = (name, a, n, size, t)
+        by_name[name.lower()] = e
+        out.append(e)
+    return out, addr
 
 
 def generate(main):
@@ -115,7 +147,18 @@ def generate(main):
     c = [HEADER, "#include <avr/io.h>", '#include "flavour.h"', "",
          "/* pins.bas in source order: PINnCTRL, DIR (OUT still 0), initial levels */",
          "void flavour_pins_init(void)", "{"] + body + ["}"]
-    return fid, "\n".join(h) + "\n", "\n".join(c) + "\n"
+    layout, total = eram_layout(r)
+    e = [HEADER, "#ifndef FLAVOUR_ERAM_H_\n#define FLAVOUR_ERAM_H_\n",
+         "/* internal EEPROM (BASCOM ERAM), 0-based addresses; mapped at MAPPED_EEPROM_START.",
+         " * _COUNT = elements (BASCOM index 1.._COUNT), _SIZE = bytes per element. */",
+         f"#define ERAM_TOTAL_SIZE {total}", ""]
+    for name, a, n, size, t in layout:
+        N = "ERAM_" + name.upper()
+        e.append(f"#define {N} {a}  /* {t}{' x' + str(n) if n > 1 else ''} */")
+        e.append(f"#define {N}_COUNT {n}")
+        e.append(f"#define {N}_SIZE {size}")
+    e.append("\n#endif")
+    return fid, "\n".join(h) + "\n", "\n".join(c) + "\n", "\n".join(e) + "\n", layout
 
 
 def main():
@@ -129,9 +172,9 @@ def main():
         raise SystemExit("no devices/*/*/*/main.bas found")
     bad = 0
     for main in mains:
-        fid, h, c = generate(main)
+        fid, h, c, e, _ = generate(main)
         d = os.path.join(a.out, fid)
-        for name, text in (("flavour.h", h), ("flavour_pins.c", c)):
+        for name, text in (("flavour.h", h), ("flavour_pins.c", c), ("flavour_eram.h", e)):
             p = os.path.join(d, name)
             if a.check:
                 old = open(p).read() if os.path.exists(p) else None

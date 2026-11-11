@@ -31,6 +31,18 @@ jobs:
           git checkout -q FETCH_HEAD
       - name: Generated flavour files are up to date
         run: python3 tools/gen_flavour.py forge-src src/flavours --check
+      - name: EEPROM layout matches the original firmware (all flavours)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pip install -q platformio
+          pio pkg install -g -t "platformio/toolchain-atmelavr@~1.70300.0"
+          T=~/.platformio/packages/toolchain-atmelavr/bin
+          gh release download 0.0.1116000 --repo "$GITHUB_REPOSITORY" --dir release-hex --pattern "*.hex"
+          for f in $(ls src/flavours); do
+            python3 tools/verify_eram.py "src/flavours/$f/flavour_eram.h" \
+              "release-hex/forge-dsp-$f-bascom-1.11.6000.hex" --objdump "$T/avr-objdump"
+          done
       - name: Protocol tests (src/cmd natively for all flavours)
         run: |
           make -C tests/native

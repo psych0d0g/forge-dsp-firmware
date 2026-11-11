@@ -1,13 +1,15 @@
 /*
  * USART channels for the text protocol (libs/interface/V40/1..4).
- * Defaults as init.bas without stored registers: ch1 38400, ch2 19200, ch3 38400, ch4 38400.
- * PORT: baud rates from the EEPROM registers (reg_baud_ch1..4) and the IR receiver mode
- * of ch3 (PC6 as IR input) follow with M2 (issues #2, #12).
+ * Baud rates from registers(reg_baud_ch1..4) as libs/interface/V40/<n>/init.bas, defaults
+ * ch1 38400, ch2 19200, ch3 38400, ch4 38400. Debug output on ch2/ch4 forces 115200.
+ * ch3 is not opened as UART while the IR receiver uses PC6 (reg_ext_irsetup).
+ * PORT: IR receiver itself follows with M4.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include "iface.h"
+#include "registers.h"
 
 #define RXBUF 256  /* BASCOM iface_in_buffer_size = 254 */
 
@@ -28,6 +30,22 @@ static const uint8_t ch_of_buart[4] = { iface_ch_usb, iface_ch_master, iface_ch_
 
 uint8_t iface_buart_channel[iface_ch_max + 1];
 volatile uint8_t iface_todo[iface_ch_max + 1];
+
+/* register code (uart_baud_*) -> rate; anything else -> the channel default */
+static uint32_t baud_of(uint8_t code, uint32_t dflt)
+{
+	switch (code) {
+	case 1:  return 1200;
+	case 2:  return 2400;
+	case 4:  return 4800;
+	case 8:  return 9600;
+	case 16: return 19200;
+	case 32: return 38400;
+	case 48: return 57600;
+	case 96: return 115200;
+	default: return dflt;
+	}
+}
 
 /* 32 MHz: BSEL/BSCALE with < 0.2 % error */
 static void set_baud(USART_t *u, uint32_t baud)
@@ -63,10 +81,16 @@ void iface_init(void)
 	iface_buart_channel[iface_ch_master] = 1;
 	iface_buart_channel[iface_ch_audio] = 2;
 	iface_buart_channel[iface_ch_slave] = 3;
-	open_usart(0, 38400);
-	open_usart(1, 38400);
-	open_usart(2, 19200);
-	open_usart(3, 38400);
+	open_usart(0, baud_of(registers[BAS_REG_BAUD_CH1], 38400));
+	if (registers[BAS_REG_DEBUGOUT] & (1 << BAS_DEBUGOUT_UART2))
+		set_register(BAS_REG_BAUD_CH2, BAS_UART_BAUD_115200);
+	open_usart(2, baud_of(registers[BAS_REG_BAUD_CH2], 19200));
+	uint8_t ir = registers[BAS_REG_EXT_IRSETUP];
+	if (!(ir & (1 << BAS_IRRECEIVER_STATE_ON)) || (ir & (1 << BAS_IRRECEIVER_STATE_NOTINIT)))
+		open_usart(1, baud_of(registers[BAS_REG_BAUD_CH3], 38400));
+	if (registers[BAS_REG_DEBUGOUT] & (1 << BAS_DEBUGOUT_UART4))
+		set_register(BAS_REG_BAUD_CH4, BAS_UART_BAUD_115200);
+	open_usart(3, baud_of(registers[BAS_REG_BAUD_CH4], 38400));
 }
 
 static inline void rx(uint8_t b)
@@ -124,6 +148,8 @@ void iface_flush(uint8_t buart)
 	if (buart > 3)
 		return;
 	USART_t *u = chans[buart].u;
+	if (!(u->CTRLB & USART_TXEN_bm))
+		return;  /* not opened (e.g. reset during startup): TXCIF would never be set */
 	while (!(u->STATUS & USART_DREIF_bm))
 		;
 	while (!(u->STATUS & USART_TXCIF_bm))

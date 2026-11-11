@@ -10,6 +10,8 @@
 #include "cmd.h"
 #include "iface.h"
 #include "mcuid.h"
+#include "eram.h"
+#include "registers.h"
 
 uint8_t iface_buart_channel[iface_ch_max + 1] = { 0, 0, 2, 1, 3 };
 volatile uint8_t iface_todo[iface_ch_max + 1];
@@ -23,9 +25,24 @@ uint8_t iface_hook_usb_dtr(void) { return (uint8_t)host_dtr; }
 void iface_hook_busy(uint8_t on) { (void)on; }
 void iface_hook_watchdog(void) {}
 
+static uint8_t eeprom[4096];
+static const char *eeprom_out;
+uint8_t eram_hw_read(uint16_t a) { return eeprom[a & 0xFFF]; }
+void eram_hw_write(uint16_t a, uint8_t v) { eeprom[a & 0xFFF] = v; }
+
+static void save_eeprom(void)
+{
+	if (!eeprom_out)
+		return;
+	FILE *f = fopen(eeprom_out, "wb");
+	fwrite(eeprom, 1, sizeof eeprom, f);
+	fclose(f);
+}
+
 void mcu_reset_delayed(void)
 {
 	printf("\n@reset\n");
+	save_eeprom();
 	exit(0);
 }
 
@@ -54,9 +71,22 @@ void iface_putc(uint8_t buart, char c)
 
 void iface_flush(uint8_t buart) { (void)buart; }
 
-int main(void)
+/* usage: cmd-<flavour> [EEPROM_IN|- [EEPROM_OUT]]  (default: blank 0xFF, i.e. sysinit) */
+int main(int argc, char **argv)
 {
 	char line[512];
+	memset(eeprom, 0xFF, sizeof eeprom);
+	if (argc > 1 && strcmp(argv[1], "-")) {
+		FILE *f = fopen(argv[1], "rb");
+		if (!f || fread(eeprom, 1, sizeof eeprom, f) == 0) { perror(argv[1]); return 2; }
+		fclose(f);
+	}
+	if (argc > 2)
+		eeprom_out = argv[2];
+	errorcount_init();
+	registers_load();
+	sysinit_check(0);
+	sysinit_count_boot();
 	cmd_init();
 	while (fgets(line, sizeof line, stdin)) {
 		line[strcspn(line, "\r\n")] = 0;
@@ -71,5 +101,6 @@ int main(void)
 		if (cur >= 0) { printf("\n"); cur = -1; }
 		printf("--\n");
 	}
+	save_eeprom();
 	return 0;
 }
