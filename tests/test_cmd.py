@@ -623,6 +623,10 @@ class SysteminitTest(unittest.TestCase):
         p, _ = run(f, missing + ["#systeminit", "#hw_check", "1|get.1 system.feature.attributes.hw"],
                    eeprom=image(f), want_eeprom=True)
         self.assertIn("@hwcheck:1 mute:255", p.stdout)  # api_mute_out_on
+        # #25: a V40 build on a V30 board (no Si5338) is caught and stays muted
+        no_clock = [x for x in self.ALL if x != "#i2cdev=1,E0"]
+        p, _ = run(f, no_clock + ["#systeminit", "#hw_check"], eeprom=image(f), want_eeprom=True)
+        self.assertIn("@hwcheck:1 mute:255", p.stdout)
         f = "V30-96ELN"
         p, _ = run(f, ["1|get.1 system.feature.attributes.hw"], eeprom=image(f), want_eeprom=True)
         self.assertIn("=[", p.stdout)
