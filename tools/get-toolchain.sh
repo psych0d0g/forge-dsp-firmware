@@ -1,19 +1,21 @@
 #!/bin/sh
-# avr-gcc 16.1.0 with avr-libc (64-bit double via -mdouble=64) for PlatformIO.
-# Linux x86_64 build from github.com/ZakKemble/avr-gcc-build, pinned by sha256.
+# avr-gcc 16.2.1 with the lower-subreg fix (tools/toolchain/), binutils and avr-libc of
+# ZakKemble/avr-gcc-build v16.1.0-1; 64-bit double via -mdouble=64. Linux x86_64, pinned by sha256,
+# from the release "toolchain-avr-gcc-16.2.1-p1" of this repository.
 #   tools/get-toolchain.sh [DIR]      (default: $FORGE_TOOLCHAIN_DIR or ~/.cache/forge-dsp)
 # Creates .toolchain/avr-gcc in the project as a link to the unpacked toolchain; platformio.ini
 # uses it via platform_packages = toolchain-atmelavr@symlink://...
+# Rebuild from source: tools/toolchain/build-avr-gcc.sh
 set -eu
-VER=16.1.0
-TAG=v16.1.0-1
-FILE=avr-gcc-$VER-x64-linux.tar.bz2
-SHA256=8621ecc6514df50202b58b23b0f8f72f0e535ec35ee40426194e9a15c57692f6
-URL=https://github.com/ZakKemble/avr-gcc-build/releases/download/$TAG/$FILE
+VER=16.2.1-p1
+NAME=avr-gcc-$VER-x64-linux
+FILE=$NAME.tar.xz
+SHA256=909c8daa4a3bb2ac5b014b84887322afa1da551411b44baea245e383b6ef9273
+URL=https://github.com/psych0d0g/forge-dsp-firmware/releases/download/toolchain-avr-gcc-$VER/$FILE
 
 PROJECT=$(cd "$(dirname "$0")/.." && pwd)
 DIR=${1:-${FORGE_TOOLCHAIN_DIR:-$HOME/.cache/forge-dsp}}
-DEST=$DIR/avr-gcc-$VER-x64-linux
+DEST=$DIR/$NAME
 mkdir -p "$DIR"
 
 if [ ! -x "$DEST/bin/avr-gcc" ]; then
@@ -21,7 +23,7 @@ if [ ! -x "$DEST/bin/avr-gcc" ]; then
 	curl -sSL -o "$DIR/$FILE.part" "$URL"
 	echo "$SHA256  $DIR/$FILE.part" | sha256sum -c -
 	mv "$DIR/$FILE.part" "$DIR/$FILE"
-	tar -xjf "$DIR/$FILE" -C "$DIR"
+	tar -xJf "$DIR/$FILE" -C "$DIR"
 	rm -f "$DIR/$FILE"
 fi
 
@@ -29,8 +31,8 @@ fi
 cat > "$DEST/package.json" <<JSON
 {
   "name": "toolchain-atmelavr",
-  "version": "3.160100.0",
-  "description": "avr-gcc $VER (ZakKemble/avr-gcc-build $TAG), -mdouble=64 capable",
+  "version": "3.160201.1",
+  "description": "avr-gcc $VER (releases/gcc-16 + lower-subreg fix), -mdouble=64 capable",
   "system": ["linux_x86_64"]
 }
 JSON
