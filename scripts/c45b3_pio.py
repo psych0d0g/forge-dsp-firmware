@@ -69,11 +69,43 @@ env.AddCustomTarget(
     description="Read flash and EEPROM through the bootloader (if the build allows it)",
 )
 
-release = os.path.join(proj, env.GetProjectOption("custom_release_hex"))
+release_asset = env.GetProjectOption("custom_release_asset")
+release_file = os.path.join(proj, ".pio", "release", release_asset)
+
+
+def fetch_release(target, source, env):
+    """Download the official HEX of this flavour once, verify the pinned sha256."""
+    import hashlib
+    import urllib.request
+    sums = {}
+    with open(os.path.join(proj, opt("release_sums"))) as f:
+        for line in f:
+            digest, name = line.split()
+            sums[name] = digest
+    want = sums.get(release_asset)
+    if not want:
+        print(f"error: {release_asset} not in {opt('release_sums')}")
+        return 1
+    if not os.path.exists(release_file):
+        os.makedirs(os.path.dirname(release_file), exist_ok=True)
+        url = opt("release_url") + "/" + release_asset
+        print("downloading", url)
+        urllib.request.urlretrieve(url, release_file + ".part")
+        os.replace(release_file + ".part", release_file)
+    got = hashlib.sha256(open(release_file, "rb").read()).hexdigest()
+    if got != want:
+        os.unlink(release_file)
+        print(f"error: sha256 mismatch for {release_asset}: {got} != {want}")
+        return 1
+    print(f"{release_asset}: sha256 ok")
+    return 0
+
+
 env.AddCustomTarget(
     name="flash_release",
     dependencies=None,
-    actions=[need_port, base + ' write-flash "%s" --allow-write' % release],
+    actions=[need_port, fetch_release,
+             base + ' write-flash "%s" --allow-write' % release_file],
     title="Forge: flash release 1.11.6000 (%s)" % flavour,
-    description="Program the official firmware (way back)",
+    description="Program the official firmware of this flavour (GitHub release 0.0.1116000)",
 )

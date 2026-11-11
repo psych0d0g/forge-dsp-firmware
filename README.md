@@ -36,7 +36,9 @@ Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `tools/c45b3-host` un
 4. Project Tasks → Custom:
    - *Forge: versions*: Version von Bootloader und Firmware.
    - *Forge: backup*: Flash und EEPROM nach `backups/<Datum>/`, soweit lesbar.
-   - *Forge: flash release 1.11.6000 (…)*: Rückweg auf die offizielle Firmware der Variante (`release/`, sha256).
+   - *Forge: flash release 1.11.6000 (…)*: Rückweg auf die offizielle Firmware der Variante. Sie wird aus dem
+     GitHub-Release [0.0.1116000](https://github.com/psych0d0g/forge-dsp-firmware/releases/tag/0.0.1116000) geladen
+     und gegen `scripts/release-0.0.1116000.sha256` geprüft (Cache `.pio/release/`).
 5. Monitor: 38400 Baud, CR LF (Textprotokoll, `libs/cmd/v20/commands.txt` im Original).
 
 c45b3 braucht nur pyserial, das liefert PlatformIO mit. CLI: `pio run -e V41-96ELN-3 -t upload`.
@@ -50,7 +52,7 @@ c45b3 braucht nur pyserial, das liefert PlatformIO mit. CLI: `pio run -e V41-96E
   mit Datei:Zeile, Referenz beim Portieren).
 - `tools/c45b3-host/`: Linux-Host für chip45boot3, mit Tests gegen ein Modell und gegen den nativ übersetzten Original-
   Bootloader-Code. `tests/pty_bridge.py` emuliert Firmware + Bootloader an einem pty für Upload-Tests ohne Hardware.
-- `release/`: offizielle HEX 1.11.6000 aller Varianten, unverändert.
+- Offizielle HEX 1.11.6000 aller Varianten: GitHub-Release `0.0.1116000` (nicht im git).
 
 ## Sicherheit
 - Der Bootloader-Bereich ist laut Original per Lockbits (BLBB) geschützt. Das Tool schreibt nie dorthin und sendet die
