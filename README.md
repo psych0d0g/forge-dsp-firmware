@@ -41,6 +41,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
   laufen damit ohne Aus-/Einschalten. Grundlage ist eine Analyse des ausgelesenen Bootloaders: Er startet auch über eine
   Sequenz im EEPROM, die das Original vorgesehen, aber nie geschrieben hat ([docs/bootloader.md](docs/bootloader.md), #22).
   Am Gerät geprüft: Sicherung, Flashen und Start mit Kennung komplett ohne Taster.
+- **Abstimmung sichern und vergleichen** beim Update (`c45b3 export-tuning / compare-tuning / restore-tuning`,
+  Tasks *Forge: export/compare tuning*), im `.cfg`-Format der Original-GUI (#30).
 - **Bootloader auslesen** (nur lesend, `get.1 system.hardware.boot.N`, `tools/dump_bootsection.py`); das Abbild liegt unter
   [`bootloader/`](bootloader/).
 - **Eingangswahl** `mixer.in` (und `mixer.in.max`) für die aktive Mixer-Position, mit Ereignis an die GUI; die
@@ -98,7 +100,11 @@ Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `lib/fatfs`: FatFs R0
    - **Bootloader:** Läuft schon die Port-Firmware, schickt das Tool `set.1 system.boot` und der Forge geht von selbst
      in den Bootloader (kein Taster). Mit der Original-Firmware startet er dabei nur neu: dann während der Wartezeit
      (60 s) den Forge ausschalten, den Taster neben dem USB-Port halten, einschalten, halten bis die orange LED blinkt.
+   - Vorher: Abstimmung (geladenes Preset, Kanalnamen, IR-Codes, MODC) nach `backups/<datum>/tuning-before.cfg`
+     sichern, im Format der Original-GUI.
    - Flash schreiben (Seiten werden im Bootloader geprüft), zurücklesen, Anwendung starten.
+   - Danach: Abstimmung erneut lesen und vergleichen. Mit `[forge] restore_tuning = yes` werden Abweichungen
+     zurückgeschrieben (nur die Unterschiede, nur bei gleichem Modell).
 4. Project Tasks → Custom:
    - *Forge: versions*: Version von Bootloader und Firmware.
    - *Forge: backup*: Flash und EEPROM nach `backups/<Datum>/`, soweit lesbar.
