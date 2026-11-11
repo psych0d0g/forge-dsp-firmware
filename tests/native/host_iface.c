@@ -88,6 +88,7 @@ static void host_pin_set(const char *name, int v)
 }
 const uint8_t *host_i2c_blockdata(uint8_t bus, uint8_t addr, uint8_t reg);
 #include "api.h"
+#include "hwcheck.h"
 
 uint8_t iface_buart_channel[iface_ch_max + 1] = { 0, 0, 2, 1, 3 };
 volatile uint8_t iface_todo[iface_ch_max + 1];
@@ -297,6 +298,9 @@ static void store_cmd(const char *l)
 	} else if (!strcmp(l, "#systeminit")) {
 		flavour_systeminit_peripherals();
 		printf("@hw:%04X dsp:%04X\n", hardware_other, hardware_dsp);
+	} else if (!strcmp(l, "#hw_check")) {           /* systeminit "checks evaluate" (#32) */
+		uint8_t bad = hw_check_evaluate();
+		printf("@hwcheck:%u mute:%u\n", bad, api_get_out_mute_prio(api_mute_out_prio_hardware));
 	} else if (!strcmp(l, "#spdif_init")) {
 		spdif_init();
 		printf("@hw:%04X\n", hardware_other);

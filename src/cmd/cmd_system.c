@@ -16,6 +16,7 @@
 #include "factory.h"
 #include "identity.h"
 #include "sys_init.h"
+#include "hwcheck.h"
 void watchdog_kick(void);
 #include "cmd.h"
 #include "flavour.h"
@@ -531,8 +532,8 @@ static void cmd_get_system_feature(void)
 	if (a == BAS_FEATURE_ATTRIBUTES_HW) {  /* expected and found peripherals */
 		out_chr('[');
 		out_u16(BAS_CHK_CHANNEL_OPEN); out_chr(','); out_u16(channel_open); out_chr(',');
-		out_u16(BAS_CHK_HARDWARE_DSP); out_chr(','); out_u16(hardware_dsp); out_chr(',');
-		out_u16(BAS_CHK_HARDWARE_OTHER); out_chr(','); out_u16(hardware_other);
+		out_u16(hw_check_expected_dsp()); out_chr(','); out_u16(hardware_dsp); out_chr(',');
+		out_u16(hw_check_expected_other()); out_chr(',');  /* PORT fix #32 */ out_u16(hardware_other);
 		out_chr(']');
 	} else {
 		out_lookupstr(data_feature_attributes, a);

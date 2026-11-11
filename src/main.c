@@ -20,6 +20,7 @@
 #include "expander.h"
 #include "si5338.h"
 #include "flavour_systeminit.h"
+#include "hwcheck.h"
 #include "api.h"
 #include "events.h"
 #include "loopcall.h"
@@ -100,6 +101,7 @@ int main(void)
 	if (PIN_READ(PIN_OPTION_SPDIF_4CH) == 0x00)
 		events_spdif_init();
 	ctrl_modc_init();     /* blocks from the EEPROM; requests the preset load */
+	hw_check_evaluate();  /* systeminit.bas "checks evaluate": mismatch -> outputs stay muted */
 #else
 	/* safe state: only detection; peripheral resets held, power-up bits off */
 	si5338_detect_and_init();

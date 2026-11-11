@@ -79,6 +79,11 @@ void api_set_out_mute_store(uint8_t v)
 
 uint8_t api_get_out_mute_store(void) { return storage_mute_out; }
 
+uint8_t api_get_out_mute_prio(uint8_t prio)
+{
+	return prio >= 1 && prio <= api_mute_out_prio_hardware ? api_mute_out_prio[prio] : 0;
+}
+
 void api_set_out_mute_prio(uint8_t prio, uint8_t v)
 {
 	if (api_mute_out_prio[prio] != v) {

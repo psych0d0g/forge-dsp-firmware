@@ -607,11 +607,26 @@ class SysteminitTest(unittest.TestCase):
             other, dsp = consts(f, "CHK_HARDWARE_OTHER", "CHK_HARDWARE_DSP")
             if f == "V30-96ELN":
                 # original: chk_hardware_other expects the Si5338 (bit 11), which this build does
-                # not have, and not the DAC/SPDIF bits (2, 3) it detects -> mismatch (issue #32)
+                # not have, and not the DAC/SPDIF bits (2, 3) it detects -> always muted (#32)
                 self.assertEqual(other, 0x0871)
                 self.assertEqual(line, f"@hw:007D dsp:{dsp:04X}", f)
-                continue
-            self.assertEqual(line, f"@hw:{other:04X} dsp:{dsp:04X}", f)
+            else:
+                self.assertEqual(line, f"@hw:{other:04X} dsp:{dsp:04X}", f)
+            # checks evaluate: fully populated -> no hardware mute (port fix for V30-96ELN)
+            p, _ = run(f, self.ALL + ["#systeminit", "#hw_check"], eeprom=image(f), want_eeprom=True)
+            self.assertIn("@hwcheck:0 mute:0", p.stdout, f)
+
+    def test_missing_device_mutes(self):
+        """systeminit.bas "checks evaluate": a missing peripheral keeps the outputs muted."""
+        f = "V40-96ELN"
+        missing = [x for x in self.ALL if x != "#i2cdev=2,6A"]   # third DSP core
+        p, _ = run(f, missing + ["#systeminit", "#hw_check", "1|get.1 system.feature.attributes.hw"],
+                   eeprom=image(f), want_eeprom=True)
+        self.assertIn("@hwcheck:1 mute:255", p.stdout)  # api_mute_out_on
+        f = "V30-96ELN"
+        p, _ = run(f, ["1|get.1 system.feature.attributes.hw"], eeprom=image(f), want_eeprom=True)
+        self.assertIn("=[", p.stdout)
+        self.assertEqual(p.stdout.split("=[")[1].split(",")[4], "125")   # expected other = 0x007D
 
     def test_reset_order_96eln3(self):
         f = "V41-96ELN-3"

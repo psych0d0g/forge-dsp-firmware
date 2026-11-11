@@ -14,6 +14,7 @@ extern uint32_t store_mix_changed;  /* bit n: mixer register n of the loaded pos
 #define api_mute_out_on  0xFF
 #define api_mute_out_off 0x00
 #define api_mute_out_prio_hardware 4
+uint8_t api_get_out_mute_prio(uint8_t prio);
 #define api_mute_out_prio_system   3
 #define api_mute_out_prio_change   2
 #define api_mute_out_prio_modc     1
