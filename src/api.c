@@ -247,6 +247,63 @@ void api_set_mix_position(uint8_t pos)
 	}
 }
 
+/* --- mono per output pair (PORT extension #14, MODC type 0x6A) ---------------------------------
+ * The input mixer (mixer.P.C.G) has one row per DSP channel: C 1/2 = 35/36, C 3..10 = outputs
+ * 1..8 (odd = left), G = source (5 pairs, even = left, odd = right; GUI page INMI21). Mono for
+ * output pair p makes the rows of channels 2p-1 and 2p equal when the coefficients are written:
+ * 1 stereo, 2 right on both, 3 left on both, 4 sum (L+R)/2. The stored tuning is not changed. */
+static uint8_t mix_mono[BAS_FLOW_MAX_OUT_PAIRS + 1];
+
+static uint8_t mix_b(uint8_t c, uint8_t g)  /* storage index of mixer.P.c.g, 0 = none, 0xFF = mux */
+{
+	return BAS_LOOKUP_B(data_flow_mix_cmd2array, (c - 1) * BAS_FLOW_MIX_MAX_CHANNELS + g);
+}
+
+void api_set_mix_mono(uint8_t pair, uint8_t mode)
+{
+	if (pair < 1 || pair > BAS_FLOW_MAX_OUT_PAIRS)
+		return;
+	if (mode < 1 || mode > 4)
+		mode = 1;
+	if (mix_mono[pair] == mode || (mix_mono[pair] <= 1 && mode == 1))
+		return;
+	mix_mono[pair] = mode;
+	api_set_out_mute_change();  /* the mixer is written with the auto unmute, as a mixer change */
+	store_mix_changed = BAS_FLOW_MIX_MAX_CHANGED;
+}
+
+uint8_t api_get_mix_mono(uint8_t pair)
+{
+	return pair >= 1 && pair <= BAS_FLOW_MAX_OUT_PAIRS && mix_mono[pair] > 1 ? mix_mono[pair] : 1;
+}
+
+/* value written for storage index b of the active position (with the mono overlay) */
+static uint8_t mix_value(uint16_t frame, uint8_t b)
+{
+	for (uint8_t c = 3; c <= BAS_FLOW_MIX_MAX_CHANNELS; c++) {
+		uint8_t p = (uint8_t)((c - 1) / 2), mode = p <= BAS_FLOW_MAX_OUT_PAIRS ? mix_mono[p] : 0;
+		if (mode <= 1)
+			continue;
+		for (uint8_t g = 1; g <= BAS_FLOW_MIX_MAX_GAINS; g++) {
+			if (mix_b(c, g) != b)
+				continue;
+			uint8_t bl = mix_b((uint8_t)(2 * p + 1), g), br = mix_b((uint8_t)(2 * p + 2), g);
+			uint8_t vl = bl && bl != 0xFF ? SV(BAS_STORAGE_MIX_BASE, frame + bl) : 0;
+			uint8_t vr = br && br != 0xFF ? SV(BAS_STORAGE_MIX_BASE, frame + br) : 0;
+			return mode == 2 ? vr : mode == 3 ? vl : (uint8_t)((vl + vr + 1) / 2);
+		}
+	}
+	return SV(BAS_STORAGE_MIX_BASE, frame + b);
+}
+
+uint8_t api_mix_value(uint8_t c, uint8_t g)  /* effective value of mixer.<active>.c.g */
+{
+	uint8_t b = mix_b(c, g);
+	if (b == 0 || b == 0xFF || store_mix_position < 1 || store_mix_position > BAS_FLOW_MIX_MAX_POSITIONS)
+		return 0;
+	return mix_value((uint16_t)((store_mix_position - 1) * BAS_FLOW_MIX_MAX_POS_FRAME), b);
+}
+
 void api_set_mix_reg(void)
 {
 	if (!(hardware_dsp & (1u << BAS_TAS3108_1_RDY)))
@@ -260,7 +317,9 @@ void api_set_mix_reg(void)
 		if (store_mix_changed & (1UL << i)) {
 			for (uint8_t ii = 1; ii <= 4; ii++) {
 				count++;
-				double d = SV(BAS_STORAGE_MIX_BASE, count);  /* cvt_long = storage_mix(count) */
+				/* cvt_long = storage_mix(count); PORT: with the mono overlay (#14) */
+				uint16_t frame = (uint16_t)((store_mix_position - 1) * BAS_FLOW_MIX_MAX_POS_FRAME);
+				double d = mix_value(frame, (uint8_t)(count - frame));
 				d = d / 100;
 				uint32_t v = dsp_math_to523(d);
 				for (uint8_t k = 0; k < 4; k++)

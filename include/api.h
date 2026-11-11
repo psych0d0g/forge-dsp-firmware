@@ -44,6 +44,10 @@ void api_set_mix_position(uint8_t pos);
 uint8_t api_get_mix_position(void);
 void api_set_mix_reg(void);
 void api_restore_mix(void);
+/* mono per output pair (#14): 1 stereo, 2 right, 3 left, 4 (L+R)/2; not stored */
+void api_set_mix_mono(uint8_t pair, uint8_t mode);
+uint8_t api_get_mix_mono(uint8_t pair);
+uint8_t api_mix_value(uint8_t c, uint8_t g);
 /* input selection = mux of the active mixer position (issue #23) */
 uint8_t api_get_in_input(void);
 uint8_t api_set_in_input(uint8_t v);  /* 0 = refused */

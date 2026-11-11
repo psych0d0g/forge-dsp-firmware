@@ -1775,6 +1775,40 @@ class BootSectionTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class MonoTest(LinesMixin, unittest.TestCase):
+    """#14: MODC type 0x6A mono per output pair, on the input mixer rows (C 3..10 = outputs 1..8)."""
+
+    PRE = ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init", "#dtr=1", "#modc_init", "1|set.1 mixer.position=1",
+           "1|set.1 mixer.1.9.2=100", "1|set.1 mixer.1.10.1=80",      # out 7 <- Kanal 1 L, out 8 <- Kanal 1 R
+           "1|set.1 mixer.1.3.2=100"]                                 # out 1 <- Kanal 1 L (not in the pair)
+    VALS = ["#mixval=9,2", "#mixval=9,1", "#mixval=10,2", "#mixval=10,1", "#mixval=3,2"]
+
+    def vals(self, out):
+        return [int(l.split(":")[1]) for l in out if l.startswith("@mix:")]
+
+    def test_modes(self):
+        for f in ("V40-96ELN", "V30-96LN"):
+            for mode, want in ((1, [100, 0, 0, 80, 100]), (2, [0, 80, 0, 80, 100]),
+                               (3, [100, 0, 100, 0, 100]), (4, [50, 40, 50, 40, 100])):
+                out = self.lines(f, self.PRE + [f"1|set.1 modc.9=[1,106,08000000,0,0,0,0,{mode:02X}000000]", "#modc"]
+                                 + self.VALS)
+                self.assertEqual(self.vals(out), want, (f, mode))
+
+    def test_event_default_pair_and_tuning_kept(self):
+        f = "V40-96ELN"
+        out = self.lines(f, self.PRE + ["1|set.1 modc.9=[1,106,00000000,70,0,0,0,04000000]",   # flags 0: pair 7/8
+                                        "#modc"] + self.VALS
+                         + ["1|set.1 event.70.value=1", "#modc"] + self.VALS
+                         + ["1|set.1 modc.9.enable=0", "#modc"] + self.VALS
+                         + ["1|get.1 modc.version.attributes.ac"])
+        v = self.vals(out)
+        self.assertEqual(v[0:5], [100, 0, 0, 80, 100])     # event 70 = 0: off
+        self.assertEqual(v[5:10], [50, 40, 50, 40, 100])   # event on: stereo to mono
+        self.assertEqual(v[10:15], [100, 0, 0, 80, 100])   # block off: stereo again, tuning unchanged
+        self.assertEqual(out[-1].split("[")[1].split(",")[10], "20")   # 0x6A & 0x3F = 0x2A = ac + 10
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class MuxITest(LinesMixin, unittest.TestCase):
     """#17: MODC type 0x60 mux_I, priority list of events as the GUI dialog "Eingangs-Umschalter"."""
 

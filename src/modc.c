@@ -516,6 +516,31 @@ static void modc_mux_i(void)
 	api_store = st;
 }
 
+/* PORT extension (#14): modc_mono (0x6A), declared in the original, dialog in its GUI
+ * ("Mono", CTRL_MONO_Settings): flags 1 bits 0..3 = output pairs 1/2..7/8 (0 = pair 7/8 as the
+ * older dialog "Kanal 7+8"), set 1 = mode (1 stereo, 2 mono right, 3 mono left, 4 stereo to
+ * mono), event 1 = on/off ("de/aktiviert über Event"; none = on while the block is enabled).
+ * Works on the input mixer coefficients when they are written, the tuning is not changed.
+ * Output: the mode in effect (0 = off). */
+static uint8_t mono_mask[MODC_N + 1];
+
+static void modc_mono(void)
+{
+	uint8_t mask = FLAG(1) & 0x0F;
+	if (mask == 0)
+		mask = 0x08;
+	uint8_t mode = SET(1) >= 1 && SET(1) <= 4 ? SET(1) : 1;
+	uint8_t on = modc_enable[M] > 0 && (EVENT(1) == 0 || EV(EVENT(1)) > 0);
+	for (uint8_t p = 0; p < 4; p++) {
+		if (mask & (1u << p))
+			api_set_mix_mono((uint8_t)(p + 1), on ? mode : 1);
+		else if (mono_mask[M] & (1u << p))
+			api_set_mix_mono((uint8_t)(p + 1), 1);  /* dropped from the block */
+	}
+	mono_mask[M] = mask;
+	out(on ? mode : 0);
+}
+
 static const uint16_t block_event[cmd_req_words_max] = {0xFF03, 0x6576, 0x626C, 0x0000, 0x0000};
 
 /* sends "event.block.N=[a,b,c,d]" to the slave port about every 480 passes or on a change */
@@ -677,6 +702,8 @@ uint8_t modc_type_version(uint8_t t)
 		return 20;  /* PORT extension: loudness (M6) */
 	if (t == (MODC_TYPE_MUX_I & 0x3F))
 		return 20;  /* PORT extension: mux_I (#17) */
+	if (t == (MODC_TYPE_MONO & 0x3F))
+		return 20;  /* PORT extension: mono (#14) */
 	return BAS_LOOKUP_B(data_mods_versions, t);
 }
 
@@ -831,6 +858,7 @@ void ctrl_modc_mainloop(void)
 			case BAS_MODC_TYPE_ESS9038PRO: modc_ess9038pro(); break;
 			case MODC_TYPE_LOUDNESS:       modc_loudness(); break;  /* PORT extension (M6) */
 			case MODC_TYPE_MUX_I:          modc_mux_i(); break;     /* PORT extension (#17) */
+			case MODC_TYPE_MONO:           modc_mono(); break;      /* PORT extension (#14) */
 			case BAS_MODC_TYPE_VOLUMEN:    modc_volumen(); break;
 			case BAS_MODC_TYPE_MUTE:       modc_mute(); break;
 			case BAS_MODC_TYPE_MIX_I:      modc_mix_i(); break;

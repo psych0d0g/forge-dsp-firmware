@@ -298,6 +298,10 @@ static void store_cmd(const char *l)
 	} else if (!strcmp(l, "#systeminit")) {
 		flavour_systeminit_peripherals();
 		printf("@hw:%04X dsp:%04X\n", hardware_other, hardware_dsp);
+	} else if (!strncmp(l, "#mixval=", 8)) {         /* #14: effective mixer value c,g */
+		int c = 0, g = 0;
+		sscanf(l + 8, "%d,%d", &c, &g);
+		printf("@mix:%u\n", api_mix_value((uint8_t)c, (uint8_t)g));
 	} else if (!strcmp(l, "#hw_check")) {           /* systeminit "checks evaluate" (#32) */
 		uint8_t bad = hw_check_evaluate();
 		printf("@hwcheck:%u mute:%u\n", bad, api_get_out_mute_prio(api_mute_out_prio_hardware));

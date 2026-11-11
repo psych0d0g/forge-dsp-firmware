@@ -31,6 +31,8 @@ uint8_t modc_shutdown_enabled(void);
 #define MODC_TYPE_LOUDNESS 0x6C
 /* port extension (#17): MODC type 0x60 mux_I (input switch), declared in the original */
 #define MODC_TYPE_MUX_I 0x60
+/* port extension (#14): MODC type 0x6A mono per output pair, declared in the original */
+#define MODC_TYPE_MONO 0x6A
 uint8_t modc_type_version(uint8_t type6);  /* data_mods_versions plus the port's types */
 void modc_loudness_invalidate(void);       /* biquads were overwritten (preset load) */
 void modc_loudness_touch(void);            /* volume source changed (gain.spdif) */  /* an enabled shutdown block exists */
