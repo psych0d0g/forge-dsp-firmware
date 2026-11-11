@@ -37,6 +37,12 @@ Abgleich mit der Original-GUI (#5). Fahrplan in den GitHub-Issues.
 
 Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes.md)**.
 
+- **Firmware-Update ohne Taster:** `set.1 system.boot` bringt den Forge direkt in den Bootloader, Updates aus VS Code
+  laufen damit ohne Aus-/Einschalten. Grundlage ist eine Analyse des ausgelesenen Bootloaders: Er startet auch über eine
+  Sequenz im EEPROM, die das Original vorgesehen, aber nie geschrieben hat ([docs/bootloader.md](docs/bootloader.md), #22).
+  Am Gerät geprüft: Sicherung, Flashen und Start mit Kennung komplett ohne Taster.
+- **Bootloader auslesen** (nur lesend, `get.1 system.hardware.boot.N`, `tools/dump_bootsection.py`); das Abbild liegt unter
+  [`bootloader/`](bootloader/).
 - **Eingangswahl** `mixer.in` (und `mixer.in.max`) für die aktive Mixer-Position, mit Ereignis an die GUI; die
   dokumentierten, im Original nie gesetzten Ereignisse 45–48 (`SOURCE.1–4.MUX`) tragen jetzt die Eingangswahl je
   Position (#23).
@@ -85,9 +91,9 @@ Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `lib/fatfs`: FatFs R0
 3. *PlatformIO: Upload*. Ablauf:
    - `get.1 system.key.info`: Modell und PCB des angeschlossenen Forge müssen zur Umgebung passen, sonst Abbruch.
      V30-96ELN und V40-96ELN melden beide `96ELN-4.0`, hier die Umgebung bitte selbst richtig wählen.
-   - **Bootloader nur per Taster:** Forge ausschalten, den Taster neben dem USB-Port halten, einschalten, halten bis
-     die orange LED blinkt. Das Tool wartet bis zu 30 s darauf. `set.1 system.boot=1` startet nur neu, der
-     Bootloader meldet sich danach nicht (am Gerät geprüft).
+   - **Bootloader:** Läuft schon die Port-Firmware, schickt das Tool `set.1 system.boot` und der Forge geht von selbst
+     in den Bootloader (kein Taster). Mit der Original-Firmware startet er dabei nur neu: dann während der Wartezeit
+     (60 s) den Forge ausschalten, den Taster neben dem USB-Port halten, einschalten, halten bis die orange LED blinkt.
    - Flash schreiben (Seiten werden im Bootloader geprüft), zurücklesen, Anwendung starten.
 4. Project Tasks → Custom:
    - *Forge: versions*: Version von Bootloader und Firmware.
@@ -117,7 +123,7 @@ c45b3 braucht nur pyserial, das liefert PlatformIO mit. CLI: `pio run -e V4x-96E
 - Offizielle HEX 1.11.6000 aller Varianten: GitHub-Release `0.0.1116000` (nicht im git).
 
 ## Sicherheit
-- Der Bootloader-Bereich ist laut Original per Lockbits (BLBB) geschützt. Das Tool schreibt nie dorthin und sendet die
+- Der Bootloader-Bereich ist per Lockbits geschützt (BLBB = WLOCK, am Gerät bestätigt: lesbar, nicht beschreibbar). Das Tool schreibt nie dorthin und sendet die
   abschließende Leer-Frame der Windows-GUI nicht (sie würde die Seite hinter dem Image löschen).
 - Vor dem ersten eigenen Flashen: *Forge: backup*, Abstimmung über die Original-GUI sichern.
 - Die Endstufen (Remote-Out) bleiben aus, solange `FORGE_AUDIO=0` ist (Standard).

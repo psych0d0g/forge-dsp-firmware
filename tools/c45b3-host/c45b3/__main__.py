@@ -11,6 +11,7 @@ approval of the device owner).
 import argparse
 import hashlib
 import os
+import time
 import sys
 
 from . import client, ihex
@@ -213,11 +214,20 @@ def restore_identity(port, args, timeout=90.0):
     log(f"identity: {ident} set")
 
 
-def enter_bootloader(port, args):
-    """Ask the running application to reset into the bootloader."""
+# The port firmware resets about 1 s after "set.1 system.boot"; the bootloader then calibrates
+# its baud rate on the first character it sees. Bursts sent while the application is still
+# running reach it half-way and it locks onto a wrong rate, so wait until the reset is over.
+ENTER_SETTLE = 2.0
+
+
+def enter_bootloader(port, args, settle=ENTER_SETTLE):
+    """Ask the running application to reset into the bootloader (port firmware: the bootloader
+    sequence in the EEPROM, see docs/bootloader.md; the original only restarts)."""
     ans = app_query(port, args, args.enter, wait=0.3)
     if ans.strip():
         log("application answered: " + ans.strip())
+    time.sleep(settle)
+    port.reset_input_buffer()
 
 
 def cmd_backup(bl, args):

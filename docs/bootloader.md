@@ -17,7 +17,11 @@ Sonst springt er in die Anwendung. Beim Verlassen des Bootloaders setzt er EEPRO
 also nur einmal. Die Firmware des Originals legt diese Bytes an (`eeprom_bootloader_seq_1/2 = &HAA/&H55`,
 `libs/declare.bas`), schreibt sie aber nie. Deshalb startete `system.boot` dort nur neu.
 
-**Port:** `set.1 system.boot` schreibt 0xAA/0x55 und startet neu, der Forge landet im Bootloader, ohne Taster.
+**Port:** `set.1 system.boot` schreibt 0xAA/0x55 und startet neu, der Forge landet im Bootloader, ohne Taster
+(am DEV-Gerät geprüft, 11.11.2026: orange LED blinkt, `c45b3 info` antwortet, nach `start` läuft die Anwendung normal,
+das Magic ist also gelöscht). Der Bootloader wartet ohne Zeitlimit auf den Host. Er kalibriert die Baudrate am ersten
+Zeichen; Bursts, die noch während der letzten Sekunde der Anwendung kommen, verstellen sie. `c45b3 --enter` wartet
+deshalb 2 s nach dem Befehl.
 
 ## Weitere Befunde
 

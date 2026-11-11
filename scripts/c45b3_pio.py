@@ -47,8 +47,13 @@ def need_port(target, source, env):
     if not env.subst("$UPLOAD_PORT"):
         env.AutodetectUploadPort()
     print("Forge port:", env.subst("$UPLOAD_PORT"), "| flavour:", flavour, "| expected:", expect)
-    print(f"Waiting up to {wait} s for the bootloader: switch the Forge off, hold the key next to "
-          "the USB port, switch it on, keep holding until the orange LED blinks.")
+    if enter:
+        print(f"Asking the running firmware to enter the bootloader ({enter!r}); the port firmware does "
+              f"this by itself. With the original firmware: within {wait} s switch the Forge off, hold "
+              "the key next to the USB port, switch it on, keep holding until the orange LED blinks.")
+    else:
+        print(f"Waiting up to {wait} s for the bootloader: switch the Forge off, hold the key next to "
+              "the USB port, switch it on, keep holding until the orange LED blinks.")
 
 
 env.Replace(UPLOADCMD=base + " --keep-identity write-flash $SOURCE --allow-write")
