@@ -1054,6 +1054,82 @@ class BiquadCmdTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class ClicklessTest(LinesMixin, unittest.TestCase):
+    """#44: biquad.CH.N.calc fades in over intermediate filters instead of muting."""
+
+    F = "V40-96ELN"
+    PRE = BiquadCmdTest.PRE + ["1|set.1 biquad.clickless=1"]
+
+    def block(self, ch, n):
+        offs = table_words(self.F, "data_flow_ch_bq_offsets")
+        core = table_bytes(self.F, "data_flow_dsp_bq_core")[offs[ch] + n]
+        reg = table_bytes(self.F, "data_flow_dsp_bq_reg")[offs[ch] + n]
+        bus, a = {1: (1, 0x68), 2: (2, 0x68), 3: (2, 0x6A)}[core]
+        return f"#block={bus},{a:02X},{reg:02X},20"
+
+    def ref(self, t, f, tenths, q1000):
+        if t == 0:
+            return "0080000000000000000000000000000000000000"
+        raw = bq_reference(self.F, t, f, tenths, q1000, 0, 0x80)
+        return b"".join(v.to_bytes(4, "big") for v in reversed(raw)).hex().upper()
+
+    def run_cmds(self, cmds):
+        out = self.lines(self.F, self.PRE + cmds)
+        return out, [l[7:] for l in out if l.startswith("@block:")]
+
+    def settle(self, n=80):
+        return ["#bqramp"] * n
+
+    def test_gain_ramp_without_mute(self):
+        b = self.block(1, 1)
+        out, blocks = self.run_cmds(
+            ["1|set.1 biquad.1.1.calc=[1,1000,0,1414,0,128]"] + self.settle() + ["#mainloop"] * 200 + ["#mutechg",
+             "1|set.1 biquad.1.1.calc=[1,1000,60,1414,0,128]", "#mutechg", b, "#bqramp", b, "#bqramp", b]
+            + self.settle() + [b, "1|get.1 biquad.clickless", "1|get.1 biquad.1.1"])
+        mute = [l for l in out if l.startswith("@mutechg:")]
+        self.assertEqual(mute, ["@mutechg:0", "@mutechg:0"])          # no mute for a fadeable change
+        self.assertEqual(blocks[0], self.ref(1, 1000, 0, 1414))       # DSP still has the old filter
+        self.assertEqual(blocks[1], self.ref(1, 1000, 5, 1414))       # +0.5 dB per step
+        self.assertEqual(blocks[2], self.ref(1, 1000, 10, 1414))
+        self.assertEqual(blocks[3], self.ref(1, 1000, 60, 1414))      # end: exactly the target
+        self.assertIn("biquad.clickless=1", out[-2])
+        self.assertIn("biquad.1.1=[1,1000,60,1414,0,128]", out[-1])   # stored at once, as before
+
+    def test_frequency_steps_and_type_change_via_0db(self):
+        b = self.block(1, 2)
+        out, blocks = self.run_cmds(
+            ["1|set.1 biquad.1.2.calc=[1,1000,60,1414,0,128]"] + self.settle()
+            + ["1|set.1 biquad.1.2.calc=[1,2000,60,1414,0,128]", "#bqramp", b] + self.settle() + [b]   # 1 octave
+            + ["1|set.1 biquad.1.2.calc=[14,100,60,707,0,128]", "#bqramp", b] + self.settle() + [b])  # EQ -> shelf
+        self.assertEqual(blocks[0], self.ref(1, 1000 * 2 ** (1 / 12), 60, 1414))   # 1/12 octave
+        self.assertEqual(blocks[1], self.ref(1, 2000, 60, 1414))
+        self.assertEqual(blocks[2], self.ref(1, 2000, 55, 1414))       # old EQ goes down first
+        self.assertEqual(blocks[3], self.ref(14, 100, 60, 707))        # then the shelf comes up
+
+    def test_end_is_bit_exact(self):
+        """The last step writes exactly what a direct calc writes, also for odd values."""
+        b = self.block(2, 4)
+        for target in ((1, 1234, -37, 3333), (14, 87, 35, 707), (15, 9876, -61, 707)):
+            t, f, g, q = target
+            out, blocks = self.run_cmds([f"1|set.1 biquad.2.4.calc=[{t},100,0,707,0,128]"] + self.settle()
+                                        + [f"1|set.1 biquad.2.4.calc=[{t},{f},{g},{q},0,128]"] + self.settle() + [b])
+            self.assertEqual(blocks[-1], self.ref(t, f, g, q), target)
+
+    def test_fallbacks(self):
+        b = self.block(1, 3)
+        out, blocks = self.run_cmds(
+            ["1|set.1 biquad.1.3.calc=[3,500,0,707,0,128]"] + self.settle() + ["#mainloop"] * 200 + ["#mutechg",
+             "1|set.1 biquad.1.3.calc=[9,500,0,707,0,128]", "#mutechg", b,          # LP -> HP: mute, direct
+             "1|set.1 biquad.clickless=0", "#mainloop"] + ["#mainloop"] * 200 + ["#mutechg",
+             "1|set.1 biquad.1.3.calc=[9,800,0,707,0,128]", "#mutechg", b, "1|set.1 biquad.clickless=2"])
+        mute = [l for l in out if l.startswith("@mutechg:")]
+        self.assertEqual(mute, ["@mutechg:0", "@mutechg:255", "@mutechg:0", "@mutechg:255"])
+        self.assertEqual(blocks[0], self.ref(9, 500, 0, 707))
+        self.assertEqual(blocks[1], self.ref(9, 800, 0, 707))          # off: direct as the original
+        self.assertIn("command out of range", out[-1])
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class EventTest(LinesMixin, unittest.TestCase):
     """libs/ctrl/events (pins, overflow, SPDIF receivers) and cmd_event / cmd_com."""
 

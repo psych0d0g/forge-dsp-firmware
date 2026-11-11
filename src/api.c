@@ -4,6 +4,7 @@
  */
 #include "api.h"
 #include "sys_init.h"
+#include "bqramp.h"
 #include "bas_data.h"
 #include "biquad.h"
 #include "board.h"
@@ -474,6 +475,7 @@ void api_preset_load(uint8_t preset)
 	dsp_ack_delay();
 	api_restore_in_input();  /* api_restore_mix + events 45..48 */
 	modc_loudness_invalidate();  /* the preset load rewrote all biquads (M6) */
+	bqramp_cancel_all();         /* and ends running clickless fades (#44) */
 	for (uint8_t ch = 1; ch <= BAS_FLOW_MAX_OUT_CHANNEL; ch++)
 		api_set_out_vol(ch, api_get_out_vol(ch));
 	api_store = 1;

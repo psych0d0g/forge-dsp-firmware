@@ -2,6 +2,7 @@
  * Port of libs/loopcall/functions.bas.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
+#include "bqramp.h"
 #include "loopcall.h"
 #include "api.h"
 #include "board.h"
@@ -37,6 +38,7 @@ void loopcall(uint16_t bits)
 	}
 	if (B(timer_tce0_div_8)) {
 		api_mainloop();
+		bqramp_mainloop();  /* PORT (#44): clickless EQ steps */
 		store_mainloop();
 #if BAS_MODUL_CS8416 > 0
 		/* V30-96LN: spdif events at 1/8 s */

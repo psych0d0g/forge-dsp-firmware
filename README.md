@@ -48,6 +48,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
   Position (#23).
 - **Startbefehle**: bis zu 8 Befehle im EEPROM, die nach dem Laden des Presets beim Start laufen
   (`set.1 system.startup.1="set.1 gain.out.2:150"`, #40).
+- **Clickless EQ** (Test, Vorgabe aus): Filteränderungen werden über Zwischenschritte eingeblendet statt mit kurzem
+  Aussetzer (`set.1 biquad.clickless=1`, #44).
 - **Mono je Ausgangspaar** (MODC „CTRL-MONO“ aus der Original-GUI, #14): Stereo, Mono links/rechts oder L+R, schaltbar
   per Event, ohne die Abstimmung zu ändern.
 - **Automatische Eingangswahl** per Events (MODC „CTRL-MUX I“ aus der Original-GUI, #17), z. B. auf USB, sobald

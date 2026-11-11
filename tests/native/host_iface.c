@@ -89,6 +89,7 @@ static void host_pin_set(const char *name, int v)
 const uint8_t *host_i2c_blockdata(uint8_t bus, uint8_t addr, uint8_t reg);
 #include "api.h"
 #include "hwcheck.h"
+#include "bqramp.h"
 
 uint8_t iface_buart_channel[iface_ch_max + 1] = { 0, 0, 2, 1, 3 };
 volatile uint8_t iface_todo[iface_ch_max + 1];
@@ -298,6 +299,11 @@ static void store_cmd(const char *l)
 	} else if (!strcmp(l, "#systeminit")) {
 		flavour_systeminit_peripherals();
 		printf("@hw:%04X dsp:%04X\n", hardware_other, hardware_dsp);
+	} else if (!strcmp(l, "#bqramp")) {             /* #44: one clickless step */
+		bqramp_mainloop();
+		printf("@bqramp:%u\n", bqramp_active());
+	} else if (!strcmp(l, "#mutechg")) {            /* mute priority "change" (auto unmute) */
+		printf("@mutechg:%u\n", api_get_out_mute_prio(api_mute_out_prio_change));
 	} else if (!strncmp(l, "#mixval=", 8)) {         /* #14: effective mixer value c,g */
 		int c = 0, g = 0;
 		sscanf(l + 8, "%d,%d", &c, &g);

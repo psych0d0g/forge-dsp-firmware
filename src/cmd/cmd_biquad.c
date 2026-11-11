@@ -16,6 +16,7 @@
 #include "api.h"
 #include "bas_data.h"
 #include "biquad.h"
+#include "bqramp.h"
 #include "dsp.h"
 #include "flavour.h"
 #include "flavour_data.h"
@@ -76,6 +77,8 @@ static void copyvalues(void)
 		buffer_bytes[2] = (uint8_t)var_l(6);
 }
 
+static struct bq_params calc_in;
+
 static void calc(void)
 {
 	dsp_bq_cache_type = (uint8_t)var_l(1);
@@ -100,6 +103,11 @@ static void calc(void)
 			dsp_bq_cache_values[i] = (double)var_l(c);
 		}
 	}
+	calc_in.type = dsp_bq_cache_type;  /* PORT (#44): parameters before the type function changes them */
+	calc_in.f = dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_F];
+	calc_in.g = dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_GAIN];
+	calc_in.q = dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_Q];
+	calc_in.b = dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_B];
 	dsp_bq_calc_type(dsp_bq_cache_type);
 }
 
@@ -152,18 +160,36 @@ static void set_bq_ch(void)
 		store_save_bqtv();
 		cmd_answer_ok();
 		break;
-	case 0x6361:  /* calc */
+	case 0x6361: {  /* calc */
+		struct bq_params old = {0}, to;
+		(void)to;
+		uint8_t fade = bqramp_enabled();
+		if (fade) {  /* PORT (#44): parameters before this change, from the preset storage */
+			store_load_bqtv();
+			old.type = (buffer_bytes[2] & (1u << BAS_DSP_BQ_FLAGS_ALL_PASS)) ? buffer_bytes[1] : BAS_DSP_BQTYPE_ALL_PASS;
+			old.f = (uint16_t)(buffer_bytes[3] | buffer_bytes[4] << 8);
+			old.g = (int16_t)(buffer_bytes[5] | buffer_bytes[6] << 8) / 10.0;
+			old.q = (uint16_t)(buffer_bytes[7] | buffer_bytes[8] << 8) / 1000.0;
+			old.b = (uint16_t)(buffer_bytes[9] | buffer_bytes[10] << 8);
+		}
 		chkvalues();
 		copyvalues();
 		store_save_bqtv();
 		calc();
+		to = calc_in;
 		dsp_bq_calcto5coeff();
 		dsp_bq_convert2raw(raw);
 		raw_to_buffer(raw);
 		store_save_bq();
-		set_biquad_calc(raw);
+		if (!fade || !bqramp_start(store_bq_nr, &old, &to)) {
+			if (fade)
+				api_set_out_mute_change();  /* cannot be faded: mute as the original */
+			dsp_bq_virt_nr = store_bq_nr;
+			set_biquad_calc(raw);
+		}
 		cmd_answer_ok();
 		break;
+	}
 	case 0x7261:  /* raw A2 A1 B2 B1 B0 */
 		if ((cmd_reg_var_state & (1 << cmd_reg_state_isArray)) &&
 		    (cmd_reg_var_state & (1 << cmd_reg_state_isString))) {
@@ -179,6 +205,7 @@ static void set_bq_ch(void)
 			}
 			raw_to_buffer(raw);
 			store_save_bq();
+			bqramp_cancel(store_bq_nr);  /* PORT (#44): raw values are written as they are */
 			set_biquad_calc(raw);
 			cmd_answer_ok();
 		} else {
@@ -189,8 +216,30 @@ static void set_bq_ch(void)
 	}
 }
 
+/* PORT extension (#44): biquad.clickless = 0/1, fade biquad.CH.N.calc instead of muting */
+static uint8_t clickless_cmd(uint8_t set)
+{
+	if (req_w(cmd_req_word_two) != 0x636C || req_w(cmd_req_word_three) != 0x0000)
+		return 0;
+	if (set) {
+		if (cmd_reg_var_integers[1] != 0 && cmd_reg_var_integers[1] != 1) {
+			cmd_error_cmd_oor();
+		} else {
+			bqramp_set_enabled((uint8_t)cmd_reg_var_integers[1]);
+			cmd_answer_ok();
+		}
+	} else {
+		cmd_answer_header();
+		out_u16(bqramp_enabled());
+		out_crlf();
+	}
+	return 1;
+}
+
 void cmd_set_biquad(void)
 {
+	if (clickless_cmd(1))
+		return;
 	if (store_preset >= BAS_MODUL_MAX_PRESET) {  /* PORT: no preset loaded, no storage address */
 		cmd_error_cmd_oor();
 	} else if (REQ_B(6) != cmd_req_number) {
@@ -198,7 +247,9 @@ void cmd_set_biquad(void)
 	} else if (REQ_B(5) > BAS_FLOW_MAX_CHANNELS || BAS_LOOKUP_B(data_flow_ch_bq_limits, REQ_B(5)) == 0) {
 		cmd_error_cmd_oor();
 	} else {
-		api_set_out_mute_change();
+		/* PORT (#44): with clickless on, calc decides itself whether it has to mute */
+		if (!(bqramp_enabled() && req_w(cmd_req_word_four) == 0x6361))
+			api_set_out_mute_change();
 		set_bq_ch();
 	}
 }
@@ -253,6 +304,8 @@ static void get_bq_ch(uint8_t ch)
 
 void cmd_get_biquad(void)
 {
+	if (clickless_cmd(0))
+		return;
 	if (req_w(cmd_req_word_four) != 0x0000) {
 		cmd_error_unknown();
 		return;

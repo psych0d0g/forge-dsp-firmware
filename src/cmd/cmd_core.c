@@ -532,6 +532,8 @@ void cmd_answer_header(void)
 			s = w1 == 0x7379 ? ".reinit" : ".remove";
 		else if (w2 == 0x7374 && w1 == 0x7379)
 			s = ".startup";  /* PORT extension (#40) */
+		else if (w2 == 0x636C && w1 == 0x6269)
+			s = ".clickless";  /* PORT extension (#44) */
 		else
 			s = lookup(names_two, w2);
 		if (s)
