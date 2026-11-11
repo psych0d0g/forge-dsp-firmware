@@ -530,6 +530,8 @@ void cmd_answer_header(void)
 			s = w1 == 0x6D69 ? ".position" : ".poti";
 		else if (w2 == 0x7265)
 			s = w1 == 0x7379 ? ".reinit" : ".remove";
+		else if (w2 == 0x7374 && w1 == 0x7379)
+			s = ".startup";  /* PORT extension (#40) */
 		else
 			s = lookup(names_two, w2);
 		if (s)
@@ -686,4 +688,21 @@ void cmd_sendevent(void)
 		out_crlf();
 	}
 	buart_channel = ch;
+}
+
+/* PORT: run one protocol line from the firmware itself (microSD preset files, start commands
+ * #40) through the normal parser; the answer goes to the current channel */
+void cmd_run_line(const char *line)
+{
+	uint8_t b[cmd_req_value_size + 12];
+	uint8_t n = 0;
+	for (; *line && n < sizeof b - 4; line++)
+		b[1 + n++] = (uint8_t)*line;
+	b[1 + n++] = '\r';
+	b[1 + n++] = '\n';
+	cmd_default_parse(b, n);  /* 1-based buffer */
+	if (cmd_req_chksum_state == cmd_chksum_state_err)
+		cmd_error_chksum();
+	else
+		cmd_answer();
 }

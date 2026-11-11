@@ -185,14 +185,15 @@ void modc_set_type(uint8_t value)
 		modc_flags[a] = 0;
 		modc_events[a] = 0;
 		modc_sets[a] = 0;
-		/* as the original: this clears event fields n, n+32, n+64, n+96 (not the output
-		 * field 96+n only); kept for compatibility, see the upstream-gap issue */
-		events_field_value[a] = 0;
 		eram_wb(ERAM_EL(MODC_FLAGS_ERAM, a), 0);
 		eram_wb(ERAM_EL(MODC_EVENTS_ERAM, a), 0);
 		eram_wb(ERAM_EL(MODC_SETS_ERAM, a), 0);
 		a = (uint8_t)(a + MODC_N);
 	}
+	/* PORT fix (#38): the original cleared event fields n, n+32, n+64 and n+96 in the loop
+	 * above, i.e. also foreign fields such as remote out (3) or shutdown (4); only the
+	 * block's own output is meant */
+	events_field_value[BAS_EVENTS_FIELD_MODC_VALUE + M] = 0;
 	if (value == BAS_MODC_TYPE_EMPTY)
 		modc_chk_affect();
 	else

@@ -1179,6 +1179,14 @@ class ModcTest(LinesMixin, unittest.TestCase):
                          [f"#event?{96 + n}" for n in range(7, 13)])
         self.assertEqual([self.val(out, 96 + n) for n in (7, 9, 10)], [0, 20, 20])
 
+    def test_set_type_clears_only_own_output(self):
+        """#38: the original also cleared fields n, n+32, n+64; the port only the output 96+n."""
+        f = "V40-96ELN"
+        out = self.lines(f, self.PRE + ["1|set.1 event.40.value=7", "1|set.1 event.72.value=9",
+                                        "1|set.1 modc.8=[1,16,0,40,0,0,0,0]", "#modc",
+                                        "1|set.1 modc.8.type=17", "#event?8", "#event?40", "#event?72", "#event?104"])
+        self.assertEqual([self.val(out, n) for n in (40, 72, 104)], [7, 9, 0])
+
     def test_mute_volumen_mix_preset(self):
         f = "V41-96ELN-3"
         volreg = table_bytes(f, "data_es90x8pro_vol_reg")
@@ -1554,6 +1562,43 @@ class SdPresetTest(unittest.TestCase):
                      "#sd_init", "#sd_load"]
             p, ee = run(f, lines, want_eeprom=True)
         self.assertEqual(p.stdout.count("gain.out.1 ok"), 2)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class StartupTest(LinesMixin, unittest.TestCase):
+    """#40: system.startup.N stores start commands, they run after the first preset load."""
+
+    def test_store_list_run(self):
+        f = "V40-96ELN"
+        p, ee = run(f, ['1|set.1 system.startup.1="set.1 gain.out.2:150"', '1|set.1 system.startup.3="set.1 mute.out.1:1"',
+                        '1|set.1 system.startup.2="set.1 system.boot:1"', '1|set.1 system.startup.9="x"',
+                        '1|set.1 system.startup.4="' + "x" * 33 + '"', "1|get.1 system.startup.*"],
+                    eeprom=image(f), want_eeprom=True)
+        out = [l for l in p.stdout.splitlines() if l.startswith("@0")]
+        self.assertIn("system.startup.1 ok", out[0])
+        self.assertIn("system.startup.3 ok", out[1])
+        self.assertTrue(all("command out of range" in x for x in out[2:5]), out[2:5])
+        self.assertIn('<.1 system.startup.1="set.1 gain.out.2:150"\\r\\n <.1 system.startup.2=""', out[5])
+        self.assertIn('<.1 system.startup.3="set.1 mute.out.1:1"', out[5])
+        self.assertEqual(len(out), 6)
+        # next start: nothing before the preset load, then one command per pass, only once
+        p2 = run(f, ["#sys_init_init", "#sys_init_loop", "1|get.1 gain.out.2", "#sys_init_loaded", "#sys_init_loop",
+                     "1|get.1 gain.out.2", "1|get.1 mute.out.1", "#sys_init_loop", "1|get.1 mute.out.1",
+                     "#sys_init_loaded", "#sys_init_loop", "#sys_init_loop"], eeprom=ee)
+        b = ["".join(x) for x in p2]
+        self.assertIn("gain.out.2=0", b[2])              # nothing before the preset load
+        self.assertIn("gain.out.2 ok", b[4])             # answer of the start command
+        self.assertIn("gain.out.2=150", b[5])
+        self.assertIn("mute.out.1=0", b[6])              # one command per pass
+        self.assertIn("mute.out.1 ok", b[7])
+        self.assertIn("mute.out.1=1", b[8])
+        self.assertEqual(b[9:12], ["", "", ""])           # second preset load: not again
+
+    def test_delete(self):
+        f = "V40-96ELN"
+        out = self.lines(f, ['1|set.1 system.startup.1="set.1 gain.out.2:150"', '1|set.1 system.startup.1=""',
+                             "1|get.1 system.startup.1"])
+        self.assertIn('<.1 system.startup.1=""', out[2])
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")

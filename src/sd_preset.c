@@ -74,19 +74,11 @@ static void run_line(char *line)
 	/* delchars "": all quotes removed */
 	char buf[cmd_req_value_size + 8] = "set ";
 	uint8_t n = 4;
-	for (; *v && n < sizeof buf - 3; v++)
+	for (; *v && n < sizeof buf - 1; v++)
 		if (*v != '"')
 			buf[n++] = *v;
-	buf[n++] = '\r';
-	buf[n++] = '\n';
 	buf[n] = 0;
-	uint8_t b[sizeof buf + 1];
-	memcpy(b + 1, buf, n);  /* 1-based as cmd_default_parse expects */
-	cmd_default_parse(b, n);
-	if (cmd_req_chksum_state == cmd_chksum_state_err)
-		cmd_error_chksum();
-	else
-		cmd_answer();
+	cmd_run_line(buf);
 }
 
 void sd_preset_load_init(void)

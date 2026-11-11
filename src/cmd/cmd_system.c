@@ -15,6 +15,7 @@
 #include "tas3108.h"
 #include "factory.h"
 #include "identity.h"
+#include "sys_init.h"
 void watchdog_kick(void);
 #include "cmd.h"
 #include "flavour.h"
@@ -229,6 +230,59 @@ static void cmd_set_system_cfg(void)
 	cmd_answer_ok();
 }
 
+/* PORT extension (#40): system.startup.N="<command>" stores a start command (N 1..8, up to
+ * 32 characters, "" deletes), written with ':' instead of '=' (e.g. "set.1 gain.out.2:150"):
+ * the parser keeps only the text after the last '='. The commands run once after the first
+ * preset load of a start.
+ * Commands that restart or reset the device are refused (endless restart). */
+static void cmd_set_system_startup(void)
+{
+	if (REQ_B(8) != cmd_req_number || req_w(cmd_req_word_four) != 0x0000) {
+		cmd_error_unknown();
+		return;
+	}
+	if (!(cmd_reg_var_state & (1 << cmd_reg_state_isString))) {
+		cmd_error_unknown_para();
+		return;
+	}
+	uint8_t i = REQ_B(7);
+	if (i < 1 || i > ERAM_SYS_INIT_SETS_ERAM_COUNT || strlen(cmd_req_value) >= ERAM_SYS_INIT_SETS_ERAM_SIZE
+	    || strstr(cmd_req_value, "system.boot") || strstr(cmd_req_value, "system.reinit")
+	    || strstr(cmd_req_value, "system.startup")) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	eram_write_str(ERAM_EL(SYS_INIT_SETS_ERAM, i), ERAM_SYS_INIT_SETS_ERAM_SIZE, cmd_req_value);
+	cmd_answer_ok();
+}
+
+static void print_startup(uint8_t i)
+{
+	char l[ERAM_SYS_INIT_SETS_ERAM_SIZE + 1];
+	sys_init_get(i, l);
+	REQ_B(8) = cmd_req_number;
+	REQ_B(7) = i;
+	cmd_answer_header();
+	Q(); out_str(l); Q();
+	out_crlf();
+}
+
+static void cmd_get_system_startup(void)
+{
+	if (req_w(cmd_req_word_three) == 0x002A) {
+		for (uint8_t i = 1; i <= ERAM_SYS_INIT_SETS_ERAM_COUNT; i++)
+			print_startup(i);
+	} else if (REQ_B(8) == cmd_req_number && req_w(cmd_req_word_four) == 0x0000) {
+		uint8_t i = REQ_B(7);
+		if (i >= 1 && i <= ERAM_SYS_INIT_SETS_ERAM_COUNT)
+			print_startup(i);
+		else
+			cmd_error_cmd_oor();
+	} else {
+		cmd_error_unknown();
+	}
+}
+
 void cmd_set_system(void)
 {
 	api_set_out_mute_change();
@@ -241,6 +295,7 @@ void cmd_set_system(void)
 	case 0x6B65: cmd_set_system_key(); break;
 	case 0x6861: cmd_set_system_hardware(); break;
 	case 0x7265: cmd_set_system_reinit(); break;
+	case 0x7374: cmd_set_system_startup(); break;  /* PORT extension (#40) */
 	default: cmd_error_unknown();
 	}
 }
@@ -565,6 +620,7 @@ void cmd_get_system(void)
 	case 0x696E: cmd_get_system_info(); break;
 	case 0x6B65: cmd_get_system_key(); break;
 	case 0x7069: cmd_get_system_ping(); break;
+	case 0x7374: cmd_get_system_startup(); break;  /* PORT extension (#40) */
 	case 0x6665: cmd_get_system_feature(); break;
 	case 0x6775: cmd_get_system_gui(); break;
 	case 0x706F: cmd_get_system_poti(); break;

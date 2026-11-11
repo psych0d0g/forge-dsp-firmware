@@ -97,6 +97,7 @@ void cmd_default_clear_req(void);
 void cmd_default_parse(const uint8_t *buffer, uint8_t size);  /* buffer is 1-based: buffer[1..size] */
 void cmd_parse_values_to_vars(void);
 void cmd_answer(void);
+void cmd_run_line(const char *line);  /* PORT: parse and answer one line (SD, #40) */
 void cmd_answer_header(void);
 void cmd_answer_ok(void);
 void cmd_error_unknown(void);

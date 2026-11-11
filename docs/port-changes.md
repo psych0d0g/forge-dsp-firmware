@@ -18,6 +18,7 @@ bewusste Unterschiede. Im Quelltext sind die Stellen mit `PORT:` markiert.
 | **microSD wieder aktiv** (im Original für die Lizenz entfernt, AVR-DOS): Beim Start werden `preset_1.cfg` … `preset_N.cfg` von der Karte in die Presets geladen, wenn sich das Dateidatum geändert hat. Die Dateien sind die `.cfg`-Dateien der Original-GUI (Abschnitt mit dem Modellnamen, Zeilen `x = "…"`). FatFs R0.16 statt AVR-DOS. Slot auf der USB-Audio-Platine (V40/V41), SPIE, Kartenschalter PD0 | Bring-up-Variante, Karte FAT12/16/32 | #24 |
 | **Vier Builds statt sieben**: Varianten mit identischer Firmware teilen sich einen Build, die Kennung (Modell, PCB) steht im EEPROM (0xF00) und wird beim Upload aus der alten Firmware übernommen | `get system.key.info.list`, `set system.key.info="MODEL-PCB"`, Upload `--keep-identity` | #31 |
 | **Loudness** (MODC-Typ 0x6C, im Original deklariert, nie umgesetzt): hebt Bass (100 Hz) und Höhen (10 kHz) an, je tiefer die Lautstärke unter einem Referenzwert liegt (gehörrichtige Lautstärke, ISO 226 angenähert). Führt in 0,2-dB-Schritten nach, ohne Stummschaltung und ohne EEPROM-Schreiben, belegt die letzten zwei Biquads der gewählten Kanäle (Vorgabe 35/36 = Eingangsweg) | `set modc.N=[1,108,00KKLL00,E,0,0,0,RRBBTTMM]`, Details unten | #6 |
+| **Startbefehle** (im Original angelegt, aber nie ausgeführt und nicht setzbar): bis zu 8 Befehle à 32 Zeichen im EEPROM, laufen einmal nach dem ersten Preset-Laden eines Starts. `=` im Befehl als `:` schreiben (der Parser behält nur den Text nach dem letzten `=`); Neustart/Werks-Reset werden abgelehnt | `set system.startup.N="set.1 gain.out.2:150"`, `get system.startup.N`/`.*`, `""` löscht | #40 |
 | **Bootloader-Versionsstring**: Der Bootloader liest die Firmware-Version (`FW_VERSION:xx.yy`); das Original enthält keinen | chip45boot3 0x12 | |
 | **Linux-Flasher** chip45boot3 mit Backup, Gerätecheck und Rückweg auf 1.11.6000, eingebunden in PlatformIO/VS Code | `tools/c45b3-host`, *Forge:*-Tasks | |
 
@@ -28,6 +29,7 @@ Alle betreffen Fehlerpfade oder Werte außerhalb des gültigen Bereichs. Gültig
 | Original | Port | Issue |
 |---|---|---|
 | `preset.copy/erase/select/loaded` akzeptieren die Preset-Anzahl selbst: mit 4 Presets löscht `preset.erase=4` Preset 0, mit 8 Presets wird hinter den Adresstabellen gelesen | nur 0 … Anzahl−1 | #33 |
+| Typwechsel eines MODC-Blocks N löscht die Event-Felder N, N+32, N+64 und N+96, also auch fremde wie Remote-Out (3) oder Shutdown (4) | nur der Ausgang des Blocks (96+N) | #38 |
 | Nie gespeichertes Preset (Mixer-Position 0xFF): `api_set_mix_reg` liest weit hinter den Mixerdaten und schreibt RAM-Inhalt als Koeffizienten in den DSP | übersprungen | |
 | Ungültiger Mux-Wert liest hinter der Mux-Tabelle | geprüft | |
 | `gain.in`/`gain.spdif` werden gegen die Zahl der Ausgänge geprüft; Eingang 7 schreibt in den Speicher von Ausgang 1. Kanal 0 schreibt vor das Array | je Gruppe geprüft, 0 abgelehnt | |
@@ -41,8 +43,7 @@ Alle betreffen Fehlerpfade oder Werte außerhalb des gültigen Bereichs. Gültig
 | Rücklese-Prüfung der DSP-Schreibzugriffe wiederholt unendlich | höchstens 8 Versuche, Fehler wird gezählt | |
 | `i2c.B.A.dump=[r,255]` endet nie; `.buffer` liest hinter den Puffer | begrenzt | |
 
-Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `modc_set_type` löscht fremde Event-Felder
-(#38), `sys_init_sets` werden nie ausgeführt (#40), `get modc.enable` liefert für belegte Blöcke 0.
+Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `get modc.enable` liefert für belegte Blöcke 0.
 
 ## Bewusste Unterschiede
 
@@ -78,7 +79,7 @@ Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `modc_set
 
 ## Prüfstand
 
-- Nativ: 90 Tests, alle 7 Varianten (Protokoll, EEPROM-Layout gegen die Release-HEX, Biquads gegen eine unabhängige
+- Nativ: 93 Tests, alle 7 Varianten (Protokoll, EEPROM-Layout gegen die Release-HEX, Biquads gegen eine unabhängige
   Referenz, Peripherie auf einem I2C-Modell, SD-Karte als FAT-Image).
 - Am Gerät (DEV-Forge V40-96ELN): Start auf dem EEPROM des Originals ohne Werks-Reset, alle Bausteine erkannt,
   Biquad-Koeffizienten aus dem DSP bitgenau gleich der Referenz, Abschalten über Remote-In (#39).

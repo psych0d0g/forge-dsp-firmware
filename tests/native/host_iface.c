@@ -276,6 +276,12 @@ static void store_cmd(const char *l)
 	} else if (!strcmp(l, "#at24_detect")) {
 		at24c512_detect();
 		printf("@hw:%04X\n", hardware_other);
+	} else if (!strcmp(l, "#sys_init_loaded")) {   /* #40: as after the first preset load */
+		void sys_init_preset_loaded(void);
+		sys_init_preset_loaded();
+	} else if (!strcmp(l, "#sys_init_loop")) {
+		void sys_init_mainloop(void);
+		sys_init_mainloop();
 	} else if (!strcmp(l, "#sys_init_init")) {
 		void sys_init_init(void);
 		sys_init_init();

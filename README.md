@@ -40,6 +40,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
 - **Eingangswahl** `mixer.in` (und `mixer.in.max`) für die aktive Mixer-Position, mit Ereignis an die GUI; die
   dokumentierten, im Original nie gesetzten Ereignisse 45–48 (`SOURCE.1–4.MUX`) tragen jetzt die Eingangswahl je
   Position (#23).
+- **Startbefehle**: bis zu 8 Befehle im EEPROM, die nach dem Laden des Presets beim Start laufen
+  (`set.1 system.startup.1="set.1 gain.out.2:150"`, #40).
 - **Loudness** (gehörrichtige Lautstärke) als neuer MODC-Block: hebt Bass und Höhen an, je leiser gehört wird,
   folgt der Lautstärke in 0,2-dB-Schritten (M6, #6; [Konfiguration](docs/port-changes.md#loudness-m6-6)).
 - **Biquad-Typ 17 BandPass**, im Original geplant, aber nie umgesetzt (#20).

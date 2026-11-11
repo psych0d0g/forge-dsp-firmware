@@ -3,6 +3,7 @@
  * sequence of modc_load_preset. License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "api.h"
+#include "sys_init.h"
 #include "bas_data.h"
 #include "biquad.h"
 #include "board.h"
@@ -412,6 +413,7 @@ void api_preset_load(uint8_t preset)
 	api_store = 1;
 	api_startup_delay();  /* "first unmute must check for remote.out delay" */
 	api_set_out_mute();   /* api_restore_out_mute */
+	sys_init_preset_loaded();  /* PORT (#40): start commands after the first preset load */
 	static const uint16_t ev[cmd_req_words_max] = {0x0104, 0x7072, 0x6C6F, 0x0000, 0x0000};
 	uint8_t i = 0, v = store_preset;
 	if (v >= 100) cmd_req_value[i++] = (char)('0' + v / 100);
