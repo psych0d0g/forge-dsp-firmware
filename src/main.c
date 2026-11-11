@@ -73,6 +73,7 @@ int main(void)
 	api_init_mute();
 	ctrl_events_init();   /* libs/ctrl/events init parts: fields, shutdown, usb, grounds, overflow */
 	events_poll_pins();
+	events_adc_init();
 	if (PIN_READ(PIN_OPTION_SPDIF_4CH) == 0x00)
 		events_spdif_init();
 	ctrl_modc_init();     /* blocks from the EEPROM; requests the preset load */
@@ -92,6 +93,17 @@ int main(void)
 
 	PIN_CLR(PIN_LED_RED);
 	sysinit_count_boot();
+
+	/* end of main.bas: "system.boot=ok" to COM master/USB. After a factory reset the original
+	 * first sends "system.reinit=ok", sets startup_state_done and resets; the port keeps
+	 * startup_state at sysinit until the factory reset is complete (store_init), so it
+	 * sends only the boot event. */
+	static const uint16_t bootrdy_event[cmd_req_words_max] = {0x0104, 0x7379, 0x626F, 0x0000, 0x0000};
+	cmd_req_value[0] = 'o';
+	cmd_req_value[1] = 'k';
+	cmd_req_value[2] = 0;
+	cmd_load_header(bootrdy_event);
+	cmd_sendevent();
 
 	uint16_t last = tick_ms();
 	for (;;) {

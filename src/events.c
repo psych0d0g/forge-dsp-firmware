@@ -3,6 +3,8 @@
  */
 #include "events.h"
 #include "adc.h"
+#include "adc_hw.h"
+#include "api.h"
 #include "bas_data.h"
 #include "board.h"
 #include "ct7302.h"
@@ -217,3 +219,74 @@ void events_spdif_mainloop(void)
 void events_spdif_init(void) {}
 void events_spdif_mainloop(void) {}
 #endif
+
+/* --- ADC (libs/ctrl/events/adc) --- */
+
+uint16_t events_adc_values[BAS_EVENTS_ADC_CHANNELS + 1];
+uint16_t events_adc_McuMaxTempOOR, events_adc_McuMaxTemp85C, events_adc_McuMaxTemp90C,
+         events_adc_McuMaxTemp95C, events_adc_McuMaxTemp100C;
+static uint8_t events_adc_counter;
+static uint16_t adc_buf1[BAS_EVENTS_ADC_MAX_COUNT + 1], adc_buf2[BAS_EVENTS_ADC_MAX_COUNT + 1];
+#if BAS_FEATURE_MCU_TEMP > 0
+static uint16_t adc_buf3[BAS_EVENTS_ADC_MAX_COUNT + 1];
+#endif
+
+void events_adc_init(void)
+{
+#if BAS_FEATURE_MCU_TEMP > 0
+	/* the factory reading at 85 °C gives the kelvin per count factor */
+	events_adc_McuMaxTemp85C = (uint16_t)(adc_hw_tempsense() - BAS_EVENTS_ADC_DELTAV);
+	double corr = (BAS_EVENTS_ADC_KELVIN2CELCIUS + 85.0) / (double)(int32_t)events_adc_McuMaxTemp85C;
+	events_adc_McuMaxTempOOR = (uint16_t)(int32_t)((BAS_EVENTS_ADC_KELVIN2CELCIUS - 40.0) / corr);
+	events_adc_McuMaxTemp90C = (uint16_t)(int32_t)((BAS_EVENTS_ADC_KELVIN2CELCIUS + 90.0) / corr);
+	events_adc_McuMaxTemp95C = (uint16_t)(int32_t)((BAS_EVENTS_ADC_KELVIN2CELCIUS + 95.0) / corr);
+	events_adc_McuMaxTemp100C = (uint16_t)(int32_t)((BAS_EVENTS_ADC_KELVIN2CELCIUS + 100.0) / corr);
+#endif
+	adc_hw_init();
+	events_adc_counter = BAS_EVENTS_ADC_MAX_COUNT;
+}
+
+void events_adc_mainloop_32(void)
+{
+	events_adc_counter--;
+	if (events_adc_counter == 0)
+		events_adc_counter = BAS_EVENTS_ADC_MAX_COUNT;
+	adc_buf1[events_adc_counter] = adc_hw_get(0, 0);
+	adc_buf2[events_adc_counter] = adc_hw_get(0, 1);
+#if BAS_FEATURE_MCU_TEMP > 0
+	adc_buf3[events_adc_counter] = (uint16_t)(adc_hw_get(1, 0) - BAS_EVENTS_ADC_DELTAV);
+#endif
+}
+
+static uint16_t avg(const uint16_t *b)
+{
+	uint32_t d = 0;
+	for (uint8_t i = 1; i <= BAS_EVENTS_ADC_MAX_COUNT; i++)
+		d += b[i];
+	return (uint16_t)(d / BAS_EVENTS_ADC_MAX_COUNT);
+}
+
+void events_adc_mainloop_16(void)
+{
+	events_adc_values[1] = avg(adc_buf1);
+	events_adc_values[2] = avg(adc_buf2);
+#if BAS_FEATURE_MCU_TEMP > 0
+	if (adc_buf3[events_adc_counter] > events_adc_values[3])
+		events_adc_values[3] = adc_buf3[events_adc_counter];  /* peak */
+	events_adc_values[4] = avg(adc_buf3);
+#endif
+}
+
+/* overheated MCU: mute for a while (auto unmute counter), count an error */
+void events_adc_mainloop_41(void)
+{
+#if BAS_FEATURE_MCU_TEMP > 0
+	if (events_adc_values[4] > events_adc_McuMaxTemp85C) {
+		api_set_out_mute_change();
+		if (api_autounmute_counter < BAS_EVENTS_ADC_OVERHEATED_MUTE) {
+			api_autounmute_counter = BAS_EVENTS_ADC_OVERHEATED_MUTE;
+			error_count++;
+		}
+	}
+#endif
+}

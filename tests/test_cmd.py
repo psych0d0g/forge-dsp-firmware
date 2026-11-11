@@ -1201,6 +1201,50 @@ class ModcTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class AdcGainTest(LinesMixin, unittest.TestCase):
+    """events/adc (averages, peak, overheat mute) and the MODC gain / gain_quad blocks."""
+
+    def test_adc_averages_limits_overheat(self):
+        out = self.lines("V40-96ELN", ["#adc_init", "#adc=0,0,1000", "#adc=0,1,2047", "#adc=1,0,2000", "#adc_loop",
+                                        "#adc_41", "#adc=1,0,4000", "#adc_loop", "#adc_41", "#adc=1,0,500",
+                                        "#adc_loop"])
+        t85 = 0x0A00 - 204                              # harness: TEMPSENSE = 0x0A00
+        corr = (273.15 + 85.0) / t85
+        lim = [int((273.15 + d) / corr) for d in (-40.0, 90.0, 95.0, 100.0)]
+        self.assertEqual(out[0], f"@adc_limits:{lim[0]},{t85},{lim[1]},{lim[2]},{lim[3]}")
+        self.assertEqual(out[1], "@adc:1000,2047,1796,1796")
+        self.assertEqual(out[2], "@unmute:0")               # below 85 °C
+        self.assertEqual(out[3], "@adc:1000,2047,3796,3796")
+        self.assertEqual(out[4], "@unmute:80")              # overheated: muted for 80 API passes
+        self.assertEqual(out[5], "@adc:1000,2047,3796,296")  # peak (value 3) stays
+
+    def ev(self, out, n):
+        return int([l for l in out if l.startswith(f"@event{n}:")][-1].split(":")[1].split(",")[0])
+
+    def test_gain_block(self):
+        f = "V40-96ELN"
+        log10 = table_bytes(f, "modc_log10")
+        pre = ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init", "#modc_init", "#adc_init",
+               "1|set.1 modc.9=[1,17,00000000,0,0,0,0,F0100F00]"]   # set1 240, set2 16, set3 15 steps
+        for raw, flags in ((1000, "00"), (1500, "08"), (300, "00")):
+            out = self.lines(f, pre + [f"1|set.1 modc.9.flags.1={int(flags, 16)}", f"#adc=0,0,{raw}", "#adc_loop",
+                                       "#modc", "#event?105"])
+            w1 = (raw << 5) & 0xFFFF
+            a = ((w1 - (16 << 8)) & 0xFFFF) // (240 - 16) & 0xFF
+            if flags == "08":
+                a = log10[a]
+            self.assertEqual(self.ev(out, 105), a // (255 // 15), (raw, flags))
+
+    def test_gain_quad_block(self):
+        f = "V40-96ELN"
+        out = self.lines(f, ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init", "#modc_init",
+                             "1|set.1 modc.9=[1,82,80000000,0,0,0,0,32040A05]", "#modc", "#rotary?", "#event?105",
+                             "#rotary=40", "#modc", "#event?105"])
+        self.assertIn("@rotary:50,4,5,10", out)  # sets: start 50, step 4, max 10, min 5
+        self.assertEqual(self.ev(out, 105), 255 - 40)  # flag1 bit 7: inverted
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

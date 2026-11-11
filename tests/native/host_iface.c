@@ -35,6 +35,15 @@ void host_i2c_readonly(uint8_t bus, uint8_t addr);
 void host_i2c_block(uint8_t bus, uint8_t addr);
 #include "events.h"
 #include "modc.h"
+#include "adc_hw.h"
+#include "tick.h"
+volatile uint16_t timer_tce0_counter;
+volatile int16_t timer_tce0_value;
+volatile uint8_t timer_tce0_factor = 1, timer_tce0_min = 0, timer_tce0_max = 255;
+static uint16_t host_adc[2][2], host_tempsense = 0x0A00;
+void adc_hw_init(void) {}
+uint16_t adc_hw_get(uint8_t adc, uint8_t ch) { return host_adc[adc & 1][ch & 1]; }
+uint16_t adc_hw_tempsense(void) { return host_tempsense; }
 void power_shutdown(uint8_t a, uint8_t b) { printf("@shutdown:%u,%u\n", a, b); }
 static struct { char name[40]; int v; } pins[32];
 int host_pin_read(const char *name)
@@ -169,6 +178,27 @@ static void store_cmd(const char *l)
 		int v = 0;
 		if (sscanf(l + 5, "%39[^,],%d", n, &v) == 2)
 			host_pin_set(n, v);
+	} else if (!strncmp(l, "#adc=", 5)) {         /* #adc=<0 ADCA|1 ADCB>,<ch>,<value> */
+		unsigned a, c, v;
+		sscanf(l + 5, "%u,%u,%u", &a, &c, &v);
+		host_adc[a & 1][c & 1] = (uint16_t)v;
+	} else if (!strncmp(l, "#rotary=", 8)) {      /* encoder value as left by the timer interrupt */
+		timer_tce0_value = (int16_t)atoi(l + 8);
+	} else if (!strcmp(l, "#rotary?")) {
+		printf("@rotary:%d,%u,%u,%u\n", timer_tce0_value, timer_tce0_factor, timer_tce0_min, timer_tce0_max);
+	} else if (!strcmp(l, "#adc_init")) {
+		events_adc_init();
+		printf("@adc_limits:%u,%u,%u,%u,%u\n", events_adc_McuMaxTempOOR, events_adc_McuMaxTemp85C,
+		       events_adc_McuMaxTemp90C, events_adc_McuMaxTemp95C, events_adc_McuMaxTemp100C);
+	} else if (!strcmp(l, "#adc_loop")) {        /* 8 samples and the averages */
+		for (int i = 0; i < 8; i++)
+			events_adc_mainloop_32();
+		events_adc_mainloop_16();
+		printf("@adc:%u,%u,%u,%u\n", events_adc_values[1], events_adc_values[2], events_adc_values[3],
+		       events_adc_values[4]);
+	} else if (!strcmp(l, "#adc_41")) {
+		events_adc_mainloop_41();
+		printf("@unmute:%d\n", api_autounmute_counter);
 	} else if (!strcmp(l, "#modc_init")) {
 		ctrl_modc_init();
 	} else if (!strcmp(l, "#modc")) {             /* one MODC pass */

@@ -3,7 +3,7 @@
  * overflow_ad(_da), spdif/ct7302, spdif/cs8416 parts). Indices 1-based as BASCOM.
  * The original updates pins in port interrupts (interrupts.bas); the port polls them in
  * the main loop (events_poll_pins), which gives the same field values for these slow
- * signals. ADC, VU meter and microSD follow.
+ * signals. ADC values (pots, MCU temperature) as events/adc. VU meter and microSD follow.
  */
 #ifndef EVENTS_H_
 #define EVENTS_H_
@@ -22,6 +22,13 @@ void events_init_set(uint8_t nr, uint8_t value);
 
 void events_poll_pins(void);          /* shutdown, usb dtr, grounds, overflow pins */
 void events_overflow_mainloop(void);  /* events_overflow_ad(_da)_mainloop */
+void events_adc_init(void);
+void events_adc_mainloop_16(void);
+void events_adc_mainloop_32(void);
+void events_adc_mainloop_41(void);
+extern uint16_t events_adc_values[BAS_EVENTS_ADC_CHANNELS + 1];  /* 1, 2 pots, 3 peak temp, 4 temp */
+extern uint16_t events_adc_McuMaxTempOOR, events_adc_McuMaxTemp85C, events_adc_McuMaxTemp90C,
+                events_adc_McuMaxTemp95C, events_adc_McuMaxTemp100C;
 void events_spdif_init(void);
 void events_spdif_mainloop(void);
 #endif

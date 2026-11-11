@@ -15,9 +15,6 @@
 
 #define W __attribute__((weak))
 W void irreceiver_mainloop(void) {}
-W void events_adc_mainloop_16(void) {}
-W void events_adc_mainloop_32(void) {}
-W void events_adc_mainloop_41(void) {}
 W void sys_init_mainloop(void) {}
 W void events_vumeter_mainloop(void) {}
 void watchdog_kick(void);

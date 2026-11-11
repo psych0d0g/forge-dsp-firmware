@@ -1,10 +1,9 @@
 /*
  * Port of libs/ctrl/modc/v20/functions.bas and subs/ctrl_* (preset, shutdown, mute, volumen,
  * logic, select, toggle, limiter, compare, calculator, spdif, mix_i, device_sync).
- * Not ported yet (blocks of these types do nothing): gain, gain_quad, gain_irrc (need the
- * ADC events, rotary encoder and IR receiver), mainclock, ess9038pro.
+ * Not ported yet (blocks of these types do nothing): gain_irrc (IR receiver), mainclock,
+ * ess9038pro.
  * PORT: at sysinit the defaults are used without writing them to the EEPROM (see store_init).
- * PORT: shutdown does not log the MCU temperature errors yet (ADC events).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "modc.h"
@@ -19,6 +18,7 @@
 #include "iface.h"
 #include "registers.h"
 #include "store.h"
+#include "tick.h"
 
 uint8_t modc_enable[MODC_N + 1], modc_type[MODC_N + 1];
 uint8_t modc_flags[4 * MODC_N + 1], modc_events[4 * MODC_N + 1], modc_sets[4 * MODC_N + 1];
@@ -245,6 +245,13 @@ static void modc_shutdown(void)
 			out((uint8_t)(OUT_VALUE + 1));
 			CHG |= 1u << BAS_MODC_BIT_EVENTS;
 		} else {
+#if BAS_FEATURE_MCU_TEMP > 0
+			uint16_t t = events_adc_values[3];  /* peak MCU temperature since the start */
+			if (t > events_adc_McuMaxTemp100C) errorcount(BAS_ERRORCOUNT_FW_MCUHIGHTEMP100C);
+			else if (t > events_adc_McuMaxTemp95C) errorcount(BAS_ERRORCOUNT_FW_MCUHIGHTEMP95C);
+			else if (t > events_adc_McuMaxTemp90C) errorcount(BAS_ERRORCOUNT_FW_MCUHIGHTEMP90C);
+			else if (t > events_adc_McuMaxTemp85C) errorcount(BAS_ERRORCOUNT_FW_MCUHIGHTEMP85C);
+#endif
 			cmd_req_value[0] = 'o'; cmd_req_value[1] = 'k'; cmd_req_value[2] = 0;
 			cmd_load_header(shutdown_event);
 			cmd_sendevent();
@@ -501,9 +508,60 @@ static void modc_device_sync(void)
 	buart_channel = ch;
 }
 
-/* PORT: follow with the ADC events, rotary encoder, IR receiver, clock and DAC options */
-static void modc_gain(void) {}
-static void modc_gain_quad(void) {}
+/* flags1 bits 3..7: log10, log10_inv, alog10, alog10_inv curves, invert */
+static uint8_t curve(uint8_t a)
+{
+	uint8_t f = FLAG(1);
+	if (BIT(f, 3)) a = BAS_LOOKUP_B(modc_log10, a);
+	if (BIT(f, 4)) a = BAS_LOOKUP_B(modc_log10_inv, a);
+	if (BIT(f, 5)) a = BAS_LOOKUP_B(modc_alog10, a);
+	if (BIT(f, 6)) a = BAS_LOOKUP_B(modc_alog10_inv, a);
+	if (BIT(f, 7)) a = (uint8_t)(255 - a);
+	return a;
+}
+
+/* pot (ADCA channel 1/2 by flag1 bit 0) scaled between set2 (low, x256) and set1 (high),
+ * curve, then reduced to set3 steps. Word arithmetic as BASCOM (wraps below set2). */
+static void modc_gain(void)
+{
+	if (CHG & (1u << BAS_MODC_BIT_CHANGED_ONOFF))
+		modc_cfg_store[M] = 0;
+	uint16_t w1 = (uint16_t)((BIT(FLAG(1), 0) == 0 ? events_adc_values[1] : events_adc_values[2]) << 5);
+	if (w1 == modc_cfg_store[M])
+		return;
+	modc_cfg_store[M] = w1;
+	uint16_t w2 = (uint16_t)(SET(2) << 8);
+	uint8_t span = (uint8_t)(SET(1) - SET(2));
+	uint8_t step = SET(3) ? (uint8_t)(255 / SET(3)) : 0;
+	if (span == 0 || step == 0)  /* PORT: division by zero in the original (undefined) */
+		return;
+	uint8_t a = (uint8_t)((uint16_t)(w1 - w2) / span);
+	a = (uint8_t)(curve(a) / step);
+	if (OUT_VALUE != a)
+		out(a);
+}
+
+/* rotary encoder (timer_tce0_value): sets 1..4 = start value, step, max, min */
+static void modc_gain_quad(void)
+{
+	if (CHG) {
+		if (CHG & (1u << BAS_MODC_BIT_CHANGED_ONOFF))
+			CHG |= 1u << BAS_MODC_BIT_SETS;
+		if (CHG & (1u << BAS_MODC_BIT_SETS)) {
+			if (SET(1) > 0) timer_tce0_value = SET(1);
+			if (SET(2) > 0) timer_tce0_factor = SET(2);
+			if (SET(3) > 0) timer_tce0_max = SET(3);
+			if (SET(4) > 0) timer_tce0_min = SET(4);
+		}
+	}
+	int16_t v = timer_tce0_value;
+	if ((int16_t)modc_cfg_store[M] != v) {
+		modc_cfg_store[M] = (uint16_t)v;
+		out(curve((uint8_t)v));
+	}
+}
+
+/* PORT: follows with the IR receiver */
 static void modc_gain_irrc(void) {}
 static void modc_mainclock(void) {}
 static void modc_ess9038pro(void) {}
