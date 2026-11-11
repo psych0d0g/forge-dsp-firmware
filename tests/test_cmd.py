@@ -792,5 +792,81 @@ class DspWriteTest(unittest.TestCase):
         self.assertIn(",[129,8]]", p.stdout)  # errorcount_fw_iface_verify (3, 5: cores 2, 3 missing)
 
 
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class PresetLoadTest(unittest.TestCase):
+    """api_preset_load (modc_load_preset): biquads from the DSP EEPROMs, values frame from the
+    24xx512, applied to DSPs and DAC; remote out stays off (FORGE_AUDIO=0)."""
+
+    def test_96eln3_preset_0(self):
+        import random
+        import tempfile
+        f = "V41-96ELN-3"
+        rnd = random.Random(5)
+        fs, cb = consts(f, "STORAGE_FRAMESIZE", "STORAGE_CHKSUM_BASE")
+        vout, mute_b = consts(f, "STORAGE_VOL_OUT_BASE", "STORAGE_MUTE_OUT_BASE")
+        core_t = table_bytes(f, "data_flow_dsp_bq_core")
+        reg_t = table_bytes(f, "data_flow_dsp_bq_reg")
+        offs = table_words(f, "data_flow_bq_storage_offset")
+        at24 = bytearray(b"\xff" * 65536)
+        dspee = {n: bytearray(b"\xff" * 65536) for n in (1, 2, 3)}
+        # values frame of preset 0
+        frame = bytearray(rnd.randrange(256) for _ in range(fs))
+        for ch in range(8):
+            frame[vout - 1 + ch] = 100 + ch
+        frame[mute_b - 1] = 0x04          # channel 3 muted by the user
+        frame[0] = 1                      # mixer position 1
+        mux_b, = consts(f, "STORAGE_MUX_BASE")
+        frame[mux_b - 1:mux_b + 3] = bytes([1, 2, 3, 4])  # valid mux entries
+        frame[cb - 1:cb + 1] = xmodem(frame[:cb - 1]).to_bytes(2, "little")
+        base = table_words(f, "data_store_addr_values")[0]
+        at24[base:base + fs] = frame
+        # biquads: nr 1, 200, 536 stored, the rest has type 0 (default)
+        bqtv = table_words(f, "data_store_addr_bqtv")[0]
+        bqbase = table_words(f, "data_store_addr_bq")[0]
+        stored = {}
+        for nr in (1, 200, 536):
+            at24[bqtv + (nr + 1) * 10 - 1] = 1                      # store_load_bqtype
+            data = bytes(rnd.randrange(256) for _ in range(20))     # bytes as sent to the DSP
+            crc = xmodem(data[::-1])                                 # crc16(buffer_bytes(1..20))
+            core = core_t[nr]
+            a = bqbase + (nr - offs[core]) * 22
+            dspee[core][a:a + 22] = crc.to_bytes(2, "big") + data
+            stored[nr] = data
+        for nr in range(1, 537):
+            if nr not in stored:
+                at24[bqtv + (nr + 1) * 10 - 1] = 0
+        with tempfile.TemporaryDirectory() as d:
+            lines = [f"#at24={pathlib.Path(d, 'at24.bin')}"]
+            pathlib.Path(d, "at24.bin").write_bytes(bytes(at24))
+            for n in (1, 2, 3):
+                pathlib.Path(d, f"dsp{n}.bin").write_bytes(bytes(dspee[n]))
+                lines.append(f"#dspee={n},{pathlib.Path(d, f'dsp{n}.bin')}")
+            lines += ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#i2cdev=2,90", "#dsp_detect", "#dac_init",
+                      "#preset_load=0"]
+            adr = {1: (1, 0x68), 2: (2, 0x68), 3: (2, 0x6A)}
+            for nr in (1, 2, 200, 536):
+                bus, a = adr[core_t[nr]]
+                lines.append(f"#block={bus},{a:02X},{reg_t[nr]:02X},20")
+            ovd = table_bytes(f, "data_flow_dsp_output_vol_dsp")
+            ovr = table_bytes(f, "data_flow_dsp_output_vol_reg")
+            bus, a = adr[ovd[1]]
+            lines.append(f"#block={bus},{a:02X},{ovr[1]:02X},4")
+            lines.append("#regs=2,90,24")
+            p, _ = run(f, lines, eeprom=image(f), want_eeprom=True)
+        out = p.stdout
+        self.assertIn("@preset:0 chksum_errors=0", out)
+        blocks = [l[7:] for l in out.splitlines() if l.startswith("@block:")]
+        self.assertEqual(blocks[0], stored[1].hex().upper())
+        self.assertEqual(blocks[1], "0080000000000000000000000000000000000000")  # dsp_bq_default
+        self.assertEqual(blocks[2], stored[200].hex().upper())
+        self.assertEqual(blocks[3], stored[536].hex().upper())
+        vol = table_bytes(f, "data_dsp_vol")
+        self.assertEqual(blocks[4], vol[100 * 4:100 * 4 + 4][::-1].hex().upper())  # long, MSB first
+        regs = bytes.fromhex([l for l in out.splitlines() if l.startswith("@regs:")][0][6:])
+        volreg = table_bytes(f, "data_es90x8pro_vol_reg")
+        self.assertEqual([regs[volreg[ch]] for ch in range(1, 9)], [0, 0, 0xFF, 0, 0, 0, 0, 0])
+        self.assertNotIn("PIN_CPU_POWER_CTRL_OUT=1", out)
+
+
 if __name__ == "__main__":
     unittest.main()

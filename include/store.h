@@ -24,4 +24,9 @@ void store_load_bqtv(void);         /* -> buffer_bytes(1..10), backwards as BASC
 void store_save_bqtv(void);         /* <- buffer_bytes(1..10) */
 void store_load_bqtype(void);       /* -> buffer_byte: last byte of the biquad record */
 uint16_t storage_chksum_get(void);
+void store_load_bq(void);           /* biquad raw + crc from the DSP EEPROM -> buffer_bytes(1..22) */
+void store_restore_biquad_raw(void);
+void store_load_preset(void);
+void store_mainloop(void);
+void store_set_preset(void);
 #endif

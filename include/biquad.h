@@ -18,5 +18,6 @@ void dsp_bq_calc_type(uint8_t type);   /* select case dsp_bq_cache_type (cmd_set
 void dsp_bq_calcto5coeff(void);
 /* coefficients 1..5 -> 5.23 two's complement in 28 bits, buffer_dwords(1..5) */
 void dsp_bq_convert2raw(uint32_t raw[6]);
+uint32_t dsp_math_to523(double v);
 void dsp_bq_default(uint32_t raw[6]);
 #endif

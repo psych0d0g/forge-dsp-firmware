@@ -63,6 +63,21 @@ static void src43x2_init_register(void)
 }
 #endif
 
+#if BAS_MODUL_SRC43X2 > 0
+void src43x2_set_mux(uint8_t channel)
+{
+	wr(1, 0xE0, BAS_SRC43X2_REG_RECEIVER_CTRL_1, (uint8_t)(channel | BAS_SRC43X2_REG_RECEIVER_CTRL_1_INIT));
+}
+
+void src43x2_set_vol(uint8_t channel, uint8_t value)
+{
+	if (!(hardware_other & (1u << BAS_SRC43X2_RDY)))
+		return;
+	/* src43x2 max attenuation at 0xFF */
+	wr(1, 0xE0, channel == 1 ? BAS_SRC43X2_REG_SRC_CTRL_AR : BAS_SRC43X2_REG_SRC_CTRL_AL, (uint8_t)(255 - value));
+}
+#endif
+
 #if BAS_MODUL_CS8416 > 0
 static void cs8416_init(void)
 {

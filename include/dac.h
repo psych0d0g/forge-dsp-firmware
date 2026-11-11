@@ -4,10 +4,13 @@
 #include <stdint.h>
 #include "flavour.h"
 void dac_init(void);                 /* libs/da/init.bas of the fitted DAC */
+void dac_set_mute(uint8_t mask);     /* api_set_out_mute: the fitted DAC's set_mute */
+void dac_set_phase(uint8_t v);       /* api_set_phase on DAC-phase flavours (ES9018, CS4385) */
 #if BAS_MODUL_CS4385 > 0
 extern uint8_t cs4385_reg, cs4385_value;
 void cs4385_set_reg(void);
 void cs4385_set_mute(uint8_t mask);
+void cs4385_set_phase(uint8_t v);
 #endif
 /* bit n = channel n+1 muted (volume 0xFF), else 0 dB; 100/130 ms ramp per channel */
 void es90x8pro_set_mute(uint8_t mask);

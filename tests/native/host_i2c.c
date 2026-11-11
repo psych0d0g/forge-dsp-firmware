@@ -20,7 +20,7 @@ void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s) { (void)bus; (voi
 static uint8_t cur_dev[3], state[3];  /* state: 0 idle, 1 addr hi, 2 addr lo, 3 data */
 
 /* simple register devices ("#i2cdev=<bus>,<addr hex>"): first written byte = register pointer */
-struct regdev { uint8_t bus, addr, ptr, regs[256], used, readonly; };
+struct regdev { uint8_t bus, addr, ptr, off, regs[256], used, readonly, block; uint8_t blocks[256][32]; };
 static struct regdev devs[16];
 static struct regdev *cur_rd[3];
 
@@ -87,7 +87,12 @@ void twi_wbyte(uint8_t bus, uint8_t b)
 	if (cur_rd[bus]) {
 		if (state[bus] == 1) {
 			cur_rd[bus]->ptr = b;
+			cur_rd[bus]->off = 0;
 			state[bus] = 3;
+		} else if (cur_rd[bus]->block) {  /* TAS3108: a sub address holds a whole block */
+			if (!cur_rd[bus]->readonly && cur_rd[bus]->off < 32)
+				cur_rd[bus]->blocks[cur_rd[bus]->ptr][cur_rd[bus]->off] = b;
+			cur_rd[bus]->off++;
 		} else if (!cur_rd[bus]->readonly) {
 			cur_rd[bus]->regs[cur_rd[bus]->ptr++] = b;
 		} else {
@@ -111,7 +116,9 @@ void twi_wbyte(uint8_t bus, uint8_t b)
 uint8_t twi_rbyte(uint8_t bus, uint8_t ack)
 {
 	uint8_t v = 0xFF;
-	if (cur_rd[bus])
+	if (cur_rd[bus] && cur_rd[bus]->block)
+		v = cur_rd[bus]->off < 32 ? cur_rd[bus]->blocks[cur_rd[bus]->ptr][cur_rd[bus]->off++] : 0;
+	else if (cur_rd[bus])
 		v = cur_rd[bus]->regs[cur_rd[bus]->ptr++];
 	else if (cur_ee[bus])
 		v = cur_ee[bus]->mem[eptr[bus]++];  /* sequential/current-address read */
@@ -133,4 +140,17 @@ void host_i2c_readonly(uint8_t bus, uint8_t addr)
 	struct regdev *d = find(bus, addr);
 	if (d)
 		d->readonly = 1;
+}
+
+void host_i2c_block(uint8_t bus, uint8_t addr)
+{
+	struct regdev *d = find(bus, addr);
+	if (d)
+		d->block = 1;
+}
+
+const uint8_t *host_i2c_blockdata(uint8_t bus, uint8_t addr, uint8_t reg)
+{
+	struct regdev *d = find(bus, addr);
+	return d ? d->blocks[reg] : NULL;
 }

@@ -20,6 +20,7 @@
 #include "expander.h"
 #include "si5338.h"
 #include "flavour_systeminit.h"
+#include "api.h"
 #include <util/delay.h>
 #include "tick.h"
 #include "version.h"
@@ -64,6 +65,10 @@ int main(void)
 	/* peripheral part of systeminit.bas (generated): clock, store, expanders and their
 	 * power-up bits, DAC (muted), DSP program EEPROMs, peripheral resets, DSP cores, SPDIF */
 	flavour_systeminit_peripherals();
+	/* libs/api/init.bas, then the preset load of modc_load_preset (MODC itself follows) */
+	api_init();
+	api_init_mute();
+	api_preset_load(registers[BAS_REG_LOAD_PRESET]);
 #else
 	/* safe state: only detection; peripheral resets held, power-up bits off */
 	si5338_detect_and_init();
@@ -86,6 +91,10 @@ int main(void)
 		watchdog_reset();
 		uint16_t now = tick_ms();
 		cmd_check4buffer();
+#if FORGE_BRINGUP && FLAVOUR_SYSTEMINIT_COMPLETE
+		api_mainloop();
+		store_mainloop();
+#endif
 		power_poll(now);
 		if ((uint16_t)(now - last) >= 500) {
 			last = now;

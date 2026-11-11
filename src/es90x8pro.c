@@ -81,6 +81,9 @@ static void es90x8pro_init(void)
 	es90x8pro_set_mute(BAS_ES90X8PRO_MUTE_ALL_ON);
 }
 
+void dac_set_mute(uint8_t mask) { es90x8pro_set_mute(mask); }
+void dac_set_phase(uint8_t v) { (void)v; }  /* 96ELN-3: phase is in the DSP */
+
 void dac_init(void)
 {
 	if (channel_open & (1u << 6)) {

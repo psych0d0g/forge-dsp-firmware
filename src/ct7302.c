@@ -108,6 +108,14 @@ void ct7302_20_set_vol(uint8_t channel, uint8_t value)
 	w(channel == 1 ? BAS_CT7302_REG_VOL_RIGHT : BAS_CT7302_REG_VOL_LEFT, (uint8_t)(255 - value));
 }
 
+void ct7302_22_set_mux(uint8_t channel)
+{
+	if (!(hardware_other & (1u << BAS_CT7302_22_RDY)))
+		return;
+	i2c_device_addr = 0x22;
+	rmw(BAS_CT7302_REG_INPUT_SRCMODE, 0xF8, channel);
+}
+
 uint8_t ct7302_20_get_mux(void)
 {
 	i2c_device_addr = 0x20;

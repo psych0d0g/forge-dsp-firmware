@@ -32,6 +32,9 @@ static const char *dspee_out[3];
 void host_i2c_add(uint8_t bus, uint8_t addr);
 uint8_t *host_i2c_regs(uint8_t bus, uint8_t addr);
 void host_i2c_readonly(uint8_t bus, uint8_t addr);
+void host_i2c_block(uint8_t bus, uint8_t addr);
+const uint8_t *host_i2c_blockdata(uint8_t bus, uint8_t addr, uint8_t reg);
+#include "api.h"
 
 uint8_t iface_buart_channel[iface_ch_max + 1] = { 0, 0, 2, 1, 3 };
 volatile uint8_t iface_todo[iface_ch_max + 1];
@@ -120,6 +123,27 @@ static void store_cmd(const char *l)
 		unsigned bus, addr;
 		sscanf(l + 7, "%u,%x", &bus, &addr);
 		host_i2c_readonly((uint8_t)bus, (uint8_t)addr);
+	} else if (!strncmp(l, "#i2cdsp=", 8)) {     /* #i2cdsp=<bus>,<addr hex>: TAS3108 block registers */
+		unsigned bus, addr;
+		sscanf(l + 8, "%u,%x", &bus, &addr);
+		host_i2c_add((uint8_t)bus, (uint8_t)addr);
+		host_i2c_block((uint8_t)bus, (uint8_t)addr);
+	} else if (!strncmp(l, "#block=", 7)) {      /* #block=<bus>,<addr hex>,<reg hex>,<n> */
+		unsigned bus, addr, reg, n;
+		sscanf(l + 7, "%u,%x,%x,%u", &bus, &addr, &reg, &n);
+		const uint8_t *b = host_i2c_blockdata((uint8_t)bus, (uint8_t)addr, (uint8_t)reg);
+		printf("@block:");
+		for (unsigned i = 0; i < n; i++)
+			printf("%02X", b ? b[i] : 0);
+		printf("\n");
+	} else if (!strncmp(l, "#preset_load=", 13)) {
+		store_init();  /* store_preset = 0xFF: nothing loaded */
+		api_init();
+		api_init_mute();
+		api_preset_load((uint8_t)atoi(l + 13));
+		for (int i = 0; i < 12; i++)
+			api_mainloop();  /* autounmute + mixer registers */
+		printf("@preset:%u chksum_errors=%u\n", store_preset, store_chksum_error);
 	} else if (!strcmp(l, "#dsp_detect")) {
 		for (uint8_t n = 1; n <= BAS_MODUL_TAS3108_CORES; n++)
 			dsp_core_init(n);

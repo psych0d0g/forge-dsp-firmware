@@ -7,6 +7,9 @@
 #include "i2c.h"
 #include "registers.h"
 #include "store.h"
+#include "biquad.h"
+#include "dsp.h"
+void watchdog_kick(void);
 
 uint8_t storage_non_biquadvalues[BAS_STORAGE_FRAMESIZE + 1];
 uint8_t store_preset;
@@ -135,4 +138,94 @@ void store_load_bqtype(void)
 	i2c_addr = (uint16_t)(BAS_LOOKUP_W(data_store_addr_bqtv, store_preset) + w);
 	i2c_device_addr = BAS_EEPROM_ADR_W;
 	i2c_rbyte_highreg(BUS);
+}
+
+void store_load_bq(void)
+{
+	uint8_t storage = BAS_LOOKUP_B(data_flow_dsp_bq_core, store_bq_nr);
+	uint16_t w = (uint16_t)(store_bq_nr - BAS_LOOKUP_W(data_flow_bq_storage_offset, storage));
+	w = (uint16_t)(w * BAS_DSP_REG_SIZE_BIQUAD_CHKSUM);
+	i2c_addr = (uint16_t)(BAS_LOOKUP_W(data_store_addr_bq, store_preset) + w);
+	i2c_size = BAS_DSP_REG_SIZE_BIQUAD_CHKSUM;
+	switch (storage) {
+	case 1: i2c_device_addr = 0xA0; i2c_rbuffer_highreg(1); break;  /* dsp_1_eeprom_adr_w */
+	case 2: i2c_device_addr = 0xA0; i2c_rbuffer_highreg(2); break;  /* dsp_2_eeprom_adr_w */
+	default: i2c_device_addr = 0xA2; i2c_rbuffer_highreg(2); break; /* dsp_3_eeprom_adr_w */
+	}
+	uint16_t crc = bas_crc16(&buffer_bytes[1], BAS_DSP_REG_SIZE_BIQUAD);
+	if ((buffer_bytes[21] | (uint16_t)buffer_bytes[22] << 8) != crc) {  /* buffer_words(11) */
+		store_chksum_error++;
+		errorcount(BAS_ERRORCOUNT_FW_DATA_CHKSUM_SOFT);
+	}
+}
+
+void store_restore_biquad_raw(void)
+{
+	for (store_bq_nr = 1; store_bq_nr <= BAS_FLOW_MAX_DSP_BIQUADS; store_bq_nr++) {
+		uint32_t raw[6];
+		dsp_bq_virt_nr = store_bq_nr;
+		store_load_bqtype();
+		if (buffer_byte > 0) {
+			uint8_t e_count = 0;
+			uint16_t e_store;
+			do {
+				e_store = store_chksum_error;
+				store_load_bq();
+				if (store_chksum_error > e_store) {
+					if (e_count > 2) {
+						errorcount(BAS_ERRORCOUNT_FW_DATA_CHKSUM_HARD);
+						break;
+					}
+					e_count++;
+				}
+			} while (e_store != store_chksum_error);
+			for (uint8_t i = 1; i <= 5; i++) {
+				uint8_t at = (uint8_t)((i - 1) * 4 + 1);
+				raw[i] = buffer_bytes[at] | (uint32_t)buffer_bytes[at + 1] << 8 |
+				         (uint32_t)buffer_bytes[at + 2] << 16 | (uint32_t)buffer_bytes[at + 3] << 24;
+			}
+		} else {
+			dsp_bq_default(raw);
+		}
+		dsp_calc_core();  /* dsp_set_biquad_calc */
+		dsp_calc_reg();
+		dsp_set_biquad(raw);
+		watchdog_kick();  /* reset watchdog */
+	}
+}
+
+void store_load_preset(void)
+{
+	store_restore_biquad_raw();
+	uint8_t e_count = 0;
+	uint16_t e_store;
+	do {
+		e_store = store_chksum_error;
+		store_load_values_all();
+		if (store_chksum_error > e_store) {
+			if (e_count > 2) {
+				errorcount(BAS_ERRORCOUNT_FW_PRESET_LOAD);
+				break;
+			}
+			e_count++;
+		}
+	} while (e_store != store_chksum_error);
+}
+
+void store_set_preset(void)
+{
+	set_register(BAS_REG_LOAD_PRESET, store_preset);
+}
+
+/* save the values frame once the changes stop (one main loop without a new change) */
+void store_mainloop(void)
+{
+	if (storage_flags > 0) {
+		if (storage_flags < storage_flags_check) {
+			storage_flags = 0;
+			storage_flags_check = 0;
+			store_save_values_all();
+		}
+		storage_flags_check++;
+	}
 }

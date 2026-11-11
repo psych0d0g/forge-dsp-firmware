@@ -72,6 +72,9 @@ static void es9018_init(void)
 	es9018_set_mute(BAS_ES9018_MUTE_ALL_ON);  /* es9018_set_mute_on */
 }
 
+void dac_set_mute(uint8_t mask) { es9018_set_mute(mask); }
+void dac_set_phase(uint8_t v) { es9018_set_phase(v); }
+
 void dac_init(void)
 {
 	if (channel_open & (1u << 6)) {

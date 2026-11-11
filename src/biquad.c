@@ -240,14 +240,18 @@ void dsp_bq_calcto5coeff(void)
 /* dsp_math_to523: value * 2^23 -> long, + 2^27, byte 4 xor 0x08 = 28-bit two's complement.
  * PORT: double -> long truncates here (C cast); whether BASCOM rounds is to be checked
  * against biquad...raw of a device (+-1 LSB). */
+uint32_t dsp_math_to523(double v)
+{
+	double d = v * 8388608.0;
+	int32_t value223 = (int32_t)d;
+	uint32_t value227 = (uint32_t)value223 + 134217728UL;
+	return value227 ^ 0x08000000UL;
+}
+
 void dsp_bq_convert2raw(uint32_t raw[6])
 {
-	for (uint8_t nr = 1; nr <= 5; nr++) {
-		double d = V(nr) * 8388608.0;
-		int32_t value223 = (int32_t)d;
-		uint32_t value227 = (uint32_t)value223 + 134217728UL;
-		raw[nr] = value227 ^ 0x08000000UL;
-	}
+	for (uint8_t nr = 1; nr <= 5; nr++)
+		raw[nr] = dsp_math_to523(V(nr));
 }
 
 void dsp_bq_default(uint32_t raw[6])
