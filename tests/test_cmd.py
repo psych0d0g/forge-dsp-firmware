@@ -793,6 +793,88 @@ class DspWriteTest(unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class AudioCmdTest(unittest.TestCase):
+    """cmd_gain, cmd_mute, cmd_phase (libs/cmd/v20/common/subs)."""
+
+    def lines(self, flavour, lines):
+        p = subprocess.run([os.path.join(NATIVE, f"cmd-{flavour}")], input="\n".join(lines) + "\n",
+                           capture_output=True, text=True, timeout=10)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return [l for l in p.stdout.splitlines() if not l.startswith(("@pin", "--"))]
+
+    def test_gain_roundtrip_and_ranges(self):
+        for f in FLAVOURS:
+            nin, nout, nsp = consts(f, "FLOW_MAX_IN_CHANNEL", "FLOW_MAX_OUT_CHANNEL", "FLOW_MAX_SPDIF_CHANNEL")
+            out = self.lines(f, ["1|set.1 gain.out.3=120", "1|set.1 gain.in.2=7", "1|get.1 gain.out",
+                                 "1|get.1 gain.in.2", f"1|set.1 gain.in.{nin + 1}=5", "1|set.1 gain.out.0=5",
+                                 f"1|get.1 gain.out.{nout + 1}", "1|get.1 gain.bad"])
+            self.assertEqual(out[0], "@0: *.1 gain.out.3 ok\\r\\n", f)
+            self.assertEqual(out[2], "@0: <.1 gain.out=[" + ",".join("120" if i == 3 else "0"
+                                                                    for i in range(1, nout + 1)) + "]\\r\\n", f)
+            self.assertEqual(out[3], "@0: <.1 gain.in.2=7\\r\\n", f)
+            self.assertIn("command out of range", out[4], f)
+            self.assertIn("command out of range", out[5], f)
+            self.assertIn("command out of range", out[6], f)
+            self.assertIn("unknown command", out[7], f)
+
+    def test_gain_scales(self):
+        import re
+        for f in FLAVOURS:
+            t = pathlib.Path(HERE, "..", "src", "flavours", f, "flavour.h").read_text()
+            scale = re.search(r'#define BAS_DAC_SCALE "(.*)"', t).group(1)
+            out = self.lines(f, ["1|get.1 gain.out.scale", "1|get.1 gain.in.scale"])
+            self.assertEqual(out[0], f"@0: <.1 gain.out.scale={scale}\\r\\n", f)
+            self.assertEqual(out[1], "@0: <.1 gain.in.scale=[0,255,223,0.5,-111.5,8]\\r\\n", f)
+
+    def test_gain_out_writes_dsp(self):
+        f = "V41-96ELN-3"
+        ovd = table_bytes(f, "data_flow_dsp_output_vol_dsp")
+        ovr = table_bytes(f, "data_flow_dsp_output_vol_reg")
+        vol = table_bytes(f, "data_dsp_vol")
+        adr = {1: (1, 0x68), 2: (2, 0x68), 3: (2, 0x6A)}
+        bus, a = adr[ovd[5]]
+        out = self.lines(f, ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect",
+                             "1|set.1 gain.out.5=77", f"#block={bus},{a:02X},{ovr[5]:02X},4"])
+        self.assertIn(f"@block:{vol[77 * 4:77 * 4 + 4][::-1].hex().upper()}", out)
+
+    def test_mute_bits_event_and_dac(self):
+        f = "V41-96ELN-3"
+        volreg = table_bytes(f, "data_es90x8pro_vol_reg")
+        out = self.lines(f, ["#i2cdev=2,90", "#dsp_detect", "#dac_init", "#dtr=1", "#ir=0",
+                             "1|set.1 mute.out.2=1", "1|set.1 mute.out.5=1", "1|set.1 mute.out.2=0",
+                             "1|get.1 mute.out", "1|get.1 mute.out.5", "#regs=2,90,24"])
+        ev = "#.1 mute.out=[0,0,0,0,1,0,0,0]\\r\\n"
+        self.assertIn("@1: " + ev, out)   # COM master (IR master offline)
+        self.assertIn("@0: " + ev, out)   # COM USB (GUI, DTR)
+        self.assertIn("@0: <.1 mute.out=[0,0,0,0,1,0,0,0]\\r\\n", out)
+        self.assertIn("@0: <.1 mute.out.5=1\\r\\n", out)
+        regs = bytes.fromhex([l for l in out if l.startswith("@regs:")][0][6:])
+        self.assertEqual([regs[volreg[ch]] for ch in range(1, 9)], [0, 0, 0, 0, 0xFF, 0, 0, 0])
+
+    def test_phase_dsp_and_dac(self):
+        f = "V41-96ELN-3"   # phase in the DSP
+        ivd = table_bytes(f, "data_flow_dsp_output_inv_dsp")
+        ivr = table_bytes(f, "data_flow_dsp_output_inv_reg")
+        adr = {1: (1, 0x68), 2: (2, 0x68), 3: (2, 0x6A)}
+        on, off = consts(f, "FLOW_PHASE_ON_VALUE", "FLOW_PHASE_OFF_VALUE")
+        lines = ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect", "1|set.1 phase.out.8=1",
+                 "1|get.1 phase.out"]
+        for ch in (7, 8):
+            bus, a = adr[ivd[ch]]
+            lines.append(f"#block={bus},{a:02X},{ivr[ch]:02X},4")
+        out = self.lines(f, lines)
+        self.assertIn("@0: <.1 phase.out=[0,0,0,0,0,0,0,1]\\r\\n", out)
+        blocks = [l[7:] for l in out if l.startswith("@block:")]
+        self.assertEqual(blocks, [f"{off:08X}", f"{on:08X}"])
+        f = "V40-CORED8"    # phase in the ES9018 (bit pairs reversed)
+        out = self.lines(f, ["#i2cdev=2,90", "#dsp_detect", "#dac_init", "1|set.1 phase.out.1=1",
+                             "1|set.1 phase.out.8=1", "#regs=2,90,24"])
+        reg, = consts(f, "ES9018_REG_DACA_PHASE")
+        regs = bytes.fromhex([l for l in out if l.startswith("@regs:")][0][6:])
+        self.assertEqual(regs[reg], 0x42)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetLoadTest(unittest.TestCase):
     """api_preset_load (modc_load_preset): biquads from the DSP EEPROMs, values frame from the
     24xx512, applied to DSPs and DAC; remote out stays off (FORGE_AUDIO=0)."""

@@ -111,6 +111,16 @@ void cmd_check4buffer(void);
 /* --- module dispatch (cmd_<module>.c); missing modules answer "unknown command" --- */
 void cmd_set_system(void);
 void cmd_get_system(void);
+void cmd_set_gain(void);
+void cmd_get_gain(void);
+void cmd_set_mute(void);
+void cmd_get_mute(void);
+void cmd_set_phase(void);
+void cmd_get_phase(void);
+
+/* events to the GUI: header words from a table (BASCOM: restore + read), value in cmd_req_value */
+void cmd_load_header(const uint16_t words[cmd_req_words_max]);
+void cmd_sendevent(void);
 
 /* --- output on the current channel (BASCOM: print #buart_channel) --- */
 extern uint8_t buart_channel;

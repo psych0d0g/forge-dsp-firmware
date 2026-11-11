@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cmd.h"
+#include "iface.h"
 #include "flavour.h"
 
 uint8_t cmd_mem[cmd_req_bytes_max + cmd_req_inputs_max];
@@ -599,8 +600,13 @@ static void cmd_answer_set(void)
 #if BAS_CMD_VERSION_SYSTEM > 0
 	case 0x7379: cmd_set_system(); break;
 #endif
-	/* PORT: biquad, com, delay, event, extender, gain, i2c, mixer, modc, mute, phase,
-	 * preset, select follow in M1-M4 (issues #1, #4); until then "unknown command" */
+#ifndef CMD_NO_AUDIO
+	case 0x6761: cmd_set_gain(); break;
+	case 0x6D75: cmd_set_mute(); break;
+	case 0x7068: cmd_set_phase(); break;
+#endif
+	/* PORT: biquad, com, delay, event, extender, i2c, mixer, modc, preset, select follow
+	 * (issue #4); until then "unknown command" */
 	default: cmd_error_unknown();
 	}
 }
@@ -611,6 +617,11 @@ static void cmd_answer_get(void)
 	switch (req_w(cmd_req_word_one)) {
 #if BAS_CMD_VERSION_SYSTEM > 0
 	case 0x7379: cmd_get_system(); break;
+#endif
+#ifndef CMD_NO_AUDIO
+	case 0x6761: cmd_get_gain(); break;
+	case 0x6D75: cmd_get_mute(); break;
+	case 0x7068: cmd_get_phase(); break;
 #endif
 	default: cmd_error_unknown();
 	}
@@ -635,4 +646,28 @@ void cmd_answer(void)
 	case cmd_type_set: cmd_answer_set(); break;
 	case cmd_type_get: cmd_answer_get(); break;
 	}
+}
+
+void cmd_load_header(const uint16_t words[cmd_req_words_max])
+{
+	for (uint8_t i = 1; i <= cmd_req_words_max; i++)
+		req_w_set(i, words[i - 1]);
+}
+
+void cmd_sendevent(void)
+{
+	uint8_t ch = buart_channel;
+	if (!iface_hook_ir_master_online()) {  /* IR master offline: COM master */
+		buart_channel = iface_buart_channel[iface_ch_master];
+		cmd_answer_header();
+		out_str(cmd_req_value);
+		out_crlf();
+	}
+	if (iface_hook_usb_dtr() > 0) {        /* GUI on COM USB */
+		buart_channel = iface_buart_channel[iface_ch_usb];
+		cmd_answer_header();
+		out_str(cmd_req_value);
+		out_crlf();
+	}
+	buart_channel = ch;
 }

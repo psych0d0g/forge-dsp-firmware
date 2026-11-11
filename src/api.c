@@ -21,7 +21,7 @@
 #define FORGE_AUDIO 0
 #endif
 
-uint8_t api_store;
+uint8_t api_store = 1;  /* api_init */
 int16_t api_autounmute_counter;
 static uint8_t api_mute_out_prio[5];  /* 1-based */
 uint32_t store_mix_changed;
