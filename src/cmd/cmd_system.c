@@ -485,7 +485,7 @@ static void cmd_get_system_poti(void)
 /* str(d, 2) */
 static void out_fixed2(double d)
 {
-	int32_t v = (int32_t)lround(d * 100.0);
+	int32_t v = bas_round_i32(d * 100.0);
 	if (v < 0) {
 		out_chr('-');
 		v = -v;

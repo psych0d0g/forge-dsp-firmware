@@ -13,6 +13,7 @@
  */
 #include <math.h>
 #include "cmd.h"
+#include "bas_data.h"
 #include "api.h"
 #include "dsp.h"
 #include "flavour.h"
@@ -47,7 +48,7 @@ static uint8_t value_samples(uint8_t unit_word, uint16_t *w)
 /* print a double with up to 3 decimals */
 static void out_value(double s)
 {
-	int32_t v = (int32_t)lround(s * 1000.0);
+	int32_t v = bas_round_i32(s * 1000.0);
 	if (v < 0) {
 		out_chr('-');
 		v = -v;

@@ -33,6 +33,13 @@ static inline double bas_data_double(const uint8_t *p)
 }
 #define BAS_LOOKUP_D(label, i) bas_data_double(&(label)[(uint16_t)(i) * 8])
 
+/* round half away from zero to long, without lround(): libgcc has no 64-bit f7_lround
+ * (avr-gcc 16, the D_lround wrapper refers to a missing __f7_lround) */
+static inline int32_t bas_round_i32(double d)
+{
+	return d < 0 ? -(int32_t)(-d + 0.5) : (int32_t)(d + 0.5);
+}
+
 /* restore label / read x */
 typedef struct { const uint8_t *p; } bas_reader;
 #define BAS_RESTORE(label) ((bas_reader){ (label) })
