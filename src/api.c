@@ -231,6 +231,8 @@ void api_set_delay_in(uint8_t ch, uint16_t v) { (void)ch; (void)v; }
 uint16_t api_get_delay_in(uint8_t ch) { (void)ch; return 0; }
 #endif
 
+uint8_t api_get_mix_position(void) { return store_mix_position; }
+
 void api_set_mix_position(uint8_t pos)
 {
 	if (store_mix_position != pos) {

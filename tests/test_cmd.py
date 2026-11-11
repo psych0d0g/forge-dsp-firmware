@@ -1747,6 +1747,32 @@ class LoudnessTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class MuxITest(LinesMixin, unittest.TestCase):
+    """#17: MODC type 0x60 mux_I, priority list of events as the GUI dialog "Eingangs-Umschalter"."""
+
+    PRE = ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init", "#dtr=1", "#modc_init", "1|set.1 mixer.position=1"]
+
+    def test_priority_and_fallback(self):
+        f = "V40-96ELN"
+        cfg = "1|set.1 modc.9=[1,96,01000000,70,71,72,0,01020300]"   # position 1; fallback 1, ev71 -> 2, ev72 -> 3
+        get = ["1|get.1 mixer.in"]
+        out = self.lines(f, self.PRE + [cfg, "#modc"] + get
+                         + ["1|set.1 event.71.value=1", "#modc"] + get
+                         + ["1|set.1 event.72.value=1", "#modc"] + get           # higher priority wins
+                         + ["1|set.1 event.72.value=0", "1|set.1 event.71.value=0", "#modc"] + get
+                         + ["1|get.1 modc.version.attributes.ac"])
+        got = [l.split("mixer.in=")[1].split("\\")[0] for l in out if "<.1 mixer.in=" in l]
+        self.assertEqual(got, ["1", "2", "3", "1"])
+        self.assertTrue(out[-1].split("[")[1].startswith("20,"))     # type 0x60 & 0x3F = 0x20 = first of "ac"
+
+    def test_position_not_ticked(self):
+        f = "V40-96ELN"
+        out = self.lines(f, self.PRE + ["1|set.1 mixer.in=2", "1|set.1 modc.9=[1,96,04000000,70,71,0,0,01030000]",
+                                        "1|set.1 event.71.value=1", "#modc", "1|get.1 mixer.in"])
+        self.assertIn("mixer.in=2\\r", out[-1])                      # only position 2 ticked (bit 2)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

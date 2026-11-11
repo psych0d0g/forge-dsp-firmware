@@ -495,6 +495,27 @@ static void modc_mix_i(void)
 	api_set_mix_position(v);
 }
 
+/* PORT extension (#17): modc_mux_I (0x60), declared in the original, dialog in its GUI
+ * ("Eingangs-Umschalter"): up to 4 events in a priority list, event 4 highest, set 1 the
+ * fallback; the input of the highest active event (set k) goes to the active mixer position
+ * when that position is ticked (flags 1 bits 0, 2, 4, 6 = positions 1..4). Like the other
+ * automatic blocks it does not mark the EEPROM for saving. Output: the chosen input. */
+static void modc_mux_i(void)
+{
+	uint8_t v = SET(1);
+	for (uint8_t i = 2; i <= 4; i++)
+		if (EVENT(i) > 0 && EV(EVENT(i)) > 0 && SET(i) > 0)
+			v = SET(i);
+	out(v);
+	uint8_t pos = api_get_mix_position();
+	if (v == 0 || pos < 1 || pos > 4 || !BIT(FLAG(1), 2 * (pos - 1)))
+		return;
+	uint8_t st = api_store;
+	api_store = 0;
+	api_set_in_input(v);
+	api_store = st;
+}
+
 static const uint16_t block_event[cmd_req_words_max] = {0xFF03, 0x6576, 0x626C, 0x0000, 0x0000};
 
 /* sends "event.block.N=[a,b,c,d]" to the slave port about every 480 passes or on a change */
@@ -654,6 +675,8 @@ uint8_t modc_type_version(uint8_t t)
 {
 	if (t == (MODC_TYPE_LOUDNESS & 0x3F))
 		return 20;  /* PORT extension: loudness (M6) */
+	if (t == (MODC_TYPE_MUX_I & 0x3F))
+		return 20;  /* PORT extension: mux_I (#17) */
 	return BAS_LOOKUP_B(data_mods_versions, t);
 }
 
@@ -807,6 +830,7 @@ void ctrl_modc_mainloop(void)
 			case BAS_MODC_TYPE_SPDIF:      modc_spdif(); break;
 			case BAS_MODC_TYPE_ESS9038PRO: modc_ess9038pro(); break;
 			case MODC_TYPE_LOUDNESS:       modc_loudness(); break;  /* PORT extension (M6) */
+			case MODC_TYPE_MUX_I:          modc_mux_i(); break;     /* PORT extension (#17) */
 			case BAS_MODC_TYPE_VOLUMEN:    modc_volumen(); break;
 			case BAS_MODC_TYPE_MUTE:       modc_mute(); break;
 			case BAS_MODC_TYPE_MIX_I:      modc_mix_i(); break;

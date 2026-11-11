@@ -41,6 +41,7 @@ uint16_t api_get_delay(uint8_t ch);
 void api_set_delay_in(uint8_t ch, uint16_t v);
 uint16_t api_get_delay_in(uint8_t ch);
 void api_set_mix_position(uint8_t pos);
+uint8_t api_get_mix_position(void);
 void api_set_mix_reg(void);
 void api_restore_mix(void);
 /* input selection = mux of the active mixer position (issue #23) */
