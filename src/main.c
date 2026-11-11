@@ -56,6 +56,11 @@ int main(void)
 	/* referenced so --gc-sections keeps the version string */
 	__asm__ __volatile__("" :: "r"(fw_version_c45b3));
 	clock_init();
+	/* main.bas line 1: config priority = roundrobin, vector = application, lo/med/hi enabled.
+	 * Must precede the peripheral sequence: i2c_sda_wait4silence counts the SDA edges of the
+	 * booting TAS3108 in a pin interrupt (without it the wait ends while they still load). */
+	CCP = CCP_IOREG_gc;
+	PMIC.CTRL = PMIC_RREN_bm | PMIC_LOLVLEN_bm | PMIC_MEDLVLEN_bm | PMIC_HILVLEN_bm;
 	board_init();
 	power_hold();
 	NVM.CTRLB |= NVM_EEMAPEN_bm;  /* config eeprom = mapped */
@@ -101,9 +106,6 @@ int main(void)
 	expander_init();
 #endif
 	cmd_init();
-	/* config priority = roundrobin, lo/med/hi enabled, vectors in application */
-	CCP = CCP_IOREG_gc;
-	PMIC.CTRL = PMIC_RREN_bm | PMIC_LOLVLEN_bm | PMIC_MEDLVLEN_bm | PMIC_HILVLEN_bm;
 	watchdog_enable_8s();          /* config watchdog = 8000 */
 	sei();
 
