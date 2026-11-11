@@ -34,7 +34,7 @@ def low_periods(c: int) -> int:
 
 
 class Target:
-    ENTER_CMD = b">system.bootloader=1\r\n"
+    ENTER_CMD = b"set.1 system.boot=1\r\n"
     def __init__(self, *, app_size=0x40000, boot_size=0x2000, eeprom_size=0x1000,
                  page_size=512, version=(1, 0), fw_version=True, flash_write=True,
                  flash_read=True, eeprom_write=True, eeprom_read=True,
@@ -92,11 +92,11 @@ class Target:
     def _rx(self, c):
         if self.state == "app" or self.state == "exited":
             self.app_rx.append(c)
-            # own firmware: text command resets into the bootloader
+            # set.1 system.boot: software reset into the bootloader
             if self.app_rx.endswith(self.ENTER_CMD):
                 self.reset()
-            elif self.app_rx.endswith(b"<system.key.info\r\n") and self.key_info:
-                self.out += b' <.2 system.key.info="' + self.key_info + b'"\r\n'
+            elif self.app_rx.endswith(b"get.1 system.key.info\r\n") and self.key_info:
+                self.out += b' <.1 system.key.info="' + self.key_info + b'"\r\n'
 
         elif self.state == "autobaud":
             # 17 low periods are measured, the first one is dropped

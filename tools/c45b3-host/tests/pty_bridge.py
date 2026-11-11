@@ -2,7 +2,7 @@
 """Serial device emulation for end-to-end tests without hardware.
 
 Creates a pty (symlink LINK), emulates the running application until it
-receives ENTER (own firmware: ">system.bootloader=1"), answers like the
+receives ENTER ("set.1 system.boot=1"), answers like the
 firmware and then starts the native bootloader harness (= software reset into
 chip45boot3). After "start application" the harness exits and the
 application emulation runs again.
@@ -18,8 +18,8 @@ import sys
 import termios
 import tty
 
-ENTER = b">system.bootloader=1\r\n"
-KEY_QUERY = b"<system.key.info\r\n"
+ENTER = b"set.1 system.boot=1\r\n"
+KEY_QUERY = b"get.1 system.key.info\r\n"
 # what the emulated firmware reports, e.g. FAG-96ELN3-4.1-0000-CCBYNCSA-20241206-MDD
 KEY_INFO = os.environ.get("PTY_KEY_INFO", "FAG-96ELN3-4.1-0000-CCBYNCSA-20241206-MDD").encode()
 
@@ -56,10 +56,10 @@ def main():
                     app_buf = (app_buf + data)[-256:]
                     if KEY_QUERY in app_buf:
                         app_buf = b""
-                        os.write(master, b' <.2 system.key.info="' + KEY_INFO + b'"\r\n')
+                        os.write(master, b' <.1 system.key.info="' + KEY_INFO + b'"\r\n')
                     if ENTER in app_buf:
                         app_buf = b""
-                        os.write(master, b" *.2 system.bootloader ok\r\n")
+                        os.write(master, b" *.1 system.boot ok\r\n")
                         print("app: reset into bootloader", flush=True)
                         proc = subprocess.Popen([harness, fin, ein, fout, eout],
                                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,

@@ -15,10 +15,10 @@ python3 -m c45b3 --sim --sim-image main.hex info                # Trockenlauf ge
 - Der Bootloader lauscht nur ca. 3 s nach einem Reset auf Autobaud (`U`). `--wait SEK` sendet so lange Bursts.
 - Nach `--stay` bleibt er im Befehlsmodus und beantwortet kein Autobaud mehr, dann `--resume`.
 - Ohne `--stay` wird am Ende `0x18` (Anwendung starten) gesendet.
-- `--enter '>system.bootloader=1'` sendet den Befehl vorher mit `--app-baud` (38400) an die laufende Anwendung. Die eigene
-  Firmware (forge-firmware) springt dann in den Bootloader, das Original nicht (dann aus- und einschalten).
+- `--enter 'set.1 system.boot=1'` sendet den Befehl vorher mit `--app-baud` (38400) an die laufende Firmware. Original wie
+  Port antworten ` *.1 system.boot ok` und springen per Software-Reset (Original nach ~1 s) in den Bootloader.
 - `backup DIR`: Versionen, Flash und EEPROM in einer Sitzung, dazu `backup.json` mit sha256.
-- `--expect-device MODEL-PCB` fragt vorher `<system.key.info` ab und bricht bei anderem Gerät ab.
+- `--expect-device MODEL-PCB` fragt vorher `get.1 system.key.info` ab und bricht bei anderem Gerät ab.
 - Integration in PlatformIO: `scripts/c45b3_pio.py` im Hauptverzeichnis. Test ohne Hardware: `tests/pty_bridge.py`.
 - Dumps: `OUT.bin` + `OUT.hex`, vorhandene Dateien werden nicht überschrieben, sha256 wird ausgegeben.
 - Schreiben (`write-flash`, `write-eeprom`) nur mit `--allow-write`.

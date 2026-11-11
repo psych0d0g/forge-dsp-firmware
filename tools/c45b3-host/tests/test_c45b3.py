@@ -239,11 +239,11 @@ class SimTest(Scenarios, unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as d:
                 with contextlib.redirect_stdout(io.StringIO()):
-                    cli.main(["--sim", "--enter", ">system.bootloader=1", "backup",
+                    cli.main(["--sim", "--enter", "set.1 system.boot=1", "backup",
                               os.path.join(d, "bk")])
                 self.assertTrue(os.path.exists(os.path.join(d, "bk", "eeprom.bin")))
                 self.assertFalse(os.path.exists(os.path.join(d, "bk", "flash.bin")))
-                self.assertIn(b">system.bootloader=1\r\n", bytes(t.app_rx))
+                self.assertIn(b"set.1 system.boot=1\r\n", bytes(t.app_rx))
                 self.assertEqual(t.state, "exited")
         finally:
             cli.open_port = orig
@@ -261,7 +261,7 @@ class SimTest(Scenarios, unittest.TestCase):
                                     (None, "96ELN3-4.1", False)):
                 t = Target(in_bootloader=False, key_info=key)
                 cli.open_port = lambda args, t=t: SimPort(t)
-                argv = ["--sim", "--expect-device", expect, "--enter", ">system.bootloader=1", "info"]
+                argv = ["--sim", "--expect-device", expect, "--enter", "set.1 system.boot=1", "info"]
                 with contextlib.redirect_stdout(io.StringIO()):
                     if ok:
                         cli.main(argv)
@@ -275,7 +275,7 @@ class SimTest(Scenarios, unittest.TestCase):
 
     def test_parse_key_info(self):
         from c45b3.__main__ import parse_key_info
-        self.assertEqual(parse_key_info(' <.2 system.key.info="FAG-CORED8-4.0-1A2B-CCBYNCSA-20241206-MDD"\r\n'),
+        self.assertEqual(parse_key_info(' <.1 system.key.info="FAG-CORED8-4.0-1A2B-CCBYNCSA-20241206-MDD"\r\n'),
                          ("CORED8", "4.0"))
         self.assertIsNone(parse_key_info(" !.2 unknown command"))
 

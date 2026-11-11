@@ -137,7 +137,7 @@ def app_query(port, args, line, wait=0.5):
 
 
 def parse_key_info(text):
-    """'<.2 system.key.info="FAG-96ELN3-4.1-<mcuid>-CCBYNCSA-<date>-MDD"' -> ("96ELN3", "4.1")"""
+    """' <.1 system.key.info="FAG-96ELN3-4.1-<mcuid>-CCBYNCSA-<date>-MDD"' -> ("96ELN3", "4.1")"""
     import re
     m = re.search(r'system\.key\.info="([^"]*)"', text)
     if not m:
@@ -150,10 +150,10 @@ def parse_key_info(text):
 
 def check_device(port, args):
     model, _, pcb = args.expect_device.partition("-")
-    ans = app_query(port, args, "<system.key.info")
+    ans = app_query(port, args, "get.1 system.key.info")
     got = parse_key_info(ans)
     if got is None:
-        raise SystemExit("device check: no answer to <system.key.info "
+        raise SystemExit("device check: no answer to get.1 system.key.info "
                          f"({ans.strip()!r}). Forge on and running its firmware? "
                          "(skip the check only if you are sure: no --expect-device)")
     if got != (model, pcb):
@@ -213,9 +213,10 @@ def main(argv=None):
                     help="keep sending autobaud for SEC seconds (power-cycle the target meanwhile)")
     ap.add_argument("--enter", metavar="LINE",
                     help="text command that makes the running application jump to the bootloader, "
-                         "e.g. '>system.bootloader=1' (own firmware); sent at --app-baud first")
+                         "e.g. 'set.1 system.boot=1' (Forge firmware: software reset into the "
+                         "bootloader about 1 s after the answer); sent at --app-baud first")
     ap.add_argument("--expect-device", metavar="MODEL-PCB",
-                    help="before anything else ask the running firmware (<system.key.info) and "
+                    help="before anything else ask the running firmware (get.1 system.key.info) and "
                          "abort unless it reports this model and PCB, e.g. 96ELN3-4.1")
     ap.add_argument("--app-baud", type=int, default=38400, help="baud rate of the application")
     ap.add_argument("--resume", action="store_true",

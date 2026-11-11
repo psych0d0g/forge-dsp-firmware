@@ -31,6 +31,10 @@ jobs:
           git checkout -q FETCH_HEAD
       - name: Generated flavour files are up to date
         run: python3 tools/gen_flavour.py forge-src src/flavours --check
+      - name: Protocol tests (src/cmd natively for all flavours)
+        run: |
+          make -C tests/native
+          python3 -m unittest -v tests.test_cmd
       - name: c45b3 tests (model + native chip45boot3 target)
         working-directory: tools/c45b3-host
         run: |

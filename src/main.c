@@ -1,26 +1,31 @@
 /*
- * Forge DSP 96ELN-3 firmware in C, milestone M0 (bring-up):
+ * Forge DSP firmware in C, all flavours. State: M0 bring-up + M1 text protocol core.
  *   clock, pins and supply hold as the BASCOM firmware, watchdog 8 s,
- *   USB-COM 38400 with <system.firmware and >system.bootloader=1.
- * Safe state: peripherals stay in reset, remote out (amplifiers) stays off,
- * so the DSP path is silent. Green LED blinks, yellow = M0.
+ *   4 serial channels with the BASCOM parser, system.{boot,echo,firmware,info,key,ping}.
+ * Safe state: peripherals stay in reset, remote out (amplifiers) stays off.
  * License: CC BY-NC-SA 4.0
  */
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#include "watchdog.h"
+#include <avr/pgmspace.h>
 #include "board.h"
 #include "clock.h"
 #include "cmd.h"
+#include "iface.h"
 #include "mcuid.h"
 #include "power.h"
 #include "tick.h"
-#include "uart.h"
 #include "version.h"
+#include "watchdog.h"
 
-#include <avr/pgmspace.h>
 /* found by chip45boot3 CMD_READ_VERSION_FIRMWARE */
 const char fw_version_c45b3[] PROGMEM __attribute__((used)) = FW_VERSION_C45B3;
+
+/* router hooks */
+uint8_t iface_hook_ir_master_online(void) { return 0; }  /* PORT: registers (M2) */
+uint8_t iface_hook_usb_dtr(void) { return PIN_READ(PIN_EXT_USB_DTR); }
+void iface_hook_busy(uint8_t on) { if (on) PIN_SET(PIN_LED_YELLOW); else PIN_CLR(PIN_LED_YELLOW); }
+void iface_hook_watchdog(void) { watchdog_reset(); }
 
 int main(void)
 {
@@ -32,7 +37,8 @@ int main(void)
 	power_hold();
 	NVM.CTRLB |= NVM_EEMAPEN_bm;  /* config eeprom = mapped */
 	tick_init();
-	uart_init();
+	iface_init();
+	cmd_init();
 	/* config priority = roundrobin, lo/med/hi enabled, vectors in application */
 	CCP = CCP_IOREG_gc;
 	PMIC.CTRL = PMIC_RREN_bm | PMIC_LOLVLEN_bm | PMIC_MEDLVLEN_bm | PMIC_HILVLEN_bm;
@@ -40,13 +46,12 @@ int main(void)
 	sei();
 
 	PIN_CLR(PIN_LED_RED);
-	PIN_SET(PIN_LED_YELLOW);
 
 	uint16_t last = tick_ms();
 	for (;;) {
 		watchdog_reset();
 		uint16_t now = tick_ms();
-		cmd_poll();
+		cmd_check4buffer();
 		power_poll(now);
 		if ((uint16_t)(now - last) >= 500) {
 			last = now;

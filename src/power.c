@@ -11,7 +11,7 @@
 #include <util/delay.h>
 #include "board.h"
 #include "power.h"
-#include "uart.h"
+#include "iface.h"
 
 #define SHUTDOWN_DEBOUNCE_MS 50
 
@@ -27,6 +27,18 @@ void mcu_reset(void)
 	RST.CTRL = RST_SWRST_bm;
 	for (;;)
 		;
+}
+
+void mcu_reset_delayed(void)
+{
+	/* mcu_reset (libs/mcu/xmegaA3): debug_close, waitms 1000, software reset */
+	for (uint8_t b = 0; b < 4; b++)
+		iface_flush(b);
+	for (uint8_t i = 0; i < 10; i++) {
+		watchdog_reset();
+		_delay_ms(100);
+	}
+	mcu_reset();
 }
 
 static void shutdown(void)

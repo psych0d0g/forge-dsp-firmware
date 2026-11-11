@@ -11,6 +11,7 @@
 #ifndef FW_BUILD_DATE
 #define FW_BUILD_DATE "00000000"  /* main_build_date in system.key.info */
 #endif
-/* own receiver number in answers, BASCOM: bit.1 = master dsp */
-#define CMD_OWN_RECEIVER 2
+/* system.firmware: protocol level of the BASCOM firmware this port implements;
+ * the GUI enables features by this number. Own version: system.firmware.port */
+#define FW_COMPAT_VERSION "1.11.6000"
 #endif

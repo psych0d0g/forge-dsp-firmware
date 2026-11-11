@@ -26,7 +26,7 @@ Stand und Aufgaben: GitHub-Issues und Milestones M1–M6 (#1–#6), Hardware- un
 | Stufe | Inhalt | Prüfung |
 |---|---|---|
 | M0 ✔ (Build, alle 7) | Takt, Pins (generiert), Selbsthaltung/Shutdown, Watchdog, USB-COM, `<system.key.info`, `>system.bootloader=1`, FW_VERSION für 0x12 | am Gerät: LED, `<system.firmware`, Upload ohne Aus/Ein, Shutdown über Remote-In |
-| M1 | Textprotokoll komplett (cmd/v20: Parser, Prüfsumme, Header, Fehler, Events), 4 serielle Kanäle (USB-COM, Mediaport, RS485 Master/Slave, Weiterleitung), Baudraten `system.baud.*`, Debug-Ausgabe | Host-Tests gegen Antworten aus dem Quelltext; am Gerät Vergleich mit Mitschnitt der Originalfirmware (Schritt 2) |
+| M1 (läuft) | Kern portiert: Parser, Header, Fehler, Routing, 4 Kanäle, system.{boot,echo,firmware,info,key,ping}. Offen: übrige Module. Textprotokoll komplett (cmd/v20: Parser, Prüfsumme, Header, Fehler, Events), 4 serielle Kanäle (USB-COM, Mediaport, RS485 Master/Slave, Weiterleitung), Baudraten `system.baud.*`, Debug-Ausgabe | Host-Tests gegen Antworten aus dem Quelltext; am Gerät Vergleich mit Mitschnitt der Originalfirmware (Schritt 2) |
 | M2 | Register/Store: EEPROM-/ERAM-Layout (store/, eeprom/), Presets, `api_store`-Logik | Layout-Test gegen EEPROM-Dump bzw. Export über das Textprotokoll |
 | M3 | Peripherie: I2C-Busse 1/2, PCA9554/9555, Takt (Si5338), CT7302 (SRC/USB-I2S), AD/DA, TAS3108 ×3 aus AT24C512, Reset-/Mute-Sequenz | I2C-Mitschnitt Original ↔ eigene Firmware (Logic Analyzer), Ton erst nach Freigabe, leise |
 | M4 | API/ctrl: gain, mute, mixer/mux, biquads (`dsp_bq_calcto5coeff`), delay/phase, modc, events (Grounds, Quad, ADC, Temperatur), IR-Empfänger, Remote-Out | Protokoll-Parität, Frequenzgang-Messung über S/PDIF-OUT |
