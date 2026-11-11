@@ -21,6 +21,8 @@ Grundsätze
 - Flashen auf den Forge nur mit Freigabe des Users; Rückweg `flash_release`.
 - Solange die Audiokette nicht vollständig portiert ist, bleibt Remote-Out (Endstufen) aus.
 
+Stand und Aufgaben: GitHub-Issues und Milestones M1–M6 (#1–#6), Hardware- und Sicherheitsfragen #7–#13.
+
 | Stufe | Inhalt | Prüfung |
 |---|---|---|
 | M0 ✔ (Build, alle 7) | Takt, Pins (generiert), Selbsthaltung/Shutdown, Watchdog, USB-COM, `<system.key.info`, `>system.bootloader=1`, FW_VERSION für 0x12 | am Gerät: LED, `<system.firmware`, Upload ohne Aus/Ein, Shutdown über Remote-In |
@@ -31,8 +33,4 @@ Grundsätze
 | M5 | Parität/Abnahme: alle Befehle der GUI, forge-control gegen echtes Gerät | Abnahme durch User |
 | M6 | Loudness in der Firmware (Issue) | Messung + Hörtest |
 
-Offen/zu prüfen
-- Startbedingung des Forge-Bootloaders (Standard: RXD high), FIRMWARE.UPDATE (PB6), ungenutzte EEPROM-Kennung AA/55.
-- Fuses laut fuses.txt: BOOTRST = Bootloader, RSTDISBL ON (PDI bleibt nutzbar), BOD 2,9 V; Lockbits BLBB.
-- Baudrate USB-COM aus EEPROM (`system.baud.1`, Standard 38400), M0 nutzt fest 38400.
-- I2C im Original (Hardware-TWI oder Software, SDA-Interrupts PC0/PE0) → M3.
+Offene Punkte: siehe Issues #9 (Bootloader-Start), #10 (V30/V40-96ELN), #11 (Generator), #12 (Baudrate), #13 (chip45boot3).
