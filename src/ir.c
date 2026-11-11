@@ -5,6 +5,7 @@
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "ir.h"
+#include "api.h"
 #include "cmd.h"
 #include "eram.h"
 #include "events.h"
@@ -290,6 +291,23 @@ static void mute_unmute(void)
 	}
 }
 
+/* PORT extension (#27): free custom command 2 = next input (mixer.in) of the active mixer
+ * position, wraps around; with the same repeat lock as the other one-shot commands */
+static void next_input(void)
+{
+	if (irreceiver_counter != 0)
+		return;
+	uint8_t max = api_in_input_max(), v = api_get_in_input();
+	for (uint8_t n = 0; n < max; n++) {
+		v = (uint8_t)(v >= max ? 1 : v + 1);
+		if (api_in_input_valid(v)) {
+			api_set_in_input(v);
+			break;
+		}
+	}
+	irreceiver_counter = COUNTER_INIT;
+}
+
 static void set_preset(uint8_t v)
 {
 	if (irreceiver_counter == 0) {
@@ -310,7 +328,7 @@ static void ir_custom_execute(void)
 			continue;
 		switch (i) {
 		case 1: mute_unmute(); break;
-		case 2: break;
+		case 2: next_input(); break;  /* PORT extension (#27), original: unused */
 		case 3: incr_gain(); break;
 		case 4: decr_gain(); break;
 		case 5: balance(-1); break;

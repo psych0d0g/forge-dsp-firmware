@@ -1301,6 +1301,20 @@ class IrTest(LinesMixin, unittest.TestCase):
                              f"#irbuf={nec_samples(4660, 22136)}", "#ir_loop"])
         self.assertIn("value=1", "\n".join(out))
 
+    def test_custom_2_next_input(self):
+        """#27: custom command 2 switches to the next input and wraps around."""
+        f = "V40-96ELN"
+        mx = int(self.lines(f, ["1|get.1 mixer.in.max"])[0].split("=")[1].split("\\")[0])
+        code = ["1|set.1 extender.ir.custom.2=[0,4660,22136]", "1|set.1 extender.ir.analyze.echo=0", "#reg=11,1"]
+        press = [f"#irbuf={nec_samples(4660, 22136)}", "#ir_loop"]
+        out = self.lines(f, ["#events_init", "#dtr=1", "#ir_init"] + code + ["1|set.1 mixer.position=1", "1|set.1 mixer.in=2"]
+                         + press + ["1|get.1 mixer.in", "1|set.1 mixer.in=" + str(mx)] + ["#ir_loop"] * 192 + press
+                         + ["1|get.1 mixer.in"])
+        got = [l for l in out if "<.1 mixer.in=" in l]
+        self.assertIn("mixer.in=3\\r", got[0])     # 2 -> 3
+        self.assertIn("mixer.in=1\\r", got[1])     # last input -> 1
+
+
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class I2cCmdTest(LinesMixin, unittest.TestCase):
