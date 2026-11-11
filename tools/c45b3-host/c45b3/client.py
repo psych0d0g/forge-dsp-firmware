@@ -16,7 +16,8 @@ from .protocol import (
 
 # ATxmega256A3U (Forge 96ELN-3)
 APP_SIZE = 0x40000       # BOOT_SECTION_START
-EEPROM_SIZE = 0x1000     # E2END + 1
+EEPROM_SIZE = 0x1000     # E2END + 1. The bootloader 1.0 on the Forge stops one byte early
+                         # (reads 0x000..0xFFE): a full read returns 4095 bytes.
 PAGE_SIZE = 512          # SPM_PAGESIZE
 
 AUTOBAUD_REPEAT = 16     # like the GUI
