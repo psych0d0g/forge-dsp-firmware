@@ -1496,6 +1496,67 @@ class InputSelectTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class SdPresetTest(unittest.TestCase):
+    """#24: GUI .cfg files from the microSD into the presets (libs/file/preset_load)."""
+
+    def run_sd(self, f, files, steps, at24=None):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d)
+            lines = [f"#sd_mkfs={d / 'sd.img'},8"]
+            for name, text, date in files:
+                (d / name).write_text(text)
+                lines.append(f"#sd_put={name},{d / name}" + ("," + ",".join(map(str, date)) if date else ""))
+            if at24 is not None:
+                (d / "a.bin").write_bytes(bytes(at24))
+                lines = [f"#at24={d / 'a.bin'}", f"#at24out={d / 'o.bin'}"] + lines
+            p, ee = run(f, lines + steps, want_eeprom=True)
+            o = (d / "o.bin").read_bytes() if at24 is not None else None
+        return p.stdout, ee, o
+
+    def test_load_store_and_skip_unchanged(self):
+        for f in ("V40-96ELN", "V30-96LN"):
+            model = {"V40-96ELN": "96ELN", "V30-96LN": "96LN"}[f]
+            cfg = (f"[{model}]\n" 'FILE_v10 = "gain.out.1=111"\n' 'FILE_v10 = "gain.out.2=122"\n'
+                   'FILE_v10 = "mute.out.3=1"\n')
+            files = [("preset_1.cfg", cfg, (2026, 11, 11, 18, 30)), ("preset_2.cfg", cfg.replace("111", "99"), None)]
+            out, ee, o = self.run_sd(f, files, ["#sd_card=1", "#sd_init", "#sd_load", "#sd_load"],
+                                     at24=b"\xff" * 65536)
+            self.assertIn("@sd_ready:1", out, f)
+            self.assertEqual(out.count("*.1 gain.out.1 ok"), 2, f)       # both files once, second run skipped
+            self.assertIn("#.1 preset.erase=0", out, f)
+            self.assertIn("#.1 preset.erase=1", out, f)
+            self.assertIn("@sd_loaded preset=255", out, f)              # MODC loads the selected preset
+            fs, vout = consts(f, "STORAGE_FRAMESIZE", "STORAGE_VOL_OUT_BASE")
+            av = table_words(f, "data_store_addr_values")
+            self.assertEqual(list(o[av[0] + vout - 1:av[0] + vout + 1]), [111, 122], f)  # saved to preset 0
+            self.assertEqual(list(o[av[1] + vout - 1:av[1] + vout + 1]), [99, 122], f)   # and preset 1
+            self.assertIn(b"11.11.26 18:30:00", ee, f)                  # date stored in the EEPROM
+
+    def test_other_model_and_no_card(self):
+        f = "V40-96ELN"
+        cfg = '[96LN]\nFILE_v10 = "gain.out.1=111"\n'
+        out, ee, o = self.run_sd(f, [("preset_1.cfg", cfg, None)], ["#sd_card=1", "#sd_init", "#sd_load"])
+        self.assertNotIn("gain.out.1 ok", out)                          # section of another model
+        self.assertNotIn("preset.erase", out)
+        out, ee, o = self.run_sd(f, [("preset_1.cfg", cfg, None)], ["#sd_card=0", "#sd_init", "#sd_load"])
+        self.assertIn("@sd_ready:0", out)
+
+    def test_changed_date_reloads(self):
+        f = "V40-96ELN"
+        cfg = '[96ELN]\nFILE_v10 = "gain.out.1=50"\n'
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d)
+            (d / "p.cfg").write_text(cfg)
+            lines = [f"#sd_mkfs={d / 'sd.img'},8", f"#sd_put=preset_1.cfg,{d / 'p.cfg'},2026,1,1,10,0",
+                     "#sd_card=1", "#sd_init", "#sd_load", f"#sd_put=preset_1.cfg,{d / 'p.cfg'},2026,1,2,10,0",
+                     "#sd_init", "#sd_load"]
+            p, ee = run(f, lines, want_eeprom=True)
+        self.assertEqual(p.stdout.count("gain.out.1 ok"), 2)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

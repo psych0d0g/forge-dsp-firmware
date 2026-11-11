@@ -38,6 +38,10 @@ void host_i2c_block(uint8_t bus, uint8_t addr);
 #include "adc_hw.h"
 #include "tick.h"
 #include "ir.h"
+#include "sd.h"
+void host_sd_card(int on);
+int host_sd_image(const char *path, unsigned mb);
+int host_sd_put(const char *name, const char *hostfile, int y, int mo, int d, int h, int mi);
 /* #irbuf=<pulse/space list>: fill the IR sample buffer as TCC1 would (0 = IR active) */
 static void host_ir_fill(const char *spec)
 {
@@ -210,6 +214,24 @@ static void store_cmd(const char *l)
 		unsigned n, v;
 		sscanf(l + 5, "%u,%u", &n, &v);
 		registers[n] = (uint8_t)v;
+	} else if (!strncmp(l, "#sd_mkfs=", 9)) {     /* #sd_mkfs=<image>,<MB> */
+		char path[300];
+		unsigned mb = 8;
+		sscanf(l + 9, "%299[^,],%u", path, &mb);
+		printf("@sd_mkfs:%d\n", host_sd_image(path, mb));
+	} else if (!strncmp(l, "#sd_put=", 8)) {      /* #sd_put=<name>,<hostfile>[,y,m,d,h,mi] */
+		char name[40], hf[300];
+		int y = 0, mo = 0, d = 0, h = 0, mi = 0;
+		sscanf(l + 8, "%39[^,],%299[^,],%d,%d,%d,%d,%d", name, hf, &y, &mo, &d, &h, &mi);
+		printf("@sd_put:%d\n", host_sd_put(name, hf, y, mo, d, h, mi));
+	} else if (!strncmp(l, "#sd_card=", 9)) {
+		host_sd_card(atoi(l + 9));
+	} else if (!strcmp(l, "#sd_init")) {
+		sd_init();
+		printf("@sd_ready:%u\n", sd_ready);
+	} else if (!strcmp(l, "#sd_load")) {
+		sd_preset_load_init();
+		printf("@sd_loaded preset=%u\n", store_preset);
 	} else if (!strncmp(l, "#irbuf=", 7)) {
 		host_ir_fill(l + 7);
 	} else if (!strcmp(l, "#ir_init")) {

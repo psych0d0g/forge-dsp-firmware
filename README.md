@@ -18,7 +18,7 @@ Alle: ATxmega256A3U, interner 32-MHz-Takt.
 
 **Stand:** Der Funktionsumfang des Originals ist portiert: komplettes Textprotokoll, Register und EEPROM-Layout,
 Presets, Biquads, Mixer, Delays, MODC-Steuerblöcke, Events, ADC/Temperatur, IR-Empfänger und die Einschaltsequenz
-aller Bausteine. Nativ getestet für alle 7 Varianten (81 Tests); auf einem Forge 96ELN (V40) laufen sichere und
+aller Bausteine. Nativ getestet für alle 7 Varianten (84 Tests); auf einem Forge 96ELN (V40) laufen sichere und
 Bring-up-Variante: Start auf der Abstimmung des Originals ohne Werks-Reset, alle Bausteine erkannt,
 Biquad-Koeffizienten bitgenau, Abschalten über Remote-In. Noch nicht freigegeben: Remote-Out (Endstufen) und der
 Abgleich mit der Original-GUI (#5). Fahrplan in den GitHub-Issues.
@@ -31,13 +31,16 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
   dokumentierten, im Original nie gesetzten Ereignisse 45–48 (`SOURCE.1–4.MUX`) tragen jetzt die Eingangswahl je
   Position (#23).
 - **Biquad-Typ 17 BandPass**, im Original geplant, aber nie umgesetzt (#20).
+- **microSD wieder aktiv** (im Original aus Lizenzgründen entfernt): In der Original-GUI gespeicherte `.cfg`-Dateien
+  als `preset_1.cfg` … auf die Karte kopieren, der Forge übernimmt sie beim nächsten Start in die Presets (#24,
+  FatFs statt AVR-DOS; auf dem Gerät noch nicht getestet).
 - **Behobene Fehler des Originals**, u. a.: `preset.erase=4` löscht bei 4 Presets nicht mehr Preset 0 (#33),
   Rohwert-Biquads `biquad.….raw` funktionieren (#35), `get event.N.value` antwortet (#36), Delays in ms/cm/inch
   lassen sich lesen (#21), keine Speicherzugriffe hinter Arrays und Tabellen bei ungültigen Werten.
 - **Sicherer Werks-Reset**: Abstimmungen werden nur mit `FORGE_FACTORY_RESET=1` gelöscht, nicht bei jedem
   Versionswechsel.
 - **Flashen unter Linux** aus VS Code, mit Backup, Gerätecheck und Rückweg auf die Originalfirmware.
-- Rund **44 % kleiner** als das Original (V40-96ELN: 116 KB statt 205 KB; ohne die Debug-Texte des Originals, #41).
+- Rund **39 % kleiner** als das Original (V40-96ELN: 125 KB statt 205 KB, mit microSD; ohne die Debug-Texte des Originals, #41).
 
 ## Build-Optionen
 
@@ -49,7 +52,7 @@ In `platformio.ini` unter `[common]`:
 | `FORGE_AUDIO` | 0 | 1 = Remote-Out (Endstufen) wie im Original einschalten. Erst nach eigener Prüfung mit leiser Last |
 | `FORGE_FACTORY_RESET` | 0 | 1 = Werks-Reset wie im Original (löscht Abstimmungen und Presets), braucht `FORGE_BRINGUP=1` |
 
-Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `tools/c45b3-host` und die Bootloader-Quellen in
+Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `lib/fatfs`: FatFs R0.16 von ChaN (BSD-1-Clause, `lib/fatfs/LICENSE.txt`). `tools/c45b3-host` und die Bootloader-Quellen in
 `tools/c45b3-host/tests/ctarget/upstream` stehen unter MIT (chip45boot3, Erik Lins).
 
 ## VS Code / PlatformIO

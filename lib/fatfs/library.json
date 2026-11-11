@@ -1,0 +1,7 @@
+{
+  "name": "fatfs",
+  "version": "0.16.0",
+  "description": "FatFs R0.16 by ChaN (BSD-1-clause), elm-chan.org/fsw/ff, ff16.zip sha256 99f7dc1f7e095356e4a9e3dbe29959090d8b948afe2bbc5441e52fdf4b85449e",
+  "license": "BSD-1-Clause",
+  "build": { "srcDir": "src", "includeDir": "src" }
+}

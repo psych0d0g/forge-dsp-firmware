@@ -25,6 +25,7 @@
 #include "loopcall.h"
 #include "modc.h"
 #include "ir.h"
+#include "sd.h"
 #include "factory.h"
 #if FORGE_FACTORY_RESET && !FORGE_BRINGUP
 #error "FORGE_FACTORY_RESET needs FORGE_BRINGUP=1 (the modules write their defaults in the bring-up path)"
@@ -81,6 +82,7 @@ int main(void)
 	/* libs/api/init.bas, then the preset load of modc_load_preset (MODC itself follows) */
 	api_init();
 	api_init_mute();
+	sd_init();            /* libs/dos dos_init: microSD (FatFs) if a card is inserted */
 	irreceiver_init();    /* libs/extender/ir-receiver init (+ CUSTOM) */
 	ir_custom_init();
 	{
@@ -106,6 +108,10 @@ int main(void)
 	expander_init();
 #endif
 	cmd_init();
+#if FORGE_BRINGUP && FLAVOUR_SYSTEMINIT_COMPLETE
+	/* libs/file/preset_load: GUI .cfg files from the microSD into the presets (#24) */
+	sd_preset_load_init();
+#endif
 	watchdog_enable_8s();          /* config watchdog = 8000 */
 	sei();
 
