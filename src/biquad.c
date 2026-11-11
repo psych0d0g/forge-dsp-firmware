@@ -162,6 +162,25 @@ static void eq_bandwidth(void)
 	eq();
 }
 
+/* type 17 BandPass (planned in the original, "? 17 : BandPass" in commands.txt, issue #20):
+ * the band-pass of the GUI preview (CalculatorBandPass, constant skirt gain, peak gain = Q):
+ * b0 = sin(w0)/2, b1 = 0, b2 = -sin(w0)/2, a0 = 1 + alpha, a1 = -2 cos(w0), a2 = 1 - alpha;
+ * a1/a2 stored negated as for the other types. Gain is not used. */
+static void band_pass(void)
+{
+	double d;
+	dsp_omega_calc = V(F); omega_calc();
+	dsp_q = V(Q);
+	alpha_calc();
+	dsp_omega_cos = cos(dsp_omega_calc);
+	d = sin(dsp_omega_calc); d = d / 2.0; V(B0) = d;
+	V(B1) = 0.0;
+	V(B2) = -V(B0);
+	d = 1.0 + dsp_alpha_calc; V(A0) = d;
+	d = 2.0 * dsp_omega_cos; V(A1) = d;
+	d = 1.0 - dsp_alpha_calc; d = -d; V(A2) = d;
+}
+
 static void notch(void)
 {
 	double d;
@@ -220,6 +239,7 @@ void dsp_bq_calc_type(uint8_t type)
 	case BAS_DSP_BQTYPE_BASS_SHELF:           low_shelf(); break;
 	case BAS_DSP_BQTYPE_TREBLE_SHELF:         high_shelf(); break;
 	case BAS_DSP_BQTYPE_NOTCH:                notch(); break;
+	case BAS_DSP_BQTYPE_BAND_PASS:            band_pass(); break;  /* PORT: not in the original */
 	case BAS_DSP_BQTYPE_EQ_BANDWIDTH:         eq_bandwidth(); break;
 	case BAS_DSP_BQTYPE_RIAA:                 riaa(); break;
 	case BAS_DSP_BQTYPE_PHASESHIFT:           phaseshift(); break;

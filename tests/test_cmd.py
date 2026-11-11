@@ -719,6 +719,9 @@ def bq_reference(flavour, t, f, g, q, b, flags):
     elif t == 16:
         w = omega(F); a = alpha(w, F / B); co = math.cos(w)
         c.update(A0=1.0 + a, A1=2.0 * co, A2=-(1.0 - a), B0=1.0, B1=-2.0 * co, B2=1.0)
+    elif t == 17:  # BandPass as CalculatorBandPass of the GUI (port extension, #20)
+        w = omega(F); a = alpha(w, Qv); co = math.cos(w); sn = math.sin(w)
+        c.update(B0=sn / 2.0, B1=0.0, B2=-(sn / 2.0), A0=1.0 + a, A1=2.0 * co, A2=-(1.0 - a))
     elif t == 18: eq(F / B)
     elif t == 19:
         c.update(A0=1.0, A1=1.866634, A2=-0.8670602, B0=0.1170960, B1=-0.0999452, B2=-0.0129345)
@@ -740,7 +743,7 @@ class BiquadTest(unittest.TestCase):
         f = "V41-96ELN-3"
         rnd = random.Random(1)
         cases = []
-        for t in range(0, 21):
+        for t in range(0, 21):  # incl. 17 BandPass (port extension)
             for fr, g, q in itertools.product((10, 20, 63, 1000, 8000, 22000), (-120, -35, 0, 35, 60),
                                               (1, 500, 707, 2000, 10000)):
                 if rnd.random() < 0.25:
