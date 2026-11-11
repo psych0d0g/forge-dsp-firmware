@@ -1244,6 +1244,51 @@ class AdcGainTest(LinesMixin, unittest.TestCase):
         self.assertEqual(self.ev(out, 105), 255 - 40)  # flag1 bit 7: inverted
 
 
+def nec_samples(address, command, header_pulse=135):
+    """pulse/space lengths in TCC1 samples (66.75 us): 9 ms + 4.5 ms header, 32 bits MSB first
+    per 16-bit frame, stop pulse and a long space."""
+    seq = [header_pulse, 67]
+    for word in (address, command):
+        for b in range(15, -1, -1):
+            seq += [8, 25 if (word >> b) & 1 else 8]
+    seq += [8, 60]
+    return ",".join(map(str, seq))
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class IrTest(LinesMixin, unittest.TestCase):
+    """libs/extender/ir-receiver and cmd_extender."""
+
+    def test_nec_gain_repeat_and_echo(self):
+        f = "V40-96ELN"
+        out = self.lines(f, ["#ir_init", f"#irbuf={nec_samples(0x00FF, 0xD0CC)}", "#ir_loop",
+                             "#irbuf=135,33,8,200", "#ir_loop",                       # NEC repeat: last frame again
+                             f"#irbuf={nec_samples(0x00FF, 0xB0CC)}", "#ir_loop",
+                             "#irbuf=20,20,20,20", "#ir_loop"])                        # noise: no action
+        import re
+        ir = ["@ir:" + m for m in re.findall(r"@ir:([^\n]*)", "\n".join(out))]
+        self.assertEqual(ir[0], f"@ir:0,{0x00FF},{0xD0CC} value=1")   # incr gain
+        self.assertEqual(ir[1], f"@ir:0,{0x00FF},{0xD0CC} value=2")   # repeat
+        self.assertEqual(ir[2], f"@ir:0,{0x00FF},{0xB0CC} value=1")   # decr gain
+        self.assertTrue(ir[3].endswith("value=1"))
+        self.assertIn(f"#.1 extender.ir.analyze=[0,{0x00FF},{0xD0CC}]", "\n".join(out))
+
+    def test_custom_codes_and_commands(self):
+        f = "V40-96ELN"
+        out = self.lines(f, ["#ir_init", "1|set.1 extender.ir.custom.3=[0,4660,22136]",
+                             "1|get.1 extender.ir.custom.3", "1|set.1 extender.ir.custom.19=[1,2,3]",
+                             "1|set.1 extender.ir.analyze.echo=0", "1|get.1 extender.ir.analyze.echo",
+                             "1|get.1 extender.ir.state", "1|set.1 system.debug.mode=0"])
+        self.assertEqual(out[1], "@0: <.1 extender.ir.custom.3=[0,4660,22136]\\r\\n")
+        self.assertIn("command out of range", out[2])
+        self.assertEqual(out[4], "@0: <.1 extender.ir.analyze.echo=0\\r\\n")
+        # custom mode (setup bit 0) with code 3 = incr gain
+        out = self.lines(f, ["#ir_init", "1|set.1 extender.ir.custom.3=[0,4660,22136]",
+                             "1|set.1 extender.ir.analyze.echo=0", "#reg=11,1",
+                             f"#irbuf={nec_samples(4660, 22136)}", "#ir_loop"])
+        self.assertIn("value=1", "\n".join(out))
+
+
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""

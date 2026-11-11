@@ -1,8 +1,7 @@
 /*
  * Port of libs/ctrl/modc/v20/functions.bas and subs/ctrl_* (preset, shutdown, mute, volumen,
  * logic, select, toggle, limiter, compare, calculator, spdif, mix_i, device_sync).
- * Not ported yet (blocks of these types do nothing): gain_irrc (IR receiver), mainclock,
- * ess9038pro.
+ * Not ported yet (blocks of these types do nothing): mainclock, ess9038pro.
  * PORT: at sysinit the defaults are used without writing them to the EEPROM (see store_init).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
@@ -19,6 +18,7 @@
 #include "registers.h"
 #include "store.h"
 #include "tick.h"
+#include "ir.h"
 
 uint8_t modc_enable[MODC_N + 1], modc_type[MODC_N + 1];
 uint8_t modc_flags[4 * MODC_N + 1], modc_events[4 * MODC_N + 1], modc_sets[4 * MODC_N + 1];
@@ -561,8 +561,36 @@ static void modc_gain_quad(void)
 	}
 }
 
-/* PORT: follows with the IR receiver */
-static void modc_gain_irrc(void) {}
+/* IR remote volume: enable switches the IR master on (setup register), flag2 = IR setup bits,
+ * sets = start value, step, max, min; output also to the ir.volume event */
+static void modc_gain_irrc(void)
+{
+	if (CHG) {
+		if (CHG & (1u << BAS_MODC_BIT_CHANGED_ONOFF)) {
+			uint8_t a = registers[BAS_REG_EXT_IRSETUP];
+			if (modc_enable[M] == 0)
+				a &= (uint8_t)~(1u << BAS_IRRECEIVER_STATE_ON);
+			else
+				a |= 1u << BAS_IRRECEIVER_STATE_ON;
+			set_register(BAS_REG_EXT_IRSETUP, a);
+			CHG |= (1u << BAS_MODC_BIT_FLAGS) | (1u << BAS_MODC_BIT_SETS);
+		}
+		if (CHG & (1u << BAS_MODC_BIT_FLAGS))
+			set_register(BAS_REG_EXT_IRSETUP, (uint8_t)((FLAG(2) & 0x3F) + (registers[BAS_REG_EXT_IRSETUP] & 0xC0)));
+		if (CHG & (1u << BAS_MODC_BIT_SETS)) {
+			if (SET(1) > 0) irreceiver_value = SET(1);
+			if (SET(2) > 0) irreceiver_factor = SET(2);
+			if (SET(3) > 0) irreceiver_value_max = SET(3);
+			if (SET(4) > 0) irreceiver_value_min = SET(4);
+		}
+	}
+	if ((int16_t)modc_cfg_store[M] != irreceiver_value) {
+		modc_cfg_store[M] = (uint16_t)irreceiver_value;
+		uint8_t a = curve((uint8_t)irreceiver_value);
+		out(a);
+		event_set_value(BAS_EVENTS_FIELD_IR_VOLUME, a);
+	}
+}
 static void modc_mainclock(void) {}
 static void modc_ess9038pro(void) {}
 

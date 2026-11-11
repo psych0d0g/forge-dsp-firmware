@@ -37,6 +37,26 @@ void host_i2c_block(uint8_t bus, uint8_t addr);
 #include "modc.h"
 #include "adc_hw.h"
 #include "tick.h"
+#include "ir.h"
+/* #irbuf=<pulse/space list>: fill the IR sample buffer as TCC1 would (0 = IR active) */
+static void host_ir_fill(const char *spec)
+{
+	uint32_t pos = 0;
+	for (int i = 1; i <= IR_MAX_BUFFER; i++)
+		irreceiver_buffer[i] = 0xFFFFFFFFUL;
+	int level = 0;
+	const char *p = spec;
+	while (*p) {
+		long n = strtol(p, (char **)&p, 10);
+		for (long k = 0; k < n && pos < IR_MAX_BUFFER * 32UL; k++, pos++) {
+			uint32_t m = 1UL << (pos % 32);
+			if (level) irreceiver_buffer[1 + pos / 32] |= m; else irreceiver_buffer[1 + pos / 32] &= ~m;
+		}
+		level ^= 1;
+		if (*p == ',') p++;
+	}
+	irreceiver_state |= 1;  /* buffer used */
+}
 volatile uint16_t timer_tce0_counter;
 volatile int16_t timer_tce0_value;
 volatile uint8_t timer_tce0_factor = 1, timer_tce0_min = 0, timer_tce0_max = 255;
@@ -186,6 +206,19 @@ static void store_cmd(const char *l)
 		timer_tce0_value = (int16_t)atoi(l + 8);
 	} else if (!strcmp(l, "#rotary?")) {
 		printf("@rotary:%d,%u,%u,%u\n", timer_tce0_value, timer_tce0_factor, timer_tce0_min, timer_tce0_max);
+	} else if (!strncmp(l, "#reg=", 5)) {         /* #reg=<n>,<value>: register in RAM */
+		unsigned n, v;
+		sscanf(l + 5, "%u,%u", &n, &v);
+		registers[n] = (uint8_t)v;
+	} else if (!strncmp(l, "#irbuf=", 7)) {
+		host_ir_fill(l + 7);
+	} else if (!strcmp(l, "#ir_init")) {
+		irreceiver_init();
+		ir_custom_init();
+	} else if (!strcmp(l, "#ir_loop")) {
+		irreceiver_mainloop();
+		printf("@ir:%u,%u,%u value=%d\n", irreceiver_frames[1], irreceiver_frames[2], irreceiver_frames[3],
+		       irreceiver_value);
 	} else if (!strcmp(l, "#adc_init")) {
 		events_adc_init();
 		printf("@adc_limits:%u,%u,%u,%u,%u\n", events_adc_McuMaxTempOOR, events_adc_McuMaxTemp85C,
@@ -342,7 +375,7 @@ void iface_flush(uint8_t buart) { (void)buart; }
 /* usage: cmd-<flavour> [EEPROM_IN|- [EEPROM_OUT]]  (default: blank 0xFF, i.e. sysinit) */
 int main(int argc, char **argv)
 {
-	char line[512];
+	char line[4096];
 	memset(eeprom, 0xFF, sizeof eeprom);
 	if (argc > 1 && strcmp(argv[1], "-")) {
 		FILE *f = fopen(argv[1], "rb");

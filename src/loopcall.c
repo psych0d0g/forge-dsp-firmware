@@ -9,12 +9,12 @@
 #include "cmd.h"
 #include "events.h"
 #include "modc.h"
+#include "ir.h"
 #include "registers.h"
 #include "store.h"
 #include "tick.h"
 
 #define W __attribute__((weak))
-W void irreceiver_mainloop(void) {}
 W void sys_init_mainloop(void) {}
 W void events_vumeter_mainloop(void) {}
 void watchdog_kick(void);

@@ -24,6 +24,7 @@
 #include "events.h"
 #include "loopcall.h"
 #include "modc.h"
+#include "ir.h"
 #include <util/delay.h>
 #include "tick.h"
 #include "version.h"
@@ -71,6 +72,13 @@ int main(void)
 	/* libs/api/init.bas, then the preset load of modc_load_preset (MODC itself follows) */
 	api_init();
 	api_init_mute();
+	irreceiver_init();    /* libs/extender/ir-receiver init (+ CUSTOM) */
+	ir_custom_init();
+	{
+		uint8_t ir = registers[BAS_REG_EXT_IRSETUP];
+		if ((ir & (1 << BAS_IRRECEIVER_STATE_ON)) && !(ir & (1 << BAS_IRRECEIVER_STATE_NOTINIT)))
+			ir_capture_init();  /* RS485 master RX is the IR input (iface init of the original) */
+	}
 	ctrl_events_init();   /* libs/ctrl/events init parts: fields, shutdown, usb, grounds, overflow */
 	events_poll_pins();
 	events_adc_init();
