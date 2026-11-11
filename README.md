@@ -4,16 +4,25 @@ Freie Firmware in C für die Forge-DSP-Geräte von Mark Duprau (Forge Audio, 201
 BASCOM-Firmware 1.11.6000 (bitbucket.org/forge-dsp/firmware) für **alle Varianten** nach avr-gcc/PlatformIO.
 Geflasht wird über den vorhandenen Bootloader chip45boot3, direkt aus VS Code.
 
-Vier Builds decken alle sieben Varianten ab. CORED8 ist firmwareseitig ein 96ELN und V41 dasselbe wie V40, nur die
-Kennung unterscheidet sich ([docs/single-firmware.md](docs/single-firmware.md)). Die Kennung steht im EEPROM; der
-Upload übernimmt sie aus der Meldung der bisherigen Firmware.
+## Kompatibilität
 
-| Umgebung | Geräte | `system.key.info` |
-|---|---|---|
-| `V30-96LN` | Forge DSP 96LN (PCB 3.0) | 96LN-3.0 |
-| `V30-96ELN` | Forge DSP 96ELN (PCB 3.0) | 96ELN-4.0 (sic, Quelltext) |
-| `V4x-96ELN` | Forge DSP 96ELN (PCB 4.0), ETON CORE D8 (PCB 4.0 und 4.1) | 96ELN-4.0, CORED8-4.0, CORED8-4.1 |
-| `V4x-96ELN-3` | Forge DSP 96ELN-3 (PCB 4.0 und 4.1) | 96ELN3-4.0, 96ELN3-4.1 |
+Welche Firmware passt auf welche Hardware. Die Port-Firmware gibt es je Gerät als sichere Variante (Umgebung
+`<name>`, kein Ton) und als vollständige Variante (`<name>-bringup`). CORED8 ist firmwareseitig ein 96ELN und V41
+dasselbe wie V40, nur die Kennung unterscheidet sich ([docs/single-firmware.md](docs/single-firmware.md)); sie steht
+im EEPROM, der Upload übernimmt sie aus der bisherigen Firmware.
+
+| Gerät | PCB | `system.key.info` | Port-Firmware (Umgebung) | Original 1.11.6000 (Release [0.0.1116000](https://github.com/psych0d0g/forge-dsp-firmware/releases/tag/0.0.1116000)) | Am Gerät getestet |
+|---|---|---|---|---|---|
+| Forge DSP 96LN | 3.0 | `96LN-3.0` | `V30-96LN` | `forge-dsp-V30-96LN-bascom-1.11.6000.hex` | – |
+| Forge DSP 96ELN | 3.0 | `96ELN-4.0` (sic, Quelltext) | `V30-96ELN` | `forge-dsp-V30-96ELN-bascom-1.11.6000.hex` | – |
+| Forge DSP 96ELN | 4.0 | `96ELN-4.0` | `V4x-96ELN` | `forge-dsp-V40-96ELN-bascom-1.11.6000.hex` | ja (DEV-Gerät, #39) |
+| ETON CORE D8 | 4.0 | `CORED8-4.0` | `V4x-96ELN` | `forge-dsp-V40-CORED8-bascom-1.11.6000.hex` | – |
+| ETON CORE D8 | 4.1 | `CORED8-4.1` | `V4x-96ELN` | `forge-dsp-V41-CORED8-bascom-1.11.6000.hex` | – |
+| Forge DSP 96ELN-3 | 4.0 | `96ELN3-4.0` | `V4x-96ELN-3` | `forge-dsp-V40-96ELN-3-bascom-1.11.6000.hex` | – |
+| Forge DSP 96ELN-3 | 4.1 | `96ELN3-4.1` | `V4x-96ELN-3` | `forge-dsp-V41-96ELN-3-bascom-1.11.6000.hex` | – |
+
+Achtung: Forge 96ELN mit PCB 3.0 und 4.0 melden beide `96ELN-4.0` (#10). Die Firmwares sind verschieden
+(PCB 4.0 hat den Taktgenerator Si5338 und USB-Audio). Die Umgebung bitte nach der Platine wählen.
 
 Alle: ATxmega256A3U, interner 32-MHz-Takt.
 

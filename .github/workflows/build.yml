@@ -57,7 +57,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flavour: [V30-96LN, V30-96ELN, V4x-96ELN, V4x-96ELN-3]
+        flavour: [V30-96LN, V30-96ELN, V4x-96ELN, V4x-96ELN-3, V30-96LN-bringup, V30-96ELN-bringup, V4x-96ELN-bringup, V4x-96ELN-3-bringup]
     steps:
       - uses: actions/checkout@v4
         with:
