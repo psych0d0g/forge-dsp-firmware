@@ -511,5 +511,36 @@ class Tas3108Test(unittest.TestCase):
         self.assertIn("system.errors=[[3,1],[34,1]]", out)
 
 
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class DacTest(unittest.TestCase):
+    def transfers(self, f, lines):
+        p = subprocess.run([os.path.join(NATIVE, f"cmd-{f}")], input="\n".join(lines) + "\n",
+                           capture_output=True, text=True, timeout=10)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return [l for l in p.stdout.splitlines() if l.startswith("@")]
+
+    def test_es90x8pro(self):
+        out = self.transfers("V41-96ELN-3", ["#i2cdev=2,90", "#i2clog=1", "#dac_init"])
+        mute = [f"@i2c2: S 90 {r:02X} FF P" for r in (0x16, 0x17, 0x14, 0x15, 0x12, 0x13, 0x10, 0x11)]
+        self.assertEqual(out, ["@i2c2: S 90 P", "@i2c2: S 90 07 Sr 91 r00N P",
+                               "@i2c2: S 90 07 40 P", "@i2c2: S 90 26 31 P", "@i2c2: S 90 27 20 P",
+                               "@i2c2: S 90 28 57 P", "@i2c2: S 90 29 46 P", "@i2c2: S 90 00 F0 P",
+                               "@i2c2: S 90 01 00 P", "@i2c2: S 90 02 3D P",
+                               "@i2c2: S 90 40 Sr 91 r00N P"] + mute + ["@hw:0005"])
+
+    def test_es9018(self):
+        for f in ("V40-CORED8", "V40-96ELN", "V30-96ELN"):
+            out = self.transfers(f, ["#i2cdev=2,90", "#i2clog=1", "#dac_init"])
+            mute = [f"@i2c2: S 90 {r:02X} FF P" for r in (6, 7, 4, 5, 2, 3, 0, 1)]
+            self.assertEqual(out, ["@i2c2: S 90 P", "@i2c2: S 90 08 7F P", "@i2c2: S 90 0A DE P",
+                                   "@i2c2: S 90 0E 0A P", "@i2c2: S 90 11 1C P",
+                                   "@i2c2: S 90 1B Sr 91 r00N P"] + mute + ["@hw:0005"], f)
+
+    def test_dac_missing(self):
+        out = self.transfers("V41-96ELN-3", ["#dac_init", "1|get.1 system.errors"])
+        self.assertIn("@hw:0001", out)
+        self.assertIn("@0: <.1 system.errors=[[19,1]]\\r\\n", out)  # es90x8pro_rdy 2 + 17
+
+
 if __name__ == "__main__":
     unittest.main()

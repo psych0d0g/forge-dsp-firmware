@@ -17,6 +17,7 @@
 #include "expander.h"
 #include "si5338.h"
 #include "tas3108.h"
+#include "dac.h"
 struct ee { uint8_t bus, addr; uint8_t *mem; uint32_t writes; };
 extern struct ee ees[4];
 extern uint8_t dspee[3][65536];
@@ -76,6 +77,9 @@ static void store_cmd(const char *l)
 	} else if (!strncmp(l, "#dsp_core=", 10)) {
 		dsp_core_init((uint8_t)atoi(l + 10));
 		printf("@dsp_core: hw=%04X\n", hardware_dsp);
+	} else if (!strcmp(l, "#dac_init")) {
+		dac_init();
+		printf("@hw:%04X\n", hardware_other);
 	} else if (!strcmp(l, "#si5338")) {
 		si5338_detect_and_init();
 		printf("@hw:%04X\n", hardware_other);

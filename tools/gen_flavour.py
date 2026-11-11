@@ -91,12 +91,12 @@ def split_items(text):
 
 
 def data_tables(r):
-    """DATA blocks of the device files: {label: (bytes, [(type, value), ...])} in BASCOM layout
+    """DATA blocks of the resolved build: {label: (bytes, [(type, value), ...])} in BASCOM layout
     (no suffix = byte, % = 16 bit, & = 32 bit, ! = single, "..." = chars + NUL)."""
     import struct
     tables, label = {}, None
     for line in r.flat:
-        m = re.search(r"'(devices/[^']*):(\d+)$", line)
+        m = re.search(r"'((?:devices|libs)/[^']*):(\d+)$", line)
         if not m:
             label = None
             continue
