@@ -1,0 +1,17 @@
+{
+  "build": {
+    "f_cpu": "32000000UL",
+    "mcu": "atxmega256a3u"
+  },
+  "frameworks": [],
+  "name": "Forge DSP (ATxmega256A3U, 32 MHz)",
+  "upload": {
+    "maximum_ram_size": 16384,
+    "maximum_size": 262144,
+    "protocol": "custom",
+    "require_upload_port": true,
+    "speed": 115200
+  },
+  "url": "https://bitbucket.org/forge-dsp/firmware",
+  "vendor": "Forge DSP (Mark Duprau)"
+}

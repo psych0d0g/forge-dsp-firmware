@@ -1,0 +1,277 @@
+"""chip45boot3 command line tool for Linux.
+
+  python -m c45b3 --port /dev/ttyUSB0 info
+  python -m c45b3 --port /dev/ttyUSB0 --wait 30 read-flash backup/forge-flash
+  python -m c45b3 --sim --sim-image main.hex info  (built-in target model)
+
+Reading is the default use. Writing needs --allow-write (and the user's
+approval of the device owner).
+"""
+
+import argparse
+import hashlib
+import os
+import sys
+
+from . import client, ihex
+from .client import Bootloader, BootloaderError, NotSupported
+
+
+def log(msg):
+    print(msg, file=sys.stderr)
+
+
+def open_port(args):
+    if args.sim:
+        from .sim import SimPort, Target
+        flash = load_image(args.sim_image) if args.sim_image else None
+        t = Target(flash=flash, flash_read=not args.sim_no_read, eeprom_read=not args.sim_no_read)
+        return SimPort(t)
+    import serial  # pyserial
+    p = serial.Serial(args.port, args.baud, bytesize=8, parity="N", stopbits=1,
+                      timeout=0.02, write_timeout=2, rtscts=False, dsrdtr=False, xonxoff=False)
+    try:
+        p.dtr = True  # like the GUI (DtrEnable) and the Forge GUI (DTR=1)
+    except OSError:
+        log("note: port has no DTR line (pty?)")
+    return p
+
+
+def load_image(path):
+    if path.lower().endswith(".hex"):
+        return ihex.to_bin(ihex.read_hex(path))
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def save_dump(base, data):
+    paths = [base + ".bin", base + ".hex"]
+    for p in paths:
+        if os.path.exists(p):
+            raise SystemExit(f"{p} exists, not overwriting")
+    d = os.path.dirname(base)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(paths[0], "wb") as f:
+        f.write(data)
+    ihex.write_hex(paths[1], data)
+    used = len(data.rstrip(b"\xFF"))
+    print(f"{len(data)} bytes, used up to 0x{used:X}, sha256 {hashlib.sha256(data).hexdigest()}")
+    print("written:", *paths)
+
+
+def progress_printer(total):
+    last = [-1]
+
+    def p(done):
+        pct = done * 100 // total if total else 0
+        if pct // 5 != last[0]:
+            last[0] = pct // 5
+            print(f"\r{done:7d} / {total} bytes", end="", file=sys.stderr, flush=True)
+    return p
+
+
+def cmd_info(bl, args):
+    print("bootloader version: %d.%d" % bl.bootloader_version())
+    try:
+        v = bl.firmware_version()
+        print("firmware version:   " + ("%d.%02d" % v if v else "no FW_VERSION: string in application"))
+    except NotSupported as e:
+        print("firmware version:   not supported (" + str(e) + ")")
+
+
+def cmd_read(bl, args, what):
+    size = args.size
+    total = size or (client.APP_SIZE if what == "flash" else client.EEPROM_SIZE)
+    reader = bl.read_flash if what == "flash" else bl.read_eeprom
+    try:
+        data = reader(start=args.start, size=size, progress=progress_printer(total))
+    except NotSupported as e:
+        print(file=sys.stderr)
+        raise SystemExit(f"{what} read not available: {e}")
+    print(file=sys.stderr)
+    save_dump(args.out, data)
+
+
+def cmd_write(bl, args, what):
+    if not args.allow_write:
+        raise SystemExit("writing needs --allow-write (only with the user's explicit approval)")
+    data = load_image(args.image)
+    print(f"{what}: {len(data)} bytes from {args.image}, sha256 {hashlib.sha256(data).hexdigest()}")
+    if what == "flash":
+        n = bl.write_flash(data, start=args.start, progress=progress_printer(len(data)))
+    else:
+        n = bl.write_eeprom(data, start=args.start, progress=progress_printer(len(data)))
+    print(file=sys.stderr)
+    print(f"{n} bytes written, verified by the target page by page")
+    if args.verify:
+        try:
+            back = (bl.read_flash if what == "flash" else bl.read_eeprom)(start=args.start, size=n)
+        except NotSupported:
+            print("read-back not available in this bootloader build")
+            return
+        exp = data + b"\xFF" * (n - len(data))
+        print("read-back:", "OK" if back == exp else "MISMATCH")
+        if back != exp:
+            raise SystemExit(1)
+
+
+def app_query(port, args, line, wait=0.5):
+    """Send one text-protocol line at the application baud rate, return the answer."""
+    import time
+    try:
+        port.baudrate = args.app_baud
+    except AttributeError:
+        pass
+    port.reset_input_buffer()
+    port.write(line.encode("ascii") + b"\r\n")
+    t_end = time.monotonic() + wait
+    ans = bytearray()
+    while time.monotonic() < t_end:
+        ans += port.read(64)
+    try:
+        port.baudrate = args.baud
+    except AttributeError:
+        pass
+    return ans.decode("latin-1")
+
+
+def parse_key_info(text):
+    """'<.2 system.key.info="FAG-96ELN3-4.1-<mcuid>-CCBYNCSA-<date>-MDD"' -> ("96ELN3", "4.1")"""
+    import re
+    m = re.search(r'system\.key\.info="([^"]*)"', text)
+    if not m:
+        return None
+    parts = m.group(1).split("-")
+    if len(parts) < 3:
+        return None
+    return parts[1], parts[2]
+
+
+def check_device(port, args):
+    model, _, pcb = args.expect_device.partition("-")
+    ans = app_query(port, args, "<system.key.info")
+    got = parse_key_info(ans)
+    if got is None:
+        raise SystemExit("device check: no answer to <system.key.info "
+                         f"({ans.strip()!r}). Forge on and running its firmware? "
+                         "(skip the check only if you are sure: no --expect-device)")
+    if got != (model, pcb):
+        raise SystemExit(f"device check: Forge reports {got[0]} PCB {got[1]}, "
+                         f"this build is for {model} PCB {pcb}. Not flashing.")
+    log(f"device check: {got[0]} PCB {got[1]} ok")
+
+
+def enter_bootloader(port, args):
+    """Ask the running application to reset into the bootloader."""
+    ans = app_query(port, args, args.enter, wait=0.3)
+    if ans.strip():
+        log("application answered: " + ans.strip())
+
+
+def cmd_backup(bl, args):
+    import datetime
+    import json
+    d = args.dir
+    if os.path.exists(d) and os.listdir(d):
+        raise SystemExit(f"{d} is not empty")
+    os.makedirs(d, exist_ok=True)
+    meta = {"date": datetime.datetime.now().isoformat(timespec="seconds"),
+            "bootloader_version": "%d.%d" % bl.bootloader_version()}
+    try:
+        v = bl.firmware_version()
+        meta["firmware_version"] = "%d.%02d" % v if v else None
+    except NotSupported:
+        meta["firmware_version"] = "not supported"
+    for what, reader, total in (("flash", bl.read_flash, client.APP_SIZE),
+                                ("eeprom", bl.read_eeprom, client.EEPROM_SIZE)):
+        try:
+            data = reader(progress=progress_printer(total))
+            print(file=sys.stderr)
+            save_dump(os.path.join(d, what), data)
+            meta[what] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        except NotSupported as e:
+            print(file=sys.stderr)
+            print(f"{what}: not readable with this bootloader ({e})")
+            meta[what] = "not supported"
+    with open(os.path.join(d, "backup.json"), "w") as f:
+        json.dump(meta, f, indent=2)
+    print("backup in", d)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="c45b3", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--port", help="serial device, e.g. /dev/ttyUSB0 (CP2102 of the Forge)")
+    src.add_argument("--sim", action="store_true", help="use the built-in target model")
+    ap.add_argument("--sim-image", metavar="IMAGE", help="flash content of the model (.hex/.bin)")
+    ap.add_argument("--sim-no-read", action="store_true",
+                    help="model a build without PROVIDE_FLASH_READ/PROVIDE_EEPROM_READ")
+    ap.add_argument("--baud", type=int, default=115200, help="any rate, the target measures it")
+    ap.add_argument("--wait", type=float, metavar="SEC",
+                    help="keep sending autobaud for SEC seconds (power-cycle the target meanwhile)")
+    ap.add_argument("--enter", metavar="LINE",
+                    help="text command that makes the running application jump to the bootloader, "
+                         "e.g. '>system.bootloader=1' (own firmware); sent at --app-baud first")
+    ap.add_argument("--expect-device", metavar="MODEL-PCB",
+                    help="before anything else ask the running firmware (<system.key.info) and "
+                         "abort unless it reports this model and PCB, e.g. 96ELN3-4.1")
+    ap.add_argument("--app-baud", type=int, default=38400, help="baud rate of the application")
+    ap.add_argument("--resume", action="store_true",
+                    help="bootloader still active from an earlier --stay: skip autobaud")
+    ap.add_argument("--timeout", type=float, default=3.0)
+    ap.add_argument("--stay", action="store_true",
+                    help="do not send 'start application' at the end")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("info", help="bootloader and firmware version")
+    sub.add_parser("start", help="leave the bootloader, start the application")
+    bk = sub.add_parser("backup", help="versions + flash + EEPROM into DIR (one session)")
+    bk.add_argument("dir")
+    for what in ("flash", "eeprom"):
+        r = sub.add_parser(f"read-{what}", help=f"dump {what} to OUT.bin and OUT.hex")
+        r.add_argument("out", help="output path without extension")
+        r.add_argument("--start", type=lambda s: int(s, 0), default=0)
+        r.add_argument("--size", type=lambda s: int(s, 0), default=None)
+        w = sub.add_parser(f"write-{what}", help=f"program {what} (needs --allow-write)")
+        w.add_argument("image", help=".hex or .bin")
+        w.add_argument("--start", type=lambda s: int(s, 0), default=0)
+        w.add_argument("--allow-write", action="store_true")
+        w.add_argument("--no-verify", dest="verify", action="store_false",
+                       help="skip read-back after writing")
+    args = ap.parse_args(argv)
+
+    port = open_port(args)
+    bl = Bootloader(port, timeout=args.timeout, log=log)
+    try:
+        if args.expect_device and not args.resume:
+            check_device(port, args)
+        if args.enter and not args.resume:
+            enter_bootloader(port, args)
+        if args.resume:
+            ok = bl.resume()
+        else:
+            ok = bl.connect(wait=args.wait) if args.wait else bl.connect()
+        if not ok:
+            raise SystemExit("bootloader not reached (power-cycle the target while --wait runs; "
+                             "after --stay use --resume)")
+        log("connected")
+        if args.cmd == "info":
+            cmd_info(bl, args)
+        elif args.cmd in ("read-flash", "read-eeprom"):
+            cmd_read(bl, args, args.cmd.split("-")[1])
+        elif args.cmd == "backup":
+            cmd_backup(bl, args)
+        elif args.cmd in ("write-flash", "write-eeprom"):
+            cmd_write(bl, args, args.cmd.split("-")[1])
+        if args.cmd == "start" or not args.stay:
+            bl.start_application()
+            log("application started")
+    except BootloaderError as e:
+        raise SystemExit(f"error: {e}")
+    finally:
+        port.close()
+
+
+if __name__ == "__main__":
+    main()

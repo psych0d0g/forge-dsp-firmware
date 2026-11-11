@@ -1,0 +1,85 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # pinned sources the generated parts are checked against
+  FORGE_FIRMWARE_REPO: https://bitbucket.org/forge-dsp/firmware.git
+  FORGE_FIRMWARE_REV: ba94d7297910f5d66cc64be3b89447c2a12bdf1d
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: BASCOM sources (pinned)
+        run: |
+          git init -q forge-src && cd forge-src
+          git remote add origin "$FORGE_FIRMWARE_REPO"
+          git fetch -q --depth 1 origin "$FORGE_FIRMWARE_REV"
+          git checkout -q FETCH_HEAD
+      - name: Generated flavour files are up to date
+        run: python3 tools/gen_flavour.py forge-src src/flavours --check
+      - name: c45b3 tests (model + native chip45boot3 target)
+        working-directory: tools/c45b3-host
+        run: |
+          make -C tests/ctarget
+          FORGE_FIRMWARE_DIR="$GITHUB_WORKSPACE/forge-src" python3 -m unittest -v tests.test_c45b3
+
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        flavour: [V30-96LN, V30-96ELN, V40-96ELN, V40-96ELN-3, V40-CORED8, V41-96ELN-3, V41-CORED8]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # git describe needs tags
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - name: Build ${{ matrix.flavour }}
+        run: pio run -e "${{ matrix.flavour }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forge-dsp-${{ matrix.flavour }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && cat *.sha256 > SHA256SUMS && ls -l
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" --generate-notes \
+            dist/*.hex dist/SHA256SUMS

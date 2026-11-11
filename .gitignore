@@ -1,0 +1,9 @@
+.pio/
+.vscode/.browse*
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+ref/
+backups/
+__pycache__/
+*.pyc
+dist/
