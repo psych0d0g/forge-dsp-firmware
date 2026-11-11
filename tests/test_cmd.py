@@ -923,6 +923,46 @@ class DelayCmdTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class MixerCmdTest(LinesMixin, unittest.TestCase):
+    """cmd_mixer: values, mux, position, mixer.*, register write after the auto unmute."""
+
+    def test_mixer_values_and_listing(self):
+        for f in FLAVOURS:
+            c2a = table_bytes(f, "data_flow_mix_cmd2array")
+            out = self.lines(f, ["1|set.1 mixer.position=1", "1|get.1 mixer.position", "1|set.1 mixer.2.1.1=55",
+                                 "1|set.1 mixer.3.1.10=3", "1|set.1 mixer.1.2=3", "1|set.1 mixer.1.1.9=3",
+                                 "1|set.1 mixer.5.1.1=3", "1|set.1 mixer.position=5", "1|get.1 mixer.scale",
+                                 "1|get.1 mixer.*"])
+            self.assertEqual(out[1], "@0: <.1 mixer.position=1\\r\\n", f)
+            self.assertIn(" ok", out[2], f)
+            self.assertIn(" ok", out[3], f)  # 1.10 = input mux
+            for i in (4, 5, 6, 7):
+                self.assertIn("command out of range", out[i], f)
+            self.assertEqual(out[8], "@0: <.1 mixer.scale=[0,100,1.0,0,8]\\r\\n", f)
+            listing = out[9][4:].split("\\r\\n")[:-1]
+            n = sum(1 for c in range(1, 11) for g in range(1, 11) if c2a[(c - 1) * 10 + g])
+            self.assertEqual(len(listing), 4 * n, f)
+            self.assertIn(" <.1 mixer.2.1.1=55", listing, f)
+            self.assertIn(" <.1 mixer.3.1.10=3", listing, f)
+
+    def test_mixer_register_after_unmute(self):
+        f = "V41-96ELN-3"
+        c2a = table_bytes(f, "data_flow_mix_cmd2array")
+        cc = table_bytes(f, "data_flow_mix_can_change")
+        regs = table_bytes(f, "data_flow_mix_dsp_reg")
+        b = c2a[1]                      # mixer.P.1.1
+        reg = regs[cc[b]]
+        ii = (b - 1) % 4 + 1            # coefficient within the register
+        out = self.lines(f, ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect",
+                             "1|set.1 mixer.position=1"] + ["#mainloop"] * 12 +
+                         ["1|set.1 mixer.1.1.1=50"] + ["#mainloop"] * 12 + [f"#block=1,68,{reg:02X},16"])
+        blk = bytes.fromhex([l for l in out if l.startswith("@block:")][0][7:])
+        # buffer sent backwards: coefficient 4 first, MSB first; 0.5 in 5.23 = 0x00400000
+        k = (4 - ii) * 4
+        self.assertEqual(blk[k:k + 4].hex(), "00400000")
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

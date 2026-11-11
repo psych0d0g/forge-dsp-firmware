@@ -6,7 +6,7 @@ FLAVOURS := $(notdir $(wildcard $(ROOT)/src/flavours/*))
 SRC := host_iface.c host_i2c.c \
        $(ROOT)/src/i2c.c $(ROOT)/src/store.c $(ROOT)/src/expander.c $(ROOT)/src/si5338.c \
        $(ROOT)/src/tas3108.c $(ROOT)/src/es90x8pro.c $(ROOT)/src/es9018.c $(ROOT)/src/ct7302.c $(ROOT)/src/cs4385.c $(ROOT)/src/cs5366.c $(ROOT)/src/src43x2_cs8416.c \
-       $(ROOT)/src/cmd/cmd_core.c $(ROOT)/src/cmd/cmd_route.c $(ROOT)/src/cmd/cmd_system.c $(ROOT)/src/cmd/cmd_audio.c $(ROOT)/src/cmd/cmd_delay.c $(ROOT)/src/cmd/cmd_preset.c \
+       $(ROOT)/src/cmd/cmd_core.c $(ROOT)/src/cmd/cmd_route.c $(ROOT)/src/cmd/cmd_system.c $(ROOT)/src/cmd/cmd_audio.c $(ROOT)/src/cmd/cmd_delay.c $(ROOT)/src/cmd/cmd_preset.c $(ROOT)/src/cmd/cmd_mixer.c \
        $(ROOT)/src/eram.c $(ROOT)/src/registers.c $(ROOT)/src/biquad.c $(ROOT)/src/dsp.c $(ROOT)/src/api.c
 # stub/ first: host versions of board.h (pins are printed instead of set)
 CFLAGS := -O1 -g -Wall -Wextra -Werror -Istub -I$(ROOT)/include \

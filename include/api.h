@@ -10,6 +10,7 @@
 #include <stdint.h>
 extern uint8_t api_store;
 extern int16_t api_autounmute_counter;
+extern uint32_t store_mix_changed;  /* bit n: mixer register n of the loaded position changed */
 #define api_mute_out_on  0xFF
 #define api_mute_out_off 0x00
 #define api_mute_out_prio_hardware 4
