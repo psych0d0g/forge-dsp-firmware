@@ -16,13 +16,38 @@ Geflasht wird über den vorhandenen Bootloader chip45boot3, direkt aus VS Code.
 
 Alle: ATxmega256A3U, interner 32-MHz-Takt.
 
-**Stand: M0 (Bring-up) + Kern des Textprotokolls (M1, #1), noch nicht auf echter Hardware getestet.** Takt, Pins,
-Selbsthaltung, Shutdown und Watchdog entsprechen dem Original. Der Parser von `libs/cmd/v20` ist Zeile für Zeile portiert
-(Prüfsumme, Ziel/Weiterleitung über RS485 Master/Slave, Antwort-Header, Fehler) und läuft auf allen vier seriellen Kanälen.
-Befehle bisher: `system.boot`, `system.echo`, `system.firmware` (meldet `1.11.6000` wie das Original, eigene Version unter
-`system.firmware.port`), `system.info`, `system.key.info[.board|.type|.vendor]`, `system.ping`. Alles andere antwortet
-„unknown command“. Die Peripherie bleibt im Reset, Remote-Out (Endstufen) bleibt aus: **kein Ton**. Fahrplan in
-den GitHub-Issues und in `docs/porting-plan.md`.
+**Stand:** Der Funktionsumfang des Originals ist portiert: komplettes Textprotokoll, Register und EEPROM-Layout,
+Presets, Biquads, Mixer, Delays, MODC-Steuerblöcke, Events, ADC/Temperatur, IR-Empfänger und die Einschaltsequenz
+aller Bausteine. Nativ getestet für alle 7 Varianten (81 Tests); auf einem Forge 96ELN (V40) laufen sichere und
+Bring-up-Variante: Start auf der Abstimmung des Originals ohne Werks-Reset, alle Bausteine erkannt,
+Biquad-Koeffizienten bitgenau, Abschalten über Remote-In. Noch nicht freigegeben: Remote-Out (Endstufen) und der
+Abgleich mit der Original-GUI (#5). Fahrplan in den GitHub-Issues.
+
+## Was die Port-Firmware zusätzlich kann
+
+Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes.md)**.
+
+- **Eingangswahl** `mixer.in` (und `mixer.in.max`) für die aktive Mixer-Position, mit Ereignis an die GUI; die
+  dokumentierten, im Original nie gesetzten Ereignisse 45–48 (`SOURCE.1–4.MUX`) tragen jetzt die Eingangswahl je
+  Position (#23).
+- **Biquad-Typ 17 BandPass**, im Original geplant, aber nie umgesetzt (#20).
+- **Behobene Fehler des Originals**, u. a.: `preset.erase=4` löscht bei 4 Presets nicht mehr Preset 0 (#33),
+  Rohwert-Biquads `biquad.….raw` funktionieren (#35), `get event.N.value` antwortet (#36), Delays in ms/cm/inch
+  lassen sich lesen (#21), keine Speicherzugriffe hinter Arrays und Tabellen bei ungültigen Werten.
+- **Sicherer Werks-Reset**: Abstimmungen werden nur mit `FORGE_FACTORY_RESET=1` gelöscht, nicht bei jedem
+  Versionswechsel.
+- **Flashen unter Linux** aus VS Code, mit Backup, Gerätecheck und Rückweg auf die Originalfirmware.
+- Rund **44 % kleiner** als das Original (V40-96ELN: 116 KB statt 205 KB; ohne die Debug-Texte des Originals, #41).
+
+## Build-Optionen
+
+In `platformio.ini` unter `[common]`:
+
+| Option | Standard | Wirkung |
+|---|---|---|
+| `FORGE_BRINGUP` | 0 | 1 = vollständige Peripherie-Init wie das Original. 0 = sichere Variante: Erkennung und Protokoll, Peripherie im Reset, **kein Ton** |
+| `FORGE_AUDIO` | 0 | 1 = Remote-Out (Endstufen) wie im Original einschalten. Erst nach eigener Prüfung mit leiser Last |
+| `FORGE_FACTORY_RESET` | 0 | 1 = Werks-Reset wie im Original (löscht Abstimmungen und Presets), braucht `FORGE_BRINGUP=1` |
 
 Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `tools/c45b3-host` und die Bootloader-Quellen in
 `tools/c45b3-host/tests/ctarget/upstream` stehen unter MIT (chip45boot3, Erik Lins).
@@ -37,9 +62,10 @@ Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `tools/c45b3-host` un
 3. *PlatformIO: Upload*. Ablauf:
    - `get.1 system.key.info`: Modell und PCB des angeschlossenen Forge müssen zur Umgebung passen, sonst Abbruch.
      V30-96ELN und V40-96ELN melden beide `96ELN-4.0`, hier die Umgebung bitte selbst richtig wählen.
-   - `set.1 system.boot=1`: Software-Reset in den Bootloader. Das Original kennt den Befehl (`cmd_set_system_boot`,
-     Reset ~1 s nach „ok“, ohne Werkseinstellungen). Antwortet der Forge nicht, während des Wartens aus-/einschalten.
-   - Flash schreiben (Seiten werden im Bootloader geprüft), zurücklesen, falls der Bootloader-Build das kann, Anwendung starten.
+   - **Bootloader nur per Taster:** Forge ausschalten, den Taster neben dem USB-Port halten, einschalten, halten bis
+     die orange LED blinkt. Das Tool wartet bis zu 30 s darauf. `set.1 system.boot=1` startet nur neu, der
+     Bootloader meldet sich danach nicht (am Gerät geprüft).
+   - Flash schreiben (Seiten werden im Bootloader geprüft), zurücklesen, Anwendung starten.
 4. Project Tasks → Custom:
    - *Forge: versions*: Version von Bootloader und Firmware.
    - *Forge: backup*: Flash und EEPROM nach `backups/<Datum>/`, soweit lesbar.
@@ -54,7 +80,10 @@ c45b3 braucht nur pyserial, das liefert PlatformIO mit. CLI: `pio run -e V41-96E
 
 ## Aufbau
 - `src/`: gemeinsamer Code aller Varianten (`src/cmd/`: Textprotokoll), `include/`: Header.
-- `tests/`: `test_cmd.py` übersetzt das Protokoll nativ für jede Variante (`make -C tests/native`) und prüft die Antworten.
+- `tests/`: `test_cmd.py` übersetzt die Firmware-Module nativ für jede Variante (`make -C tests/native`) und prüft
+  Protokoll, EEPROM-Inhalte, Biquads (gegen eine unabhängige Referenz) und die Peripherie auf einem I2C-Modell.
+- `docs/port-changes.md`: Ergänzungen und Abweichungen gegenüber dem Original.
+- `tools/toolchain/`: Compiler-Patch, Testfall und Build-Skript für die gepinnte Toolchain.
 - `src/flavours/<Variante>/`: **generiert** mit `tools/gen_flavour.py` aus dem BASCOM-Quelltext. `flavour.h` enthält alle
   `const` des aufgelösten Builds als `BAS_*` und die Pin-Aliase als `PIN_*`, `flavour_pins.c` die Pin-Init aus `pins.bas`.
   Prüfen: `python3 tools/gen_flavour.py <forge-dsp/firmware> src/flavours --check`.
@@ -68,4 +97,5 @@ c45b3 braucht nur pyserial, das liefert PlatformIO mit. CLI: `pio run -e V41-96E
 - Der Bootloader-Bereich ist laut Original per Lockbits (BLBB) geschützt. Das Tool schreibt nie dorthin und sendet die
   abschließende Leer-Frame der Windows-GUI nicht (sie würde die Seite hinter dem Image löschen).
 - Vor dem ersten eigenen Flashen: *Forge: backup*, Abstimmung über die Original-GUI sichern.
-- Solange die Audiokette nicht vollständig portiert ist, bleiben die Endstufen aus.
+- Die Endstufen (Remote-Out) bleiben aus, solange `FORGE_AUDIO=0` ist (Standard).
+- Abstimmungen werden ohne `FORGE_FACTORY_RESET=1` nie gelöscht; Rückweg jederzeit über *Forge: flash release 1.11.6000*.

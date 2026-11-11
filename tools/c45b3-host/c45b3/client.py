@@ -57,33 +57,41 @@ class Bootloader:
         self.target_crc_errors = 0
 
     # --- connection -----------------------------------------------------
-    def connect(self, attempts=10, wait=None, attempt_time=0.3):
+    def connect(self, attempts=10, wait=None, attempt_time=0.3, reopen=None):
         """Send autobaud bursts until the identifier STX c45b3 ETX comes back.
 
         attempts: number of bursts (GUI: 10 with 3 s each).
         wait: alternatively keep trying for this many seconds, e.g. while the
               target is being power-cycled (bootloader listens ~3 s after reset).
+        reopen: with wait, called as reopen(old_port, deadline) when the port fails
+              (the CP2102 disappears while the Forge is off); returns a new port or None.
         """
         deadline = self.clock() + wait if wait is not None else None
         n = 0
         seen = bytearray()
         while True:
             n += 1
-            self.port.write(AUTOBAUD_CHAR * AUTOBAUD_REPEAT)
-            t_end = self.clock() + attempt_time
-            while self.clock() < t_end:
-                chunk = self.port.read(64)
-                if chunk:
-                    seen += chunk
-                    if IDENTIFIER in seen:
-                        self.log(f"bootloader answered after {n} burst(s)")
-                        self.sleep(0.05)
-                        self.port.reset_input_buffer()
-                        self.connected = True
-                        return True
-                    del seen[:-len(IDENTIFIER)]
-                else:
-                    self.sleep(0.005)
+            try:
+                self._autobaud_burst(attempt_time, seen)
+            except OSError as e:  # serial.SerialException is an OSError
+                # power-cycling the Forge (bootloader key) re-enumerates the CP2102
+                if reopen is None or deadline is None:
+                    raise
+                if not getattr(self, "_lost", False):
+                    self.log(f"port lost ({type(e).__name__}), reopening while waiting")
+                self._lost = True
+                p = reopen(self.port, deadline)
+                if p is None:  # deadline passed while the port was gone
+                    break
+                self.port = p
+                continue
+            if IDENTIFIER in seen:
+                self.log(f"bootloader answered after {n} burst(s)")
+                self.sleep(0.05)
+                self.port.reset_input_buffer()
+                self.connected = True
+                return True
+            del seen[:-len(IDENTIFIER)]
             if deadline is not None:
                 if self.clock() >= deadline:
                     break
@@ -91,6 +99,18 @@ class Bootloader:
                 break
         self.log(f"no bootloader identifier after {n} burst(s)")
         return False
+
+    def _autobaud_burst(self, attempt_time, seen):
+        self.port.write(AUTOBAUD_CHAR * AUTOBAUD_REPEAT)
+        t_end = self.clock() + attempt_time
+        while self.clock() < t_end:
+            chunk = self.port.read(64)
+            if chunk:
+                seen += chunk
+                if IDENTIFIER in seen:
+                    return
+            else:
+                self.sleep(0.005)
 
     def resume(self):
         """Bootloader already in command mode (earlier session ended without

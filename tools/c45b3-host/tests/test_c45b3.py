@@ -222,6 +222,34 @@ class SimTest(Scenarios, unittest.TestCase):
         with self.assertRaises(NotSupported):
             b.read_eeprom()
 
+    def test_connect_survives_port_loss(self):
+        """Forge switched off with the bootloader key: the CP2102 disappears, --wait reopens."""
+        t = Target()
+
+        class GonePort:
+            def write(self, d): raise OSError("device disconnected")
+            def read(self, n): raise OSError("device disconnected")
+            def close(self): pass
+        calls = []
+
+        def reopen(old, deadline):
+            calls.append(1)
+            if len(calls) < 3:
+                return GonePort()           # still gone: fails again on the next burst
+            t.reset()                       # switched on with the key held
+            return SimPort(t)
+        b = Bootloader(GonePort(), timeout=0.5)
+        self.assertTrue(b.connect(wait=5, attempt_time=0.01, reopen=reopen))
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(b.bootloader_version(), (1, 0))
+
+    def test_port_loss_without_reopen_raises(self):
+        class GonePort:
+            def write(self, d): raise OSError("gone")
+            def read(self, n): raise OSError("gone")
+        with self.assertRaises(OSError):
+            Bootloader(GonePort(), timeout=0.5).connect(wait=1, attempt_time=0.01)
+
     def test_connect_while_power_cycling(self):
         t = Target(in_bootloader=False)
         port = SimPort(t)

@@ -936,6 +936,8 @@ class MixerCmdTest(LinesMixin, unittest.TestCase):
                                  "1|set.1 mixer.3.1.10=3", "1|set.1 mixer.1.2=3", "1|set.1 mixer.1.1.9=3",
                                  "1|set.1 mixer.5.1.1=3", "1|set.1 mixer.position=5", "1|get.1 mixer.scale",
                                  "1|get.1 mixer.*"])
+            self.assertIn("#.1 mixer.position=1", "\n".join(out), f)  # event of the position change
+            out = [l for l in out if "#.1 mixer.position" not in l]
             self.assertEqual(out[1], "@0: <.1 mixer.position=1\\r\\n", f)
             self.assertIn(" ok", out[2], f)
             self.assertIn(" ok", out[3], f)  # 1.10 = input mux

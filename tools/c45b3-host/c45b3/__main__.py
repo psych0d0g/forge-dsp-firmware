@@ -37,6 +37,28 @@ def open_port(args):
     return p
 
 
+def reopener(args):
+    """For --wait: reopen the port after the CP2102 disappeared (Forge switched off/on)."""
+    if args.sim:
+        return None
+    import time
+
+    def reopen(old, deadline):
+        try:
+            old.close()
+        except OSError:
+            pass
+        while time.monotonic() < deadline:
+            try:
+                p = open_port(args)
+                log("port reopened")
+                return p
+            except OSError:
+                time.sleep(0.2)
+        return None
+    return reopen
+
+
 def load_image(path):
     if path.lower().endswith(".hex"):
         return ihex.to_bin(ihex.read_hex(path))
@@ -252,7 +274,7 @@ def main(argv=None):
         if args.resume:
             ok = bl.resume()
         else:
-            ok = bl.connect(wait=args.wait) if args.wait else bl.connect()
+            ok = bl.connect(wait=args.wait, reopen=reopener(args)) if args.wait else bl.connect()
         if not ok:
             raise SystemExit("bootloader not reached (power-cycle the target while --wait runs; "
                              "after --stay use --resume)")
@@ -271,7 +293,7 @@ def main(argv=None):
     except BootloaderError as e:
         raise SystemExit(f"error: {e}")
     finally:
-        port.close()
+        bl.port.close()
 
 
 if __name__ == "__main__":

@@ -230,7 +230,11 @@ void api_set_mix_position(uint8_t pos)
 		store_mix_position = pos;
 		store_mix_changed = BAS_FLOW_MIX_MAX_CHANGED;
 		api_set_out_mute_change();
-		/* PORT: event "mixer.position" to the GUI (cmd_sendevent) follows with the events */
+		static const uint16_t ev[cmd_req_words_max] = {0x0104, 0x6D69, 0x706F, 0x0000, 0x0000};
+		cmd_req_value[0] = (char)('0' + pos % 10);  /* positions 1..4 */
+		cmd_req_value[1] = 0;
+		cmd_load_header(ev);
+		cmd_sendevent();
 	}
 }
 

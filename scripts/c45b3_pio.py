@@ -1,8 +1,9 @@
 # PlatformIO extra script: upload and helper targets through chip45boot3 (forge-tools/c45b3).
 #
 # Upload (VS Code: PlatformIO -> Upload, CLI: pio run -t upload):
-#   own firmware jumps to the bootloader on `enter_cmd`; the original firmware does not,
-#   then switch the Forge off and on while "waiting for bootloader" is shown.
+#   while "waiting for the bootloader" is shown: switch the Forge off, hold the key next to the
+#   USB port, switch it on and hold the key until the orange LED blinks. The bootloader does not
+#   answer after a software reset (system.boot), only with the key (checked on a device).
 # Custom targets (VS Code: PlatformIO -> Project Tasks -> Custom):
 #   forge_info      bootloader/firmware version, then start the application
 #   forge_backup    flash + EEPROM into backups/<date> (as far as the bootloader allows)
@@ -45,8 +46,8 @@ def need_port(target, source, env):
     if not env.subst("$UPLOAD_PORT"):
         env.AutodetectUploadPort()
     print("Forge port:", env.subst("$UPLOAD_PORT"), "| flavour:", flavour, "| expected:", expect)
-    print(f"Waiting up to {wait} s for the bootloader - switch the Forge off and on "
-          "if it runs the original firmware.")
+    print(f"Waiting up to {wait} s for the bootloader: switch the Forge off, hold the key next to "
+          "the USB port, switch it on, keep holding until the orange LED blinks.")
 
 
 env.Replace(UPLOADCMD=base + " write-flash $SOURCE --allow-write")

@@ -3,7 +3,7 @@
  * Baud rates from registers(reg_baud_ch1..4) as libs/interface/V40/<n>/init.bas, defaults
  * ch1 38400, ch2 19200, ch3 38400, ch4 38400. Debug output on ch2/ch4 forces 115200.
  * ch3 is not opened as UART while the IR receiver uses PC6 (reg_ext_irsetup).
- * PORT: IR receiver itself follows with M4.
+ * The IR receiver (src/ir.c) samples PC6 then.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
 #include <avr/io.h>
