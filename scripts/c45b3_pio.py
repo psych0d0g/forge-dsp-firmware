@@ -32,7 +32,8 @@ wait = opt("wait_seconds", "30")
 enter = opt("enter_cmd", "")
 expect = env.GetProjectOption("custom_expect_device", "")
 flavour = env.subst("$PIOENV")  # env name = flavour id
-base = '"$PYTHONEXE" -m c45b3 --port "$UPLOAD_PORT" --wait %s' % wait
+app_baud = opt("app_baud", "38400")  # USB-COM rate of the running firmware (reg_baud_ch1)
+base = '"$PYTHONEXE" -m c45b3 --port "$UPLOAD_PORT" --wait %s --app-baud %s' % (wait, app_baud)
 if expect:
     # refuses to continue if the running firmware reports another model/PCB
     base += ' --expect-device "%s"' % expect
