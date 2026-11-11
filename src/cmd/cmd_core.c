@@ -612,9 +612,9 @@ static void cmd_answer_set(void)
 	case 0x636F: cmd_set_com(); break;
 	case 0x6D6F: cmd_set_modc(); break;
 	case 0x6578: cmd_set_extender(); break;
+	case 0x6932: cmd_set_i2c(); break;
 #endif
-	/* PORT: i2c follows (select is version 0 in every flavour)
-	 * (issue #4); until then "unknown command" */
+	/* select is version 0 in every flavour: unknown command, as the original */
 	default: cmd_error_unknown();
 	}
 }
@@ -637,6 +637,7 @@ static void cmd_answer_get(void)
 	case 0x6576: cmd_get_event(); break;
 	case 0x6D6F: cmd_get_modc(); break;
 	case 0x6578: cmd_get_extender(); break;
+	case 0x6932: cmd_get_i2c(); break;
 #endif
 	default: cmd_error_unknown();
 	}

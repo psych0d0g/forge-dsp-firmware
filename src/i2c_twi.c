@@ -92,6 +92,8 @@ void twi_stop(uint8_t bus)
 }
 
 uint8_t twi_sda(uint8_t bus) { return port(bus)->IN & PIN0_bm ? 1 : 0; }
+uint8_t twi_scl_out(uint8_t bus) { return port(bus)->OUT & PIN1_bm ? 1 : 0; }
+uint8_t twi_master_status(uint8_t bus) { return twi(bus)->MASTER.STATUS; }
 
 void twi_bus_clear(uint8_t bus)
 {

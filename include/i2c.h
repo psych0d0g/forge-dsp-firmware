@@ -48,7 +48,9 @@ void twi_wbyte(uint8_t bus, uint8_t b);
 uint8_t twi_rbyte(uint8_t bus, uint8_t ack);
 void twi_stop(uint8_t bus);
 uint8_t twi_sda(uint8_t bus);                            /* i2c1_sda / i2c2_sda pin level */
-void twi_bus_clear(uint8_t bus);                         /* the 8 SCL pulses of i2cN_reset */
+void twi_bus_clear(uint8_t bus);
+uint8_t twi_scl_out(uint8_t bus);                        /* i2cN_scl = PORTx.OUT bit 1 */
+uint8_t twi_master_status(uint8_t bus);                  /* TWIx_MASTER_STATUS */                         /* the 8 SCL pulses of i2cN_reset */
 void delay_ms(uint16_t ms);
 void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s);
 #endif

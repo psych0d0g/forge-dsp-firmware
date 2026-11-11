@@ -1290,6 +1290,27 @@ class IrTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class I2cCmdTest(LinesMixin, unittest.TestCase):
+    """cmd_i2c: register read/write, dump, buffer, scan, state; EEPROMs refused."""
+
+    def test_i2c_commands(self):
+        f = "V40-96ELN"
+        out = self.lines(f, ["#i2cdev=2,90,4=71,5=01", "#i2cdev=1,68", "1|get.1 i2c.2.144.4",
+                             "1|set.1 i2c.2.144.6=85", "1|get.1 i2c.2.144.dump=[4,6]", "1|get.1 i2c.2.144.buffer=[4,3]",
+                             "1|get.1 i2c.1.scan", "1|get.1 i2c.1.state", "1|set.1 i2c.1.160.0=1",
+                             "1|get.1 i2c.1.168.0", "1|get.1 i2c.3.144.4", "1|get.1 i2c.2.144"])
+        self.assertEqual(out[0], "@0: <.1 i2c.2.144.4=&H71,&B01110001\\r\\n")
+        self.assertEqual(out[1], "@0: *.1 i2c.2.144.6 ok\\r\\n")
+        self.assertEqual(out[2].split("\\r\\n")[2], " <.1 i2c.2.144.dump=&H06;&H55,&B01010101")
+        self.assertEqual(out[3], "@0: <.1 i2c.2.144.buffer=550171\\r\\n")   # BASCOM buffer order
+        self.assertIn("&H68", out[4])
+        self.assertEqual(out[5], "@0: <.1 i2c.1.state=1, 1, &H01, &B00000001\\r\\n")
+        for i in (6, 7, 8):
+            self.assertIn("command out of range", out[i])                    # EEPROMs, bus 3
+        self.assertIn("unknown command", out[9])
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

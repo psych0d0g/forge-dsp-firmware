@@ -56,6 +56,8 @@ static int logged[3];
 void delay_ms(uint16_t ms) { (void)ms; }
 void i2c_bus_init(uint8_t bus) { channel_open |= 1u << (4 + bus); }
 uint8_t twi_sda(uint8_t bus) { (void)bus; return 1; }
+uint8_t twi_scl_out(uint8_t bus) { (void)bus; return 1; }
+uint8_t twi_master_status(uint8_t bus) { (void)bus; return 0x01; }  /* bus state idle */
 void twi_bus_clear(uint8_t bus) { (void)bus; }
 
 static void lg(uint8_t bus, const char *fmt, unsigned v)
