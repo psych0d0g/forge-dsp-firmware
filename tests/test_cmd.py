@@ -542,5 +542,51 @@ class DacTest(unittest.TestCase):
         self.assertIn("@0: <.1 system.errors=[[19,1]]\\r\\n", out)  # es90x8pro_rdy 2 + 17
 
 
+def ct7302_init_transfers(adr, opt32=False):
+    """libs/spdif/ct7302/functions.bas ct7302_init_sub on a device with all registers 0x00"""
+    a, ar = f"{adr:02X}", f"{adr + 1:02X}"
+    rmw = lambda reg, v: [f"@i2c1: S {a} {reg:02X} Sr {ar} r00N P", f"@i2c1: S {a} {reg:02X} {v:02X} P"]
+    w = lambda reg, v: [f"@i2c1: S {a} {reg:02X} {v:02X} P"]
+    t = (rmw(0x05, 0x13) + w(0x07, 0x02) + rmw(0x11, 0) + rmw(0x13, 0) + rmw(0x14, 0) +
+         w(0x30, 0x23) + w(0x31, 0x19) + w(0x32, 0x1E) + rmw(0x40, 0) + rmw(0x45, 0) + rmw(0x4D, 0x02) +
+         w(0x4E, 0x33) + w(0x61, 0x08) + w(0x62, 0x01) + w(0x4C, 0x10) + w(0x04, 0x01) + w(0x06, 0x78) +
+         w(0x60, 0x17))
+    if opt32:
+        t += rmw(0x77, 0x40)
+    return t
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class Ct7302Test(unittest.TestCase):
+    def transfers(self, f, lines, eeprom=None):
+        p, _ = run(f, lines, eeprom=eeprom, want_eeprom=True)
+        return [l for l in p.stdout.splitlines() if l.startswith("@")]
+
+    def test_init_both_receivers(self):
+        for f in ("V41-96ELN-3", "V40-CORED8", "V30-96ELN"):
+            out = self.transfers(f, ["#i2cdev=1,20", "#i2cdev=1,22", "#i2clog=1", "#spdif_init"], eeprom=image(f))
+            # ct7302_register_options is only written by MODC "spdif", never at sysinit:
+            # an erased EEPROM (0xFF) has bit 7 set -> SPDIF RX 32 bit
+            exp = (["@i2c1: S 20 P"] + ct7302_init_transfers(0x20, True) + ["@i2c1: S 22 P"] +
+                   ct7302_init_transfers(0x22, True) + ["@hw:0019"])
+            self.assertEqual(out, exp, f)
+
+    def test_options_without_32bit(self):
+        f = "V41-96ELN-3"
+        ee = bytearray(image(f))
+        ee[layout(f)["ct7302_register_options"][0]] = 0x01  # bit 0 has no code in the original
+        out = self.transfers(f, ["#i2cdev=1,20", "#i2clog=1", "#spdif_init"], eeprom=bytes(ee))
+        self.assertEqual(out[:1 + len(ct7302_init_transfers(0x20))],
+                         ["@i2c1: S 20 P"] + ct7302_init_transfers(0x20))
+        self.assertEqual(out[1 + len(ct7302_init_transfers(0x20))], "@i2c1: S 22 P")
+
+    def test_usb_input_is_rx5(self):
+        out = self.transfers("V41-96ELN-3", ["#i2cdev=1,20", "#spdif_init", "#ct7302_mux=1", "#ct7302_mux=3",
+                                             "#regs=1,20,8"])
+        self.assertIn("@mux:1", out)  # stored as 5 (RX5 = I2S from the XMOS), reported as 1
+        self.assertIn("@mux:3", out)
+        self.assertEqual([l for l in out if l.startswith("@regs")], ["@regs:0000000003137802"])
+
+
 if __name__ == "__main__":
     unittest.main()
