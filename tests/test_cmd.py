@@ -1461,6 +1461,39 @@ class FactoryResetTest(unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class InputSelectTest(LinesMixin, unittest.TestCase):
+    """Port extension #23: mixer.in (input = mux of the active position), events 45..48."""
+
+    def test_input_select(self):
+        for f in FLAVOURS:
+            ct = "ct7302" if f != "V30-96LN" else "src43x2"
+            tab = table_bytes(f, f"modul_{ct}_tab_set_mux")
+            vmax = max(i for i in range(1, len(tab)) if tab[i] != 0xFF)
+            out = self.lines(f, ["#events_init", "#dtr=1", "1|set.1 mixer.position=2", "1|get.1 mixer.in.max",
+                                 "1|set.1 mixer.in=3", "#event?46", "1|get.1 mixer.in", "1|get.1 mixer.2.1.10",
+                                 f"1|set.1 mixer.in={vmax + 1}", "1|set.1 mixer.in=0", "1|set.1 mixer.1.1.10=2",
+                                 "#event?45"])
+            txt = "\n".join(out)
+            self.assertIn(f"<.1 mixer.in.max={vmax}", txt, f)
+            self.assertIn("#.1 mixer.in=3", txt, f)                       # event to the GUI
+            self.assertIn("@event46:3,", txt, f)                           # SOURCE.2.MUX
+            self.assertIn("<.1 mixer.in=3", txt, f)
+            self.assertEqual(txt.count("command out of range"), 2, f)      # vmax+1, 0
+            self.assertIn("mixer.2.1.10 unknown command", txt, f)          # get of a value: as the original
+            self.assertIn("@event45:2,", txt, f)                           # mux of position 1 via mixer.1.1.10
+
+    def test_input_reaches_the_receiver(self):
+        f = "V40-96ELN"
+        tab = table_bytes(f, "modul_ct7302_tab_set_mux")
+        out = self.lines(f, ["#i2cdev=1,20,4=0", "#i2cdev=1,22", "#spdif_init", "#events_init",
+                             "#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect",
+                             "1|set.1 mixer.position=1"] + ["#mainloop"] * 12 +
+                         ["1|set.1 mixer.in=5"] + ["#mainloop"] * 12 + ["#regs=1,20,8"])
+        regs = bytes.fromhex([l for l in out if l.startswith("@regs:")][-1][6:])
+        self.assertEqual(regs[4] & 0x07, tab[5])   # input 5 = coaxial (RX4) after the auto unmute
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

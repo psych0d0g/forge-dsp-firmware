@@ -45,6 +45,7 @@ static void cmd_set_mixer_value(void)
 		SV(BAS_STORAGE_MUX_BASE, a) = (uint8_t)cmd_reg_var_integers[1];
 		cmd_answer_ok();
 		storage_flags++;
+		api_publish_in_input();  /* PORT: events 45..48 (#23) */
 		break;
 	default:
 		if (a == store_mix_position)  /* (original also reads can_change(0xFF) for the mux, unused) */
@@ -69,12 +70,36 @@ static void cmd_set_mixer_position(void)
 	}
 }
 
+static const uint16_t input_event[cmd_req_words_max] = {0x0104, 0x6D69, 0x696E, 0x0000, 0x0000};
+
+/* PORT extension (#23): mixer.input = input (mux) of the active position */
+static void cmd_set_mixer_input(void)
+{
+	if (req_w(cmd_req_word_three) != 0x0000) {
+		cmd_error_unknown();
+		return;
+	}
+	int16_t v = cmd_reg_var_integers[1];
+	if (v < 1 || v > 255 || !api_set_in_input((uint8_t)v)) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	cmd_answer_ok();
+	uint8_t i = 0;
+	if (v >= 10) cmd_req_value[i++] = (char)('0' + v / 10 % 10);
+	cmd_req_value[i++] = (char)('0' + v % 10);
+	cmd_req_value[i] = 0;
+	cmd_load_header(input_event);
+	cmd_sendevent();
+}
+
 void cmd_set_mixer(void)
 {
-	if (req_w(cmd_req_word_two) == 0x706F)
-		cmd_set_mixer_position();
-	else
-		cmd_set_mixer_value();
+	switch (req_w(cmd_req_word_two)) {
+	case 0x706F: cmd_set_mixer_position(); break;
+	case 0x696E: cmd_set_mixer_input(); break;
+	default: cmd_set_mixer_value();
+	}
 }
 
 static const uint16_t mix_answer[cmd_req_words_max] = {0x0102, 0x6D69, 0x2300, 0x2300, 0x2300};
@@ -108,6 +133,15 @@ void cmd_get_mixer(void)
 	case 0x002A: cmd_get_mixer_asterisk(); break;
 	case 0x706F: cmd_answer_header(); out_u16(store_mix_position); out_crlf(); break;
 	case 0x7363: cmd_answer_header(); out_str(BAS_CMD_MIX_SCALE); out_crlf(); break;
+	case 0x696E:  /* input (#23); input.max: highest valid input */
+		if (req_w(cmd_req_word_three) == 0x6D61) {
+			cmd_answer_header(); out_u16(api_in_input_max()); out_crlf();
+		} else if (req_w(cmd_req_word_three) == 0x0000) {
+			cmd_answer_header(); out_u16(api_get_in_input()); out_crlf();
+		} else {
+			cmd_error_unknown();
+		}
+		break;
 	default: cmd_error_unknown();
 	}
 }

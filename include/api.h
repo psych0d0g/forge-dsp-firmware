@@ -42,6 +42,13 @@ uint16_t api_get_delay_in(uint8_t ch);
 void api_set_mix_position(uint8_t pos);
 void api_set_mix_reg(void);
 void api_restore_mix(void);
+/* input selection = mux of the active mixer position (issue #23) */
+uint8_t api_get_in_input(void);
+uint8_t api_set_in_input(uint8_t v);  /* 0 = refused */
+void api_restore_in_input(void);
+void api_publish_in_input(void);      /* events 45..48 = mux of positions 1..4 */
+uint8_t api_in_input_valid(uint8_t v);
+uint8_t api_in_input_max(void);
 /* modc_load_preset without the MODC parts: load preset and apply everything;
  * remote out (amplifiers) only with FORGE_AUDIO=1 */
 void api_preset_load(uint8_t preset);

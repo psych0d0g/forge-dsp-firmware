@@ -279,6 +279,71 @@ void api_set_mix_reg(void)
 
 void api_restore_mix(void) { store_mix_changed = BAS_FLOW_MIX_MAX_CHANGED; }  /* done by api_mainloop */
 
+/* --- input selection (issue #23): api_set/get/restore_in_input are declared in the original
+ * without an implementation. The input is the mux of the active mixer position (the mux table
+ * maps it to the S/PDIF receiver input). Events 45..48 (SOURCE.1..4.MUX in events.txt, never set
+ * in the original) carry the mux of each position. --- */
+#if BAS_MODUL_CT7302 > 0
+#define MUX_TAB modul_ct7302_tab_set_mux
+#define MUX_ITEMS modul_ct7302_tab_set_mux_ITEMS
+#elif BAS_MODUL_SRC43X2 > 0
+#define MUX_TAB modul_src43x2_tab_set_mux
+#define MUX_ITEMS modul_src43x2_tab_set_mux_ITEMS
+#endif
+
+uint8_t api_in_input_valid(uint8_t v)
+{
+#ifdef MUX_TAB
+	return v >= 1 && v < MUX_ITEMS && BAS_LOOKUP_B(MUX_TAB, v) != 0xFF;
+#else
+	(void)v;
+	return 0;
+#endif
+}
+
+uint8_t api_in_input_max(void)
+{
+	uint8_t n = 0;
+	for (uint8_t v = 1; v < 16; v++)
+		if (api_in_input_valid(v))
+			n = v;
+	return n;
+}
+
+void api_publish_in_input(void)
+{
+	for (uint8_t pos = 1; pos <= BAS_STORE_MUX_COUNT && pos <= 4; pos++)
+		event_set_value((uint8_t)(BAS_EVENTS_FIELD_SOURCE_MUX + pos), SV(BAS_STORAGE_MUX_BASE, pos));
+}
+
+uint8_t api_get_in_input(void)
+{
+	uint8_t pos = store_mix_position;
+	return pos >= 1 && pos <= BAS_STORE_MUX_COUNT ? SV(BAS_STORAGE_MUX_BASE, pos) : 0;
+}
+
+/* 0 = refused (invalid input or no valid mixer position) */
+uint8_t api_set_in_input(uint8_t v)
+{
+	uint8_t pos = store_mix_position;
+	if (!api_in_input_valid(v) || pos < 1 || pos > BAS_STORE_MUX_COUNT)
+		return 0;
+	if (SV(BAS_STORAGE_MUX_BASE, pos) != v) {
+		api_set_out_mute_change();  /* the mux is set by api_set_mix_reg with the auto unmute */
+		SV(BAS_STORAGE_MUX_BASE, pos) = v;
+		if (api_store == 1)
+			storage_flags++;
+	}
+	api_publish_in_input();
+	return 1;
+}
+
+void api_restore_in_input(void)
+{
+	api_restore_mix();  /* sets the mux of the active position with the mixer registers */
+	api_publish_in_input();
+}
+
 static void led_gruen_gelb_wait(uint8_t a)
 {
 	PIN_CLR(PIN_LED_GREEN);
@@ -335,7 +400,7 @@ void api_preset_load(uint8_t preset)
 	for (uint8_t ch = 1; ch <= BAS_STORE_DELAY_COUNT; ch++)
 		api_set_delay(ch, api_get_delay(ch));
 	dsp_ack_delay();
-	api_restore_mix();
+	api_restore_in_input();  /* api_restore_mix + events 45..48 */
 	for (uint8_t ch = 1; ch <= BAS_FLOW_MAX_OUT_CHANNEL; ch++)
 		api_set_out_vol(ch, api_get_out_vol(ch));
 	api_store = 1;
