@@ -15,6 +15,8 @@
 #include "mcuid.h"
 #include "power.h"
 #include "registers.h"
+#include "i2c.h"
+#include "store.h"
 #include <util/delay.h>
 #include "tick.h"
 #include "version.h"
@@ -48,6 +50,9 @@ int main(void)
 	mcuid_init();
 	tick_init();
 	iface_init();
+	i2c_bus_init(1);   /* libs/interface/V40/5/init.bas: open "twic", 100 kHz */
+	i2c_bus_init(2);   /* .../6/init.bas: open "twie" */
+	at24c512_detect();
 	cmd_init();
 	/* config priority = roundrobin, lo/med/hi enabled, vectors in application */
 	CCP = CCP_IOREG_gc;

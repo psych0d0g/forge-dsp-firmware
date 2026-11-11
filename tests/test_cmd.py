@@ -212,5 +212,93 @@ class EepromTest(unittest.TestCase):
         self.assertEqual(out[a + 1], 5)   # reg_debugmode = register 2
 
 
+def consts(flavour, *names):
+    import re
+    t = pathlib.Path(HERE, "..", "src", "flavours", flavour, "flavour.h").read_text()
+    return [int(re.search(rf"#define BAS_{n} (\d+)", t).group(1)) for n in names]
+
+
+def table_words(flavour, label):
+    import re
+    t = pathlib.Path(HERE, "..", "src", "flavours", flavour, "flavour_data.h").read_text()
+    body = re.search(rf"BAS_DATA_TABLE\({label}, \d+\) = \{{(.*?)\}};", t, re.S).group(1)
+    b = bytes(int(x, 16) for x in re.findall(r"0x([0-9A-F]{2})", body))
+    return [b[i] | b[i + 1] << 8 for i in range(0, len(b), 2)]
+
+
+def xmodem(data):
+    crc = 0
+    for c in data:
+        crc ^= c << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return crc
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class StoreTest(unittest.TestCase):
+    """Presets in the external 24xx512 (libs/store/cores)."""
+
+    def at24_with_preset(self, flavour, preset, seed):
+        import random
+        fs, cb = consts(flavour, "STORAGE_FRAMESIZE", "STORAGE_CHKSUM_BASE")
+        base = table_words(flavour, "data_store_addr_values")[preset]
+        rnd = random.Random(seed)
+        frame = bytearray(rnd.randrange(256) for _ in range(fs))
+        crc = xmodem(frame[:cb - 1])
+        frame[cb - 1:cb + 1] = crc.to_bytes(2, "little")
+        img = bytearray(b"\xff" * 65536)
+        img[base:base + fs] = frame
+        return img, bytes(frame), base
+
+    def run_at24(self, flavour, img, lines, out=False):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            fin = pathlib.Path(d, "at24.bin")
+            fin.write_bytes(bytes(img))
+            pre = [f"#at24={fin}"] + ([f"#at24out={d}/out.bin"] if out else [])
+            p = subprocess.run([os.path.join(NATIVE, f"cmd-{flavour}")], input="\n".join(pre + lines) + "\n",
+                               capture_output=True, text=True, timeout=10)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            o = pathlib.Path(d, "out.bin").read_bytes() if out else None
+        return p.stdout, o
+
+    def test_load_values_and_checksum(self):
+        for f in FLAVOURS:
+            presets, = consts(f, "MODUL_MAX_PRESET")
+            p = presets - 1
+            img, frame, base = self.at24_with_preset(f, p, seed=len(f))
+            out, _ = self.run_at24(f, img, [f"#store_load={p}"])
+            self.assertIn(f"@store:{frame.hex().upper()} chksum_error=0", out, f)
+            img[base + 5] ^= 0x01
+            out, _ = self.run_at24(f, img, [f"#store_load={p}", "1|get.1 system.errors"])
+            self.assertIn("chksum_error=1", out, f)
+            self.assertIn("system.errors=[[128,1]]", out, f)  # errorcount_fw_data_chksum_soft
+
+    def test_biquad_record_is_read_backwards(self):
+        f = "V41-96ELN-3"
+        bqtv = table_words(f, "data_store_addr_bqtv")
+        img = bytearray(b"\xff" * 65536)
+        rec = bytes(range(0x10, 0x1A))
+        a = bqtv[1] + 3 * 10
+        img[a:a + 10] = rec
+        out, _ = self.run_at24(f, img, ["#bq=1,3"])
+        self.assertIn(f"@bq:{rec[::-1].hex().upper()} type={rec[9]:02X}", out)
+
+    def test_save_values_page_writes(self):
+        for f in ("V41-96ELN-3", "V30-96LN"):
+            fs, cb = consts(f, "STORAGE_FRAMESIZE", "STORAGE_CHKSUM_BASE")
+            img, frame, base = self.at24_with_preset(f, 0, seed=7)
+            target = table_words(f, "data_store_addr_values")[2]
+            lines = ["#store_load=0", "#store_set=1,170", "#store_save=2"]
+            out, res = self.run_at24(f, img, lines, out=True)
+            exp = bytearray(frame)
+            exp[0] = 170
+            exp[cb - 1:cb + 1] = xmodem(exp[:cb - 1]).to_bytes(2, "little")
+            self.assertEqual(res[target:target + fs], bytes(exp), f)
+            changed = [i for i in range(65536) if res[i] != img[i]]
+            self.assertTrue(all(target <= i < target + fs for i in changed), f)
+
+
 if __name__ == "__main__":
     unittest.main()

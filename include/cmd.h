@@ -121,6 +121,6 @@ void out_i16(int16_t v);
 void out_crlf(void);
 
 /* crc16 of BASCOM (CRC-16/XMODEM) */
-uint16_t bas_crc16(const uint8_t *p, uint8_t len);
+uint16_t bas_crc16(const uint8_t *p, uint16_t len);
 
 #endif

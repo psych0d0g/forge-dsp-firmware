@@ -55,7 +55,7 @@ const char *req_input_str(uint8_t n)
 	return (const char *)&REQ_INPUT((uint16_t)(n - 1) * cmd_req_input_max + 1);
 }
 
-uint16_t bas_crc16(const uint8_t *p, uint8_t len)
+uint16_t bas_crc16(const uint8_t *p, uint16_t len)
 {
 	uint16_t crc = 0;
 	while (len--) {

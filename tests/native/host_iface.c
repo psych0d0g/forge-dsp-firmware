@@ -12,6 +12,8 @@
 #include "mcuid.h"
 #include "eram.h"
 #include "registers.h"
+#include "i2c.h"
+#include "store.h"
 
 uint8_t iface_buart_channel[iface_ch_max + 1] = { 0, 0, 2, 1, 3 };
 volatile uint8_t iface_todo[iface_ch_max + 1];
@@ -19,6 +21,49 @@ char mcuid_string[17] = "ABCDEF0102030405";
 static uint8_t rx[iface_ch_max + 1][128];
 static int cur = -1;
 int host_dtr = 1, host_ir = 0;
+extern int host_i2c_log;
+extern uint8_t at24[65536];
+static const char *at24_out;
+
+static void store_cmd(const char *l)
+{
+	if (!strncmp(l, "#at24=", 6)) {
+		FILE *f = fopen(l + 6, "rb");
+		if (!f || fread(at24, 1, sizeof at24, f) != sizeof at24) { perror(l + 6); exit(2); }
+		fclose(f);
+	} else if (!strncmp(l, "#at24out=", 9)) {
+		at24_out = strdup(l + 9);
+	} else if (!strncmp(l, "#i2clog=", 8)) {
+		host_i2c_log = atoi(l + 8);
+	} else if (!strncmp(l, "#store_load=", 12)) {
+		store_preset = (uint8_t)atoi(l + 12);
+		uint16_t before = store_chksum_error;
+		store_load_values_all();
+		printf("@store:");
+		for (int i = 1; i <= BAS_STORAGE_FRAMESIZE; i++)
+			printf("%02X", storage_non_biquadvalues[i]);
+		printf(" chksum_error=%u\n", store_chksum_error - before);
+	} else if (!strncmp(l, "#store_save=", 12)) {
+		store_preset = (uint8_t)atoi(l + 12);
+		store_save_values_all();
+	} else if (!strncmp(l, "#store_set=", 11)) {  /* #store_set=<index>,<byte> (1-based) */
+		int i, v;
+		sscanf(l + 11, "%d,%d", &i, &v);
+		storage_non_biquadvalues[i] = (uint8_t)v;
+	} else if (!strncmp(l, "#bq=", 4)) {
+		int pr, nr;
+		sscanf(l + 4, "%d,%d", &pr, &nr);
+		store_preset = (uint8_t)pr;
+		store_bq_nr = (uint16_t)nr;
+		store_load_bqtv();
+		printf("@bq:");
+		for (int i = 1; i <= BAS_STORAGE_BQTV_VALUES_FRAMESIZE; i++)
+			printf("%02X", buffer_bytes[i]);
+		store_load_bqtype();
+		printf(" type=%02X\n", buffer_byte);
+	}
+	printf("--\n");
+}
 
 uint8_t iface_hook_ir_master_online(void) { return (uint8_t)host_ir; }
 uint8_t iface_hook_usb_dtr(void) { return (uint8_t)host_dtr; }
@@ -87,11 +132,16 @@ int main(int argc, char **argv)
 	registers_load();
 	sysinit_check(0);
 	sysinit_count_boot();
+	memset(at24, 0xFF, sizeof at24);
+	i2c_bus_init(1);
+	i2c_bus_init(2);
+	at24c512_detect();
 	cmd_init();
 	while (fgets(line, sizeof line, stdin)) {
 		line[strcspn(line, "\r\n")] = 0;
 		if (!strncmp(line, "#dtr=", 5)) { host_dtr = atoi(line + 5); continue; }
 		if (!strncmp(line, "#ir=", 4)) { host_ir = atoi(line + 4); continue; }
+		if (line[0] == '#') { store_cmd(line); continue; }
 		int ch = line[0] - '0';
 		if (ch < 1 || ch > 4 || line[1] != '|')
 			continue;
@@ -102,5 +152,10 @@ int main(int argc, char **argv)
 		printf("--\n");
 	}
 	save_eeprom();
+	if (at24_out) {
+		FILE *f = fopen(at24_out, "wb");
+		fwrite(at24, 1, sizeof at24, f);
+		fclose(f);
+	}
 	return 0;
 }

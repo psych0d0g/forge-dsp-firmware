@@ -71,6 +71,70 @@ def eram_layout(r):
     return out, addr
 
 
+LABEL = re.compile(r"^([A-Za-z_]\w*):$")
+DATA = re.compile(r"^data\s+(.*)$", re.I)
+
+
+def split_items(text):
+    items, cur, q = [], "", False
+    for ch in text:
+        if ch == '"':
+            q = not q
+        if ch == "," and not q:
+            items.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        items.append(cur.strip())
+    return items
+
+
+def data_tables(r):
+    """DATA blocks of the device files: {label: (bytes, [(type, value), ...])} in BASCOM layout
+    (no suffix = byte, % = 16 bit, & = 32 bit, ! = single, "..." = chars + NUL)."""
+    import struct
+    tables, label = {}, None
+    for line in r.flat:
+        m = re.search(r"'(devices/[^']*):(\d+)$", line)
+        if not m:
+            label = None
+            continue
+        code = strip_comment(line[:m.start()])
+        if not code:
+            continue
+        lm = LABEL.match(code)
+        if lm:
+            label = lm.group(1)
+            tables[label] = (bytearray(), [])
+            continue
+        dm = DATA.match(code)
+        if not dm or label is None:
+            if not dm:
+                label = None
+            continue
+        raw, items = tables[label]
+        for it in split_items(dm.group(1)):
+            if it.startswith('"'):
+                sv = re.sub(r"\{(\d{3})\}", lambda x: chr(int(x.group(1))), it[1:-1])
+                raw += sv.encode("latin-1") + b"\0"
+                items.append(("s", sv))
+                continue
+            suf = it[-1] if it[-1] in "%&!#" else ""
+            v = r.value(it[:-1] if suf else it)
+            if suf == "!":
+                raw += struct.pack("<f", float(v)); items.append(("f", float(v)))
+            elif suf == "#":
+                raw += struct.pack("<d", float(v)); items.append(("d", float(v)))
+            elif suf == "&":
+                raw += struct.pack("<I", int(v) & 0xFFFFFFFF); items.append(("l", int(v)))
+            elif suf == "%":
+                raw += struct.pack("<H", int(v) & 0xFFFF); items.append(("w", int(v)))
+            else:
+                raw += bytes([int(v) & 0xFF]); items.append(("b", int(v)))
+    return {k: v for k, v in tables.items() if v[1]}
+
+
 def generate(main):
     r = Resolver(main).run()
     fid = flavour_id(main)
@@ -158,7 +222,21 @@ def generate(main):
         e.append(f"#define {N}_COUNT {n}")
         e.append(f"#define {N}_SIZE {size}")
     e.append("\n#endif")
-    return fid, "\n".join(h) + "\n", "\n".join(c) + "\n", "\n".join(e) + "\n", layout
+    tables = data_tables(r)
+    d = [HEADER, "#ifndef FLAVOUR_DATA_H_\n#define FLAVOUR_DATA_H_\n", "#include <stdint.h>",
+         '#include "bas_data.h"', "",
+         "/* DATA blocks of the device files in BASCOM byte layout; lookup()/restore+read via bas_data.h */"]
+    for label, (raw, items) in tables.items():
+        types = "".join(sorted(set(t for t, _ in items)))
+        d.append(f"/* {label}: {len(items)} items, types {types} */")
+        d.append(f"BAS_DATA_TABLE({label}, {len(raw)}) = {{")
+        for i in range(0, len(raw), 16):
+            d.append("\t" + ", ".join(f"0x{b:02X}" for b in raw[i:i + 16]) + ",")
+        d.append("};")
+        d.append(f"#define {label}_ITEMS {len(items)}")
+    d.append("\n#endif")
+    return (fid, "\n".join(h) + "\n", "\n".join(c) + "\n", "\n".join(e) + "\n", layout,
+            "\n".join(d) + "\n")
 
 
 def main():
@@ -172,9 +250,10 @@ def main():
         raise SystemExit("no devices/*/*/*/main.bas found")
     bad = 0
     for main in mains:
-        fid, h, c, e, _ = generate(main)
+        fid, h, c, e, _, dt = generate(main)
         d = os.path.join(a.out, fid)
-        for name, text in (("flavour.h", h), ("flavour_pins.c", c), ("flavour_eram.h", e)):
+        for name, text in (("flavour.h", h), ("flavour_pins.c", c), ("flavour_eram.h", e),
+                           ("flavour_data.h", dt)):
             p = os.path.join(d, name)
             if a.check:
                 old = open(p).read() if os.path.exists(p) else None
