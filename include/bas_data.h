@@ -19,6 +19,16 @@ static inline uint16_t bas_data_word(const uint8_t *p) { return bas_data_byte(p)
 #define BAS_LOOKUP_W(label, i) bas_data_word(&(label)[(uint16_t)(i) * 2])
 #define BAS_LOOKUP_B(label, i) bas_data_byte(&(label)[(uint16_t)(i)])
 
+/* DATA ...# (64-bit double, requires -mdouble=64 on AVR) */
+static inline double bas_data_double(const uint8_t *p)
+{
+	union { uint8_t b[8]; double d; } u;
+	for (uint8_t i = 0; i < 8; i++)
+		u.b[i] = bas_data_byte(p + i);
+	return u.d;
+}
+#define BAS_LOOKUP_D(label, i) bas_data_double(&(label)[(uint16_t)(i) * 8])
+
 /* restore label / read x */
 typedef struct { const uint8_t *p; } bas_reader;
 #define BAS_RESTORE(label) ((bas_reader){ (label) })

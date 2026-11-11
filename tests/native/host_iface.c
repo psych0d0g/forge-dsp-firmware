@@ -20,6 +20,7 @@
 #include "dac.h"
 #include "ct7302.h"
 #include "flavour_systeminit.h"
+#include "biquad.h"
 void interrupts_enable(void) { printf("@sei\n"); }
 void watchdog_start(void) {}
 void watchdog_kick(void) {}
@@ -82,6 +83,21 @@ static void store_cmd(const char *l)
 	} else if (!strncmp(l, "#dsp_core=", 10)) {
 		dsp_core_init((uint8_t)atoi(l + 10));
 		printf("@dsp_core: hw=%04X\n", hardware_dsp);
+	} else if (!strncmp(l, "#bq_calc=", 9)) {  /* type,f,gain(0.1dB),q(1/1000),b,flags as integers */
+		int t, f, g, q, b, fl;
+		sscanf(l + 9, "%d,%d,%d,%d,%d,%d", &t, &f, &g, &q, &b, &fl);
+		dsp_bq_cache_type = (uint8_t)t;
+		if (!(fl & 0x80))
+			dsp_bq_cache_type = 0;  /* flags bit 7 = 0: all pass */
+		dsp_bq_cache_values[1] = f;
+		dsp_bq_cache_values[3] = g; dsp_bq_cache_values[3] = dsp_bq_cache_values[3] / 10;
+		dsp_bq_cache_values[2] = q; dsp_bq_cache_values[2] = dsp_bq_cache_values[2] / 1000;
+		dsp_bq_cache_values[4] = b;
+		dsp_bq_calc_type(dsp_bq_cache_type);
+		dsp_bq_calcto5coeff();
+		uint32_t raw[6];
+		dsp_bq_convert2raw(raw);
+		printf("@bq:%08X %08X %08X %08X %08X\n", raw[1], raw[2], raw[3], raw[4], raw[5]);
 	} else if (!strcmp(l, "#systeminit")) {
 		flavour_systeminit_peripherals();
 		printf("@hw:%04X dsp:%04X\n", hardware_other, hardware_dsp);

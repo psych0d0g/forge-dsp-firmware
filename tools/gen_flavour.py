@@ -289,7 +289,7 @@ def generate(main):
         elif isinstance(v, int):
             h.append(f"#define {n} {v}" if v >= 0 else f"#define {n} ({v})")
         elif isinstance(v, float):
-            h.append(f"#define {n} {v!r}f")
+            h.append(f"#define {n} {v!r}")  # double, as BASCOM consts
         elif isinstance(v, str) and not re.search(r"[=<>]", v):
             h.append(f"#define {n} {c_string(v)}")
         else:

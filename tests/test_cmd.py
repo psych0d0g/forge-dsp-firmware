@@ -640,5 +640,129 @@ class SysteminitTest(unittest.TestCase):
                               "@i2c1: S 98 01 93 P"])
 
 
+def bq_reference(flavour, t, f, g, q, b, flags):
+    """libs/dsp/tas3108 biquad formulas in IEEE double, independent of the C port."""
+    import math
+    import struct
+    pw = table_bytes(flavour, "data_power_gain")
+    table = [struct.unpack("<d", pw[i:i + 8])[0] for i in range(0, len(pw), 8)]
+    if not flags & 0x80:
+        t = 0
+    F, Qv, G, B = float(f), q / 1000.0, g / 10.0, float(b)
+    fs = 96000
+
+    def omega(fr):
+        return (6.283185307179586476925286766559 * fr) / fs
+
+    def alpha(w, qq):
+        return math.sin(w) / (2.0 * qq)
+
+    def power(gain):
+        gain = gain * 10
+        l = int(gain)
+        neg = l < 0
+        l = abs(l)
+        c = l & 0xFF
+        if c > 120:
+            c = 0
+        p = table[c]
+        return 1.0 / p if neg else p
+
+    c = {}
+    def high(qq):
+        w = omega(F); a = alpha(w, qq); co = math.cos(w)
+        c.update(B0=(1.0 + co) / 2.0, B1=-(1.0 + co), A0=1.0 + a, A1=-(-2.0 * co), A2=-(1.0 - a))
+        c["B2"] = c["B0"]
+
+    def low(qq):
+        w = omega(F); a = alpha(w, qq); co = math.cos(w)
+        c.update(B0=(1.0 - co) / 2.0, B1=1.0 - co, A0=1.0 + a, A1=-(-2.0 * co), A2=-(1.0 - a))
+        c["B2"] = c["B0"]
+
+    def shelf(high_):
+        w = omega(F); P = power(G); co = math.cos(w)
+        b1, b2 = P + 1.0, P - 1.0
+        b3, b4 = b1 * co, b2 * co
+        bso = math.sqrt(P) / Qv * math.sin(w)
+        if high_:
+            c.update(B0=P * ((b1 + b4) + bso), B1=-2.0 * (P * (b2 + b3)), B2=P * ((b1 + b4) - bso),
+                     A0=(b1 - b4) + bso, A1=-2.0 * (b2 - b3), A2=-((b1 - b4) - bso))
+        else:
+            c.update(B0=P * ((b1 - b4) + bso), B1=2.0 * (P * (b2 - b3)), B2=P * ((b1 - b4) - bso),
+                     A0=(b1 + b4) + bso, A1=2.0 * (b2 + b3), A2=-((b1 + b4) - bso))
+
+    def eq(qq):
+        w = omega(F); a = alpha(w, qq); co = math.cos(w); P = power(G)
+        c.update(A0=1.0 + a / P, A1=-(-2.0 * co), A2=-(1.0 - a / P), B0=1.0 + a * P, B1=-2.0 * co,
+                 B2=1.0 - a * P)
+
+    qb, qe, ql, qc = 0.7071067811865476, 0.5773502691896257, 0.5, 1.0
+    if t == 1: eq(Qv)
+    elif t == 8:
+        w = omega(F); a = alpha(w, 1.0)
+        c.update(A0=1.0 + a, A1=1.0 - a, A2=0.0, B0=1.0, B1=-1.0, B2=0.0)
+    elif t == 9: high(qb)
+    elif t == 10: high(qe)
+    elif t == 11: high(ql)
+    elif t == 13: high(Qv)
+    elif t == 12: high(qc)
+    elif t == 2:
+        w = omega(F); a = alpha(w, 1.0)
+        c.update(A0=1.0 + a, A1=1.0 - a, A2=0.0, B0=1.0 * a, B1=1.0 * a, B2=0.0)
+    elif t == 3: low(qb)
+    elif t == 4: low(qe)
+    elif t == 5: low(ql)
+    elif t == 7: low(Qv)
+    elif t == 6: low(qc)
+    elif t == 14: shelf(False)
+    elif t == 15: shelf(True)
+    elif t == 16:
+        w = omega(F); a = alpha(w, F / B); co = math.cos(w)
+        c.update(A0=1.0 + a, A1=2.0 * co, A2=-(1.0 - a), B0=1.0, B1=-2.0 * co, B2=1.0)
+    elif t == 18: eq(F / B)
+    elif t == 19:
+        c.update(A0=1.0, A1=1.866634, A2=-0.8670602, B0=0.1170960, B1=-0.0999452, B2=-0.0129345)
+    elif t == 20:
+        w = omega(F); a = alpha(w, Qv); co = math.cos(w)
+        c.update(A0=1.0 + a, B2=1.0 + a, A1=2.0 * co, B1=-(2.0 * co), B0=1.0 - a, A2=-(1.0 - a))
+    else:
+        c.update(A0=1.0, A1=0.0, A2=0.0, B0=1.0, B1=0.0, B2=0.0)
+    a0 = c["A0"]
+    order = [c["A2"] / a0, c["A1"] / a0, c["B2"] / a0, c["B1"] / a0, c["B0"] / a0]
+    return [(((int(v * 8388608.0) + 134217728) & 0xFFFFFFFF) ^ 0x08000000) for v in order]
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class BiquadTest(unittest.TestCase):
+    def test_all_types_against_reference(self):
+        import itertools
+        import random
+        f = "V41-96ELN-3"
+        rnd = random.Random(1)
+        cases = []
+        for t in range(0, 21):
+            for fr, g, q in itertools.product((10, 20, 63, 1000, 8000, 22000), (-120, -35, 0, 35, 60),
+                                              (1, 500, 707, 2000, 10000)):
+                if rnd.random() < 0.25:
+                    cases.append((t, fr, g, q, rnd.choice((0, 10, 100, 1000)) or 1, 0x80))
+        cases += [(1, 1000, 30, 1000, 0, 0x00), (14, 80, 125, 707, 0, 0x80), (15, 10000, -130, 707, 0, 0x80)]
+        p = subprocess.run([os.path.join(NATIVE, f"cmd-{f}")],
+                           input="\n".join(f"#bq_calc={','.join(map(str, c))}" for c in cases) + "\n",
+                           capture_output=True, text=True, timeout=30)
+        got = [l[4:] for l in p.stdout.splitlines() if l.startswith("@bq:")]
+        self.assertEqual(len(got), len(cases))
+        for c, g in zip(cases, got):
+            exp = " ".join(f"{v:08X}" for v in bq_reference(f, *c))
+            self.assertEqual(g, exp, c)
+
+    def test_known_values(self):
+        # all pass / bypass: b0 = 1.0 = 0x00800000, rest 0
+        out = run("V41-96ELN-3", ["#bq_calc=0,1000,0,707,0,128"])
+        self.assertEqual(out[0], ["@bq:00000000 00000000 00000000 00000000 00800000"])
+        # negative coefficient as 28-bit two's complement (a2 of a lowpass)
+        out = run("V41-96ELN-3", ["#bq_calc=3,1000,0,707,0,128"])
+        self.assertTrue(out[0][0].startswith("@bq:0F"), out)
+
+
 if __name__ == "__main__":
     unittest.main()
