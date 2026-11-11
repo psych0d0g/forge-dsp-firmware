@@ -14,6 +14,9 @@
 #include "registers.h"
 #include "i2c.h"
 #include "store.h"
+#include "expander.h"
+void host_i2c_add(uint8_t bus, uint8_t addr);
+uint8_t *host_i2c_regs(uint8_t bus, uint8_t addr);
 
 uint8_t iface_buart_channel[iface_ch_max + 1] = { 0, 0, 2, 1, 3 };
 volatile uint8_t iface_todo[iface_ch_max + 1];
@@ -33,6 +36,40 @@ static void store_cmd(const char *l)
 		fclose(f);
 	} else if (!strncmp(l, "#at24out=", 9)) {
 		at24_out = strdup(l + 9);
+	} else if (!strncmp(l, "#i2cdev=", 8)) {  /* #i2cdev=<bus>,<addr hex>[,<reg>=<val>...] */
+		unsigned bus, addr;
+		sscanf(l + 8, "%u,%x", &bus, &addr);
+		host_i2c_add((uint8_t)bus, (uint8_t)addr);
+		const char *q = strchr(strchr(l, ',') + 1, ',');
+		while (q) {
+			unsigned r, v;
+			if (sscanf(q + 1, "%x=%x", &r, &v) == 2)
+				host_i2c_regs((uint8_t)bus, (uint8_t)addr)[r] = (uint8_t)v;
+			q = strchr(q + 1, ',');
+		}
+	} else if (!strncmp(l, "#regs=", 6)) {      /* #regs=<bus>,<addr hex>,<n> */
+		unsigned bus, addr, n;
+		sscanf(l + 6, "%u,%x,%u", &bus, &addr, &n);
+		uint8_t *r = host_i2c_regs((uint8_t)bus, (uint8_t)addr);
+		printf("@regs:");
+		for (unsigned i = 0; i < n; i++)
+			printf("%02X", r ? r[i] : 0);
+		printf("\n");
+	} else if (!strcmp(l, "#expander_init")) {
+		expander_init();
+		printf("@hw:%04X\n", hardware_other);
+	} else if (!strncmp(l, "#pca9555=", 9)) {   /* #pca9555=<bits hex>,<value hex> */
+		unsigned b, v;
+		sscanf(l + 9, "%x,%x", &b, &v);
+		pca9555_bits = (uint16_t)b;
+		pca9555_value = (uint16_t)v;
+		pca9555_4F_set_output();
+	} else if (!strncmp(l, "#pca9554=", 9)) {
+		unsigned b, v;
+		sscanf(l + 9, "%x,%x", &b, &v);
+		pca9554_bits = (uint8_t)b;
+		pca9554_value = (uint8_t)v;
+		pca9554_4F_set_output();
 	} else if (!strncmp(l, "#i2clog=", 8)) {
 		host_i2c_log = atoi(l + 8);
 	} else if (!strncmp(l, "#store_load=", 12)) {

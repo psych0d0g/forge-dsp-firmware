@@ -17,6 +17,7 @@
 #include "registers.h"
 #include "i2c.h"
 #include "store.h"
+#include "expander.h"
 #include <util/delay.h>
 #include "tick.h"
 #include "version.h"
@@ -53,6 +54,9 @@ int main(void)
 	i2c_bus_init(1);   /* libs/interface/V40/5/init.bas: open "twic", 100 kHz */
 	i2c_bus_init(2);   /* .../6/init.bas: open "twie" */
 	at24c512_detect();
+	/* PORT: si5338 and store init (preset load) follow; the power-up steps of systeminit
+	 * (pca955x bit 6/7, peripheral resets) stay off until the DSP init is ported (#3) */
+	expander_init();
 	cmd_init();
 	/* config priority = roundrobin, lo/med/hi enabled, vectors in application */
 	CCP = CCP_IOREG_gc;

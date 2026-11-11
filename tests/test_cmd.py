@@ -300,5 +300,49 @@ class StoreTest(unittest.TestCase):
             self.assertTrue(all(target <= i < target + fs for i in changed), f)
 
 
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class ExpanderTest(unittest.TestCase):
+    """libs/expander: exact I2C transfers of the BASCOM code."""
+
+    def run_lines(self, flavour, lines):
+        p = subprocess.run([os.path.join(NATIVE, f"cmd-{flavour}")], input="\n".join(lines) + "\n",
+                           capture_output=True, text=True, timeout=10)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return [l for l in p.stdout.splitlines() if l.startswith("@")]
+
+    def test_96eln3_pca9554_41_and_pca9555_4f(self):
+        out = self.run_lines("V41-96ELN-3", ["#i2cdev=1,40,0=5A", "#i2cdev=1,4E", "#i2clog=1",
+                                             "#expander_init", "#pca9555=00C0,0040", "#i2clog=0",
+                                             "#regs=1,4E,8"])
+        self.assertEqual(out, [
+            "@i2c1: S 40 P", "@i2c1: S 40 03 FF P", "@i2c1: S 40 00 Sr 41 r5AN P",
+            "@i2c1: S 4E P", "@i2c1: S 4E 06 3F P", "@i2c1: S 4E 07 FF P",
+            "@i2c1: S 4E 02 3F P", "@i2c1: S 4E 03 00 P",
+            "@i2c1: S 4E 01 Sr 4F r00N P", "@i2c1: S 4E 00 Sr 4F r00N P",
+            "@hw:0061",
+            "@i2c1: S 4E 03 Sr 4F r00N P", "@i2c1: S 4E 02 Sr 4F r3FN P",
+            "@i2c1: S 4E 02 7F P", "@i2c1: S 4E 03 00 P",
+            "@regs:00007F0000003FFF"])
+
+    def test_cored8_falls_back_to_a_addresses(self):
+        out = self.run_lines("V40-CORED8", ["#i2cdev=1,70", "#i2cdev=1,7E", "#i2clog=1",
+                                            "#expander_init", "#pca9554=80,00"])
+        self.assertEqual(out, [
+            "@i2c1: S 40 P", "@i2c1: S 70 P", "@i2c1: S 70 03 FF P", "@i2c1: S 70 00 Sr 71 r00N P",
+            "@i2c1: S 4E P", "@i2c1: S 7E P", "@i2c1: S 7E 03 3F P", "@i2c1: S 7E 01 BF P",
+            "@i2c1: S 7E 00 Sr 7F r00N P", "@hw:0061",
+            "@i2c1: S 7E 01 Sr 7F rBFN P", "@i2c1: S 7E 01 3F P"])
+
+    def test_missing_expander_is_counted(self):
+        out = self.run_lines("V40-96ELN", ["#expander_init", "1|get.1 system.errors"])
+        # pca9554_41_rdy = 6, pca9554_4F_rdy = 5, errorcount_offset_other = 17
+        self.assertIn("@hw:0001", out)
+        self.assertIn("@0: <.1 system.errors=[[23,1],[22,1]]\\r\\n", out)
+
+    def test_96ln_has_no_expander(self):
+        out = self.run_lines("V30-96LN", ["#i2clog=1", "#expander_init"])
+        self.assertEqual(out, ["@hw:0001"])
+
+
 if __name__ == "__main__":
     unittest.main()

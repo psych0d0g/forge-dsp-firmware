@@ -12,6 +12,38 @@ int host_i2c_log;
 uint8_t at24[65536];
 static uint8_t cur_dev[3], state[3];  /* state: 0 idle, 1 addr hi, 2 addr lo, 3 data */
 static uint16_t ptr;
+
+/* simple register devices ("#i2cdev=<bus>,<addr hex>"): first written byte = register pointer */
+struct regdev { uint8_t bus, addr, ptr, regs[256], used; };
+static struct regdev devs[8];
+static struct regdev *cur_rd[3];
+
+void host_i2c_add(uint8_t bus, uint8_t addr)
+{
+	for (int i = 0; i < 8; i++)
+		if (!devs[i].used) {
+			devs[i].used = 1;
+			devs[i].bus = bus;
+			devs[i].addr = addr & 0xFE;
+			return;
+		}
+}
+
+uint8_t *host_i2c_regs(uint8_t bus, uint8_t addr)
+{
+	for (int i = 0; i < 8; i++)
+		if (devs[i].used && devs[i].bus == bus && devs[i].addr == (addr & 0xFE))
+			return devs[i].regs;
+	return NULL;
+}
+
+static struct regdev *find(uint8_t bus, uint8_t addr)
+{
+	for (int i = 0; i < 8; i++)
+		if (devs[i].used && devs[i].bus == bus && devs[i].addr == (addr & 0xFE))
+			return &devs[i];
+	return NULL;
+}
 static int logged[3];
 
 void delay_ms(uint16_t ms) { (void)ms; }
@@ -36,8 +68,18 @@ void twi_wbyte(uint8_t bus, uint8_t b)
 	if (state[bus] == 0xFE) {
 		cur_dev[bus] = b;
 		state[bus] = (b & 1) ? 4 : 1;
-		if ((b & 0xFE) != 0xA8 || bus != 1)
-			i2c_err = 1;  /* nobody else on the simulated bus */
+		cur_rd[bus] = find(bus, b);
+		if (!cur_rd[bus] && ((b & 0xFE) != 0xA8 || bus != 1))
+			i2c_err = 1;  /* NACK: nobody at this address */
+		return;
+	}
+	if (cur_rd[bus]) {
+		if (state[bus] == 1) {
+			cur_rd[bus]->ptr = b;
+			state[bus] = 3;
+		} else {
+			cur_rd[bus]->regs[cur_rd[bus]->ptr++] = b;
+		}
 		return;
 	}
 	if (cur_dev[bus] != 0xA8 || bus != 1)
@@ -55,7 +97,9 @@ void twi_wbyte(uint8_t bus, uint8_t b)
 uint8_t twi_rbyte(uint8_t bus, uint8_t ack)
 {
 	uint8_t v = 0xFF;
-	if (cur_dev[bus] == 0xA9 && bus == 1)
+	if (cur_rd[bus])
+		v = cur_rd[bus]->regs[cur_rd[bus]->ptr++];
+	else if (cur_dev[bus] == 0xA9 && bus == 1)
 		v = at24[ptr++];  /* sequential read crosses pages */
 	lg(bus, " r%02X", v);
 	if (!ack)
