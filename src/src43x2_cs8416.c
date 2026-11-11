@@ -95,6 +95,28 @@ static void cs8416_init(void)
 }
 #endif
 
+#if BAS_MODUL_CS8416 > 0
+static uint8_t cs8416_rd(uint8_t reg)
+{
+	if (!(hardware_other & (1u << BAS_CS8416_RDY)))
+		return buffer_byte;  /* as BASCOM: buffer_byte unchanged */
+	i2c_device_addr = BAS_CS8416_ADR_W;
+	i2c_reg = reg;
+	i2c_rbyte(2);
+	return buffer_byte;
+}
+
+uint8_t cs8416_get_rec_error(void) { return cs8416_rd(BAS_CS8416_REG_REC_ERROR); }
+uint8_t cs8416_get_form_state(void) { return cs8416_rd(BAS_CS8416_REG_FORM_STATE); }
+
+void cs8416_set_mux(uint8_t v)
+{
+	if (!(hardware_other & (1u << BAS_CS8416_RDY)))
+		return;
+	wr(2, BAS_CS8416_ADR_W, BAS_CS8416_REG_CTRL4, (uint8_t)((v << 3) + BAS_CS8416_REG_CTRL4_INIT));
+}
+#endif
+
 void spdif_init(void)
 {
 #if BAS_MODUL_SRC43X2 > 0

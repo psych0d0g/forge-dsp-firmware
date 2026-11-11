@@ -112,9 +112,25 @@ void ct7302_22_set_mux(uint8_t channel)
 {
 	if (!(hardware_other & (1u << BAS_CT7302_22_RDY)))
 		return;
+#if BAS_MODUL_CT7302_USB_AT_I2S == 1
+	if (channel == 0x01)
+		channel = 0x05;
+#endif
 	i2c_device_addr = 0x22;
 	rmw(BAS_CT7302_REG_INPUT_SRCMODE, 0xF8, channel);
 }
+
+/* ct7302_get_form_state: 1 = valid PCM (no silence/error flags) */
+static uint8_t form_state(uint8_t adr, uint8_t rdy)
+{
+	if (!(hardware_other & (1u << rdy)))
+		return 0;
+	i2c_device_addr = adr;
+	return (r(BAS_CT7302_REG_PCM_SILENCE) & 0xE0) == 0x00;
+}
+
+uint8_t ct7302_20_get_form_state(void) { return form_state(0x20, BAS_CT7302_20_RDY); }
+uint8_t ct7302_22_get_form_state(void) { return form_state(0x22, BAS_CT7302_22_RDY); }
 
 uint8_t ct7302_20_get_mux(void)
 {

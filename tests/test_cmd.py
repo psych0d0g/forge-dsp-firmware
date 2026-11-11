@@ -1030,6 +1030,74 @@ class BiquadCmdTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class EventTest(LinesMixin, unittest.TestCase):
+    """libs/ctrl/events (pins, overflow, SPDIF receivers) and cmd_event / cmd_com."""
+
+    def test_pins_and_overflow(self):
+        for f in FLAVOURS:
+            sd, dtr, gs1, ov = consts(f, "EVENTS_FIELD_SYSTEM_SHUTDOWN", "EVENTS_FIELD_EXT_USB_DTR",
+                                     "EVENTS_FIELD_GROUND_SWITCH1", "EVENTS_FIELD_OVERFLOW_AD")
+            out = self.lines(f, ["#pin=PIN_PERIPHERAL_AD_OVERFLOW,1", "#pin=PIN_CPU_POWER_CTRL_IN,1",
+                                 "#events_init", "#events_poll", f"#event?{sd}",
+                                 "#pin=PIN_CPU_POWER_CTRL_IN,0", "#pin=PIN_EXT_USB_DTR,1",
+                                 "#pin=PIN_GROUND_SWITCH_2,1", "#events_poll", f"#event?{sd}", f"#event?{dtr}",
+                                 f"#event?{gs1}", f"#event?{ov}",
+                                 "#pin=PIN_PERIPHERAL_AD_OVERFLOW,0", "#events_poll", f"#event?{ov}",
+                                 "#events_poll", f"#event?{ov}",  # no new edge
+                                 "#pin=PIN_PERIPHERAL_AD_OVERFLOW,1", "#events_poll",
+                                 "#events_overflow", f"#event?{ov}"])
+            evs = [l for l in out if l.startswith("@event")]
+            self.assertEqual(evs[0].split(":")[1].split(",")[0], "0", f)  # power in high: no shutdown
+            self.assertEqual(evs[1].split(":")[1].split(",")[0], "1", f)  # power in low: shutdown
+            self.assertEqual(evs[2].split(":")[1].split(",")[0], "1", f)  # usb dtr
+            self.assertEqual(evs[3].split(":")[1].split(",")[0][-1:], "1", f)  # ground switch 2, bit 0
+            v0 = table_bytes(f, "events_field_init_values")[ov - 1]   # default at sysinit
+            v1 = ((v0 + 1) << 1) & 0xFF
+            self.assertEqual(evs[4], f"@event{ov}:{v0},0", f)            # no overflow edge yet
+            self.assertEqual(evs[5], f"@event{ov}:{v1},1", f)            # (v+1)<<1, inverted pin
+            self.assertEqual(evs[6], f"@event{ov}:{v1},1", f)
+            self.assertEqual(evs[7], f"@event{ov}:{v1 - 1},2", f)        # decay in the main loop
+            p = subprocess.run([os.path.join(NATIVE, f"cmd-{f}")], input="\n".join([
+                "#pin=PIN_PERIPHERAL_AD_OVERFLOW,1", "#events_init", "#pin=PIN_PERIPHERAL_AD_OVERFLOW,0",
+                "#events_poll", "#pin=PIN_PERIPHERAL_AD_OVERFLOW,1", "#events_poll"]) + "\n",
+                capture_output=True, text=True, timeout=10)
+            self.assertIn("@pin:PIN_LED_RED=1\n", p.stdout, f)   # red LED while overflowing
+            self.assertIn("@pin:PIN_LED_RED=0\n", p.stdout, f)
+
+    def test_event_commands_and_com(self):
+        f = "V41-96ELN-3"
+        out = self.lines(f, ["#events_init", "1|set.1 event.70.value=5", "1|get.1 event.70.value",
+                             "1|get.1 event.monitor=[70,0,0,200,0]", "1|set.1 event.block.1=[1,2,3,4]",
+                             "1|get.1 event.monitor=[81,82,83,84,0]", "1|set.1 event.block.13=[1,2,3,4]",
+                             "1|set.1 event.0.value=1", "1|set.1 event.129.value=1", "1|get.1 event.monitor",
+                             "1|set.1 event.70.init=9", "1|get.1 event.70.init", "1|set.1 com.3=hello",
+                             "1|set.1 com.4=x", "1|set.1 com.2=x"])
+        self.assertEqual(out[0], "@0: *.1 event.70.value ok\\r\\n")
+        self.assertEqual(out[1], "@0: <.1 event.70.value=5\\r\\n")
+        self.assertEqual(out[2], "@0: #.1 event.monitor=[5,0,0,0,0]\\r\\n")
+        self.assertEqual(out[3], "@0: #.1 event.monitor=[1,2,3,4,0]\\r\\n")  # block: no answer
+        for i in (4, 5, 6):
+            self.assertIn("command out of range", out[i])
+        self.assertIn("unknown para", out[7])
+        self.assertEqual(out[9], "@0: <.1 event.70.init=9\\r\\n")
+        self.assertEqual(out[10], "@1:hello\\r\\n")   # #3 = COM2 = RS485 master
+        self.assertEqual(out[11], "@3:x\\r\\n")       # #4 = COM4 = RS485 slave
+        self.assertIn("unknown command", out[12])     # #2 only with BT720
+
+    def test_spdif_ct7302_scan(self):
+        f = "V41-96ELN-3"
+        r1, r2, r3, r4 = consts(f, "EVENTS_FIELD_SPDIF_REC_1", "EVENTS_FIELD_SPDIF_REC_2",
+                                "EVENTS_FIELD_SPDIF_REC_3", "EVENTS_FIELD_SPDIF_REC_4")
+        out = self.lines(f, ["#i2cdev=1,20,122=0", "#i2cdev=1,22,122=0", "#spdif_init", "#events_init"] +
+                         ["#events_spdif"] * 6 + [f"#event?{n}" for n in (r1, r2, r3, r4)] + ["#regs=1,22,8"])
+        vals = [l.split(":")[1].split(",")[0] for l in out if l.startswith("@event")]
+        self.assertEqual(vals, ["1", "1", "1", "1"])  # silence register 0: valid PCM on every input
+        regs = bytes.fromhex([l for l in out if l.startswith("@regs:")][0][6:])
+        # 6 steps: mux 1(->5 over I2S),2,3,4,0,1(->5): ends on RX5
+        self.assertEqual(regs[4] & 0x07, 0x05)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

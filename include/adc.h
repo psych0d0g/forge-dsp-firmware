@@ -7,6 +7,7 @@
 void adc_init(void);
 void cs5366_set_mute(uint8_t v);
 void cs5366_set_highpass(uint8_t v);
+void cs5366_reset_overflow(void);
 #else
 static inline void adc_init(void) {}
 #endif

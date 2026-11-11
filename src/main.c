@@ -21,6 +21,8 @@
 #include "si5338.h"
 #include "flavour_systeminit.h"
 #include "api.h"
+#include "events.h"
+#include "loopcall.h"
 #include <util/delay.h>
 #include "tick.h"
 #include "version.h"
@@ -68,6 +70,10 @@ int main(void)
 	/* libs/api/init.bas, then the preset load of modc_load_preset (MODC itself follows) */
 	api_init();
 	api_init_mute();
+	ctrl_events_init();   /* libs/ctrl/events init parts: fields, shutdown, usb, grounds, overflow */
+	events_poll_pins();
+	if (PIN_READ(PIN_OPTION_SPDIF_4CH) == 0x00)
+		events_spdif_init();
 	modc_request_preset(registers[BAS_REG_LOAD_PRESET]);  /* ctrl_modc_init without MODC entries */
 #else
 	/* safe state: only detection; peripheral resets held, power-up bits off */
@@ -90,11 +96,10 @@ int main(void)
 	for (;;) {
 		watchdog_reset();
 		uint16_t now = tick_ms();
-		cmd_check4buffer();
 #if FORGE_BRINGUP && FLAVOUR_SYSTEMINIT_COMPLETE
-		modc_cleanup_mainloop();
-		api_mainloop();
-		store_mainloop();
+		loopcall(loopcall_take());
+#else
+		cmd_check4buffer();
 #endif
 		power_poll(now);
 		if ((uint16_t)(now - last) >= 500) {

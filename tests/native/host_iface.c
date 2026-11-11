@@ -33,6 +33,24 @@ void host_i2c_add(uint8_t bus, uint8_t addr);
 uint8_t *host_i2c_regs(uint8_t bus, uint8_t addr);
 void host_i2c_readonly(uint8_t bus, uint8_t addr);
 void host_i2c_block(uint8_t bus, uint8_t addr);
+#include "events.h"
+static struct { char name[40]; int v; } pins[32];
+int host_pin_read(const char *name)
+{
+	for (int i = 0; i < 32; i++)
+		if (!strcmp(pins[i].name, name))
+			return pins[i].v;
+	return 0;
+}
+static void host_pin_set(const char *name, int v)
+{
+	for (int i = 0; i < 32; i++)
+		if (!pins[i].name[0] || !strcmp(pins[i].name, name)) {
+			snprintf(pins[i].name, sizeof pins[i].name, "%s", name);
+			pins[i].v = v;
+			return;
+		}
+}
 const uint8_t *host_i2c_blockdata(uint8_t bus, uint8_t addr, uint8_t reg);
 #include "api.h"
 
@@ -144,6 +162,23 @@ static void store_cmd(const char *l)
 		for (int i = 0; i < 12; i++)
 			api_mainloop();  /* autounmute + mixer registers */
 		printf("@preset:%u chksum_errors=%u\n", store_preset, store_chksum_error);
+	} else if (!strncmp(l, "#pin=", 5)) {         /* #pin=PIN_NAME,v */
+		char n[40];
+		int v = 0;
+		if (sscanf(l + 5, "%39[^,],%d", n, &v) == 2)
+			host_pin_set(n, v);
+	} else if (!strcmp(l, "#events_init")) {
+		ctrl_events_init();
+		events_spdif_init();
+	} else if (!strcmp(l, "#events_poll")) {
+		events_poll_pins();
+	} else if (!strcmp(l, "#events_overflow")) {
+		events_overflow_mainloop();
+	} else if (!strcmp(l, "#events_spdif")) {
+		events_spdif_mainloop();
+	} else if (!strncmp(l, "#event?", 7)) {      /* #event?N: value and change counter */
+		int n = atoi(l + 7);
+		printf("@event%d:%u,%u\n", n, events_field_value[n], events_is_changed[n]);
 	} else if (!strcmp(l, "#store_init")) {
 		store_init();
 	} else if (!strcmp(l, "#mainloop")) {        /* one main loop of the audio part */

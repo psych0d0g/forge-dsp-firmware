@@ -74,4 +74,13 @@ void adc_init(void)
 	i2c_reg = BAS_CS5366_REG_OVERFLOW_STATE;
 	i2c_rbyte(BUS);
 }
+
+void cs5366_reset_overflow(void)
+{
+	if (!RDY)
+		return;
+	i2c_device_addr = ADR;  /* read clears the overflow state */
+	i2c_reg = BAS_CS5366_REG_OVERFLOW_STATE;
+	i2c_rbyte(BUS);
+}
 #endif
