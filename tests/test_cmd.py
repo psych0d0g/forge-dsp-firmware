@@ -923,6 +923,80 @@ class DelayCmdTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class PresetCmdTest(unittest.TestCase):
+    """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
+
+    def test_preset_commands(self):
+        import random
+        import tempfile
+        for f in ("V41-96ELN-3", "V30-96LN"):
+            rnd = random.Random(7)
+            nmax, fs, cb = consts(f, "MODUL_MAX_PRESET", "STORAGE_FRAMESIZE", "STORAGE_CHKSUM_BASE")
+            vin_b, vin_d, mux_b, mux_d = consts(f, "STORAGE_VOL_IN_BASE", "STORE_VOL_IN_DEFAULT",
+                                                "STORAGE_MUX_BASE", "STORE_MUX_DEFAULT")
+            cores, nbq = consts(f, "MODUL_TAS3108_CORES", "FLOW_MAX_DSP_BIQUADS")
+            lim_v, lim_c, lim_bq, lim_tv = consts(f, "LIMIT_STORE_ADDR_VALUES", "LIMIT_STORE_ADDR_BQCLUSTER",
+                                                  "LIMIT_STORE_ADDR_BQ", "LIMIT_STORE_ADDR_BQTV")
+            av, ac = table_words(f, "data_store_addr_values"), table_words(f, "data_store_addr_bqcluster")
+            abq, atv = table_words(f, "data_store_addr_bq"), table_words(f, "data_store_addr_bqtv")
+            at24 = bytearray(rnd.randrange(256) for _ in range(65536))
+            dspee = {n: bytearray(rnd.randrange(256) for _ in range(65536)) for n in (1, 2, 3)}
+            frame = bytearray(rnd.randrange(256) for _ in range(fs))
+            frame[0] = 1
+            frame[mux_b - 1:mux_b + 3] = bytes([1, 1, 1, 1])
+            frame[cb - 1:cb + 1] = xmodem(frame[:cb - 1]).to_bytes(2, "little")
+            at24[av[0]:av[0] + fs] = frame
+            for nr in range(1, nbq + 1):  # all biquads default: fast load
+                at24[atv[0] + (nr + 1) * 10 - 1] = 0
+            with tempfile.TemporaryDirectory() as d:
+                d = pathlib.Path(d)
+                (d / "at24.bin").write_bytes(bytes(at24))
+                lines = [f"#at24={d / 'at24.bin'}", f"#at24out={d / 'at24o.bin'}", "#dtr=1", "#ir=1", "#store_init"]
+                for n in (1, 2, 3):
+                    (d / f"dsp{n}.bin").write_bytes(bytes(dspee[n]))
+                    lines += [f"#dspee={n},{d / f'dsp{n}.bin'}", f"#dspee_out={n},{d / f'dspo{n}.bin'}"]
+                lines += ["1|set.1 preset.copy=1", "1|set.1 preset.loaded=0", "#mainloop", "1|get.1 preset.loaded",
+                          "1|set.1 preset.copy=2", "1|set.1 preset.erase=3", "1|set.1 preset.select=1",
+                          "1|get.1 preset.select", f"1|set.1 preset.copy={nmax}", "1|set.1 preset.erase=-1"]
+                p = subprocess.run([os.path.join(NATIVE, f"cmd-{f}")], input="\n".join(lines) + "\n",
+                                   capture_output=True, text=True, timeout=30)
+                self.assertEqual(p.returncode, 0, p.stderr)
+                o = (d / "at24o.bin").read_bytes()
+                eo = {n: (d / f"dspo{n}.bin").read_bytes() for n in (1, 2, 3)}
+            out = [l.rstrip("-") for l in p.stdout.splitlines() if l.startswith("@0")]
+            self.assertIn("command out of range", out[0], f)          # copy before a preset is loaded
+            self.assertEqual(out[1], "@0: *.1 preset.loaded ok\\r\\n", f)
+            self.assertIn("#.1 preset.loaded=0\\r\\n", p.stdout, f)   # event after loading
+            self.assertIn(" <.1 preset.loaded=0\\r\\n", p.stdout, f)
+            self.assertIn("@0: *.1 preset.copy ok\\r\\n", out, f)
+            self.assertIn(" #.1 preset.erase=3\\r\\n", p.stdout, f)
+            self.assertIn("@0: <.1 preset.select=1\\r\\n", out, f)
+            self.assertIn("command out of range", out[-2], f)
+            self.assertIn("command out of range", out[-1], f)
+            # copy 0 -> 2: values, cluster, biquad types, DSP EEPROMs of every core
+            for tab, lim in ((av, lim_v), (ac, lim_c), (atv, lim_tv)):
+                self.assertEqual(o[tab[2]:tab[2] + lim], at24[tab[0]:tab[0] + lim], f)
+            for n, (bus, dev) in enumerate([(1, 0xA0), (2, 0xA0), (2, 0xA2)][:cores], 1):
+                self.assertEqual(eo[n][abq[2]:abq[2] + lim_bq], dspee[n][abq[0]:abq[0] + lim_bq], (f, n))
+            # erase 3: defaults with checksum, all-pass types, default biquads with CRC
+            e = o[av[3]:av[3] + fs]
+            self.assertEqual(e[0], 1, f)
+            self.assertEqual(e[vin_b - 1], vin_d, f)
+            self.assertEqual(e[mux_b - 1], mux_d, f)
+            self.assertEqual(int.from_bytes(e[cb - 1:cb + 1], "little"), xmodem(e[:cb - 1]), f)
+            self.assertTrue(all(o[atv[3] + (nr + 1) * 10 - 1] == 0 for nr in range(1, nbq + 1)), f)
+            core_t = table_bytes(f, "data_flow_dsp_bq_core")
+            offs = table_words(f, "data_flow_bq_storage_offset")
+            data = bytes.fromhex("0080000000000000000000000000000000000000")
+            for nr in (1, nbq // 2, nbq):
+                c = core_t[nr]
+                a = abq[3] + (nr - offs[c]) * 22
+                self.assertEqual(eo[c][a:a + 22], xmodem(data[::-1]).to_bytes(2, "big") + data, (f, nr))
+            # preset 1 and the selected preset untouched by copy/erase
+            self.assertEqual(o[av[1]:av[1] + lim_v], at24[av[1]:av[1] + lim_v], f)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetLoadTest(unittest.TestCase):
     """api_preset_load (modc_load_preset): biquads from the DSP EEPROMs, values frame from the
     24xx512, applied to DSPs and DAC; remote out stays off (FORGE_AUDIO=0)."""

@@ -6,6 +6,7 @@
 #include "bas_data.h"
 #include "biquad.h"
 #include "board.h"
+#include "cmd.h"
 #include "ct7302.h"
 #include "dac.h"
 #include "dsp.h"
@@ -335,5 +336,31 @@ void api_preset_load(uint8_t preset)
 	api_store = 1;
 	api_startup_delay();  /* "first unmute must check for remote.out delay" */
 	api_set_out_mute();   /* api_restore_out_mute */
-	/* PORT: event "preset.loaded" (cmd_sendevent) follows with the events */
+	/* PORT: event_set_value(events_field_system_preset) follows with the events */
+	static const uint16_t ev[cmd_req_words_max] = {0x0104, 0x7072, 0x6C6F, 0x0000, 0x0000};
+	uint8_t i = 0, v = store_preset;
+	if (v >= 100) cmd_req_value[i++] = (char)('0' + v / 100);
+	if (v >= 10) cmd_req_value[i++] = (char)('0' + v / 10 % 10);
+	cmd_req_value[i++] = (char)('0' + v % 10);
+	cmd_req_value[i] = 0;
+	cmd_load_header(ev);
+	cmd_sendevent();
+}
+
+/* MODC cleanup at the end of ctrl_modc_mainloop: a requested preset is loaded there */
+uint8_t modc_loadpreset;
+uint8_t modc_cleanup;
+
+void modc_request_preset(uint8_t preset)
+{
+	modc_loadpreset = preset;
+	modc_cleanup |= 1u << 0;  /* cu_loadpreset */
+}
+
+void modc_cleanup_mainloop(void)
+{
+	if (modc_cleanup & (1u << 0)) {
+		api_preset_load(modc_loadpreset);
+		modc_cleanup &= (uint8_t)~(1u << 0);
+	}
 }

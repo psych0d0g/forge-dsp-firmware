@@ -68,7 +68,7 @@ int main(void)
 	/* libs/api/init.bas, then the preset load of modc_load_preset (MODC itself follows) */
 	api_init();
 	api_init_mute();
-	api_preset_load(registers[BAS_REG_LOAD_PRESET]);
+	modc_request_preset(registers[BAS_REG_LOAD_PRESET]);  /* ctrl_modc_init without MODC entries */
 #else
 	/* safe state: only detection; peripheral resets held, power-up bits off */
 	si5338_detect_and_init();
@@ -92,6 +92,7 @@ int main(void)
 		uint16_t now = tick_ms();
 		cmd_check4buffer();
 #if FORGE_BRINGUP && FLAVOUR_SYSTEMINIT_COMPLETE
+		modc_cleanup_mainloop();
 		api_mainloop();
 		store_mainloop();
 #endif

@@ -29,4 +29,9 @@ void store_restore_biquad_raw(void);
 void store_load_preset(void);
 void store_mainloop(void);
 void store_set_preset(void);
+extern uint8_t store_preset_copy_from, store_preset_copy_to;
+void store_copy_preset(void);      /* store_preset_copy_from -> store_preset_copy_to, all EEPROMs */
+void store_reset_values(void);     /* defaults of the values frame */
+void store_save_bq(void);          /* buffer_bytes(1..20) + crc -> DSP EEPROM */
+void store_erase_preset(void);     /* store_preset: defaults, default biquads, all-pass types */
 #endif

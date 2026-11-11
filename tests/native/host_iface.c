@@ -144,6 +144,12 @@ static void store_cmd(const char *l)
 		for (int i = 0; i < 12; i++)
 			api_mainloop();  /* autounmute + mixer registers */
 		printf("@preset:%u chksum_errors=%u\n", store_preset, store_chksum_error);
+	} else if (!strcmp(l, "#store_init")) {
+		store_init();
+	} else if (!strcmp(l, "#mainloop")) {        /* one main loop of the audio part */
+		modc_cleanup_mainloop();
+		api_mainloop();
+		store_mainloop();
 	} else if (!strcmp(l, "#dsp_detect")) {
 		for (uint8_t n = 1; n <= BAS_MODUL_TAS3108_CORES; n++)
 			dsp_core_init(n);

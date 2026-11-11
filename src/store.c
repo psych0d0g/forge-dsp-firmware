@@ -229,3 +229,146 @@ void store_mainloop(void)
 		storage_flags_check++;
 	}
 }
+
+/* --- preset copy / erase (libs/store/functions.bas, cores/<n>) --- */
+
+uint8_t store_preset_copy_from, store_preset_copy_to;
+
+static void copy_frames(uint8_t bus_from, uint8_t dev_from, uint8_t bus_to, uint8_t dev_to, uint16_t size,
+                        uint16_t addr_from, uint16_t addr_to)
+{
+	for (uint16_t frame = 1; frame <= size / BAS_BUFFER_BYTES_MAX; frame++) {
+		i2c_device_addr = dev_from;
+		i2c_addr = addr_from;
+		i2c_size = BAS_BUFFER_BYTES_MAX;
+		i2c_rbuffer_highreg(bus_from);
+		i2c_device_addr = dev_to;
+		i2c_addr = addr_to;
+		i2c_size = BAS_BUFFER_BYTES_MAX;
+		i2c_wbuffer_eeprom(bus_to);
+		addr_from += BAS_BUFFER_BYTES_MAX;
+		addr_to += BAS_BUFFER_BYTES_MAX;
+		watchdog_kick();
+	}
+}
+
+#define COPY(tab, limit, bus, dev) \
+	copy_frames(bus, dev, bus, dev, limit, BAS_LOOKUP_W(tab, store_preset_copy_from), BAS_LOOKUP_W(tab, store_preset_copy_to))
+
+static const uint16_t copy_event[cmd_req_words_max] = {0x0104, 0x7072, 0x636F, 0x0000, 0x0000};
+static const uint16_t erase_event[cmd_req_words_max] = {0x0104, 0x7072, 0x6572, 0x0000, 0x0000};
+
+static void event_number(const uint16_t *ev, uint8_t v)
+{
+	uint8_t i = 0;
+	if (v >= 100) cmd_req_value[i++] = (char)('0' + v / 100);
+	if (v >= 10) cmd_req_value[i++] = (char)('0' + v / 10 % 10);
+	cmd_req_value[i++] = (char)('0' + v % 10);
+	cmd_req_value[i] = 0;
+	cmd_load_header(ev);
+	cmd_sendevent();
+}
+
+void store_copy_preset(void)
+{
+	COPY(data_store_addr_values, BAS_LIMIT_STORE_ADDR_VALUES, BUS, BAS_EEPROM_ADR_W);
+	COPY(data_store_addr_bqcluster, BAS_LIMIT_STORE_ADDR_BQCLUSTER, BUS, BAS_EEPROM_ADR_W);
+	COPY(data_store_addr_bq, BAS_LIMIT_STORE_ADDR_BQ, 1, 0xA0);      /* dsp_1_eeprom_adr_w */
+#if BAS_MODUL_TAS3108_CORES >= 2
+	COPY(data_store_addr_bq, BAS_LIMIT_STORE_ADDR_BQ, 2, 0xA0);      /* dsp_2_eeprom_adr_w */
+#endif
+#if BAS_MODUL_TAS3108_CORES >= 3
+	COPY(data_store_addr_bq, BAS_LIMIT_STORE_ADDR_BQ, 2, 0xA2);      /* dsp_3_eeprom_adr_w */
+#endif
+	COPY(data_store_addr_bqtv, BAS_LIMIT_STORE_ADDR_BQTV, BUS, BAS_EEPROM_ADR_W);
+	if (registers[BAS_REG_STARTUP_STATE] == BAS_STARTUP_STATE_DONE)
+		event_number(copy_event, store_preset_copy_to);
+}
+
+#define SV(base, i) storage_non_biquadvalues[(base) + (i) - 1]
+static void sw_put(uint16_t base, uint8_t i, uint16_t v)
+{
+	uint16_t a = (uint16_t)(base + (i - 1) * 2);
+	storage_non_biquadvalues[a] = v & 0xFF;
+	storage_non_biquadvalues[a + 1] = v >> 8;
+}
+
+void store_reset_values(void)
+{
+	storage_non_biquadvalues[BAS_STORE_MIX_POSITION_BASE] = BAS_STORE_MIX_POSITION_DEFAULT;
+	for (uint16_t wi = 1; wi <= BAS_STORE_MIX_POSITIONS * BAS_STORE_MIX_FRAME; wi++)
+		SV(BAS_STORAGE_MIX_BASE, wi) = BAS_STORE_MIX_DEFAULT;
+	uint16_t n = BAS_LOOKUP_W(data_flow_mix_passthrough, 0);  /* length of the data field */
+	for (uint16_t wi = 1; wi <= n; wi++)
+		SV(BAS_STORAGE_MIX_BASE, BAS_LOOKUP_W(data_flow_mix_passthrough, wi)) = 100;
+	for (uint8_t i = 1; i <= BAS_STORE_MUX_COUNT; i++)
+		SV(BAS_STORAGE_MUX_BASE, i) = BAS_STORE_MUX_DEFAULT;
+	for (uint8_t i = 1; i <= BAS_STORE_VOL_IN_COUNT; i++)
+		SV(BAS_STORAGE_VOL_IN_BASE, i) = BAS_STORE_VOL_IN_DEFAULT;
+	for (uint8_t i = 1; i <= BAS_STORE_VOL_OUT_COUNT; i++)
+		SV(BAS_STORAGE_VOL_OUT_BASE, i) = BAS_STORE_VOL_OUT_DEFAULT;
+	for (uint8_t i = 1; i <= BAS_STORE_VOL_SPDIF_COUNT; i++)
+		SV(BAS_STORAGE_VOL_SPDIF_BASE, i) = BAS_STORE_VOL_SPDIF_DEFAULT;
+	storage_non_biquadvalues[BAS_STORAGE_MUTE_OUT_BASE] = BAS_STORE_MUTE_OUT_DEFAULT;
+	storage_non_biquadvalues[BAS_STORAGE_PHASE_BASE] = BAS_STORE_PHASE_DEFAULT;
+#ifdef BAS_STORE_DELAY_IN_COUNT
+	for (uint8_t i = 1; i <= BAS_STORE_DELAY_IN_COUNT; i++)
+		sw_put(BAS_STORAGE_DELAY_IN_BASE, i, BAS_STORE_DELAY_DEFAULT);
+#endif
+	for (uint8_t i = 1; i <= BAS_STORE_DELAY_COUNT; i++)
+		sw_put(BAS_STORAGE_DELAY_BASE, i, BAS_STORE_DELAY_DEFAULT);
+	for (uint8_t i = 1; i <= BAS_STORE_SELECTOR_COUNT; i++) {
+		SV(BAS_STORAGE_SELECTOR_BASE, i) = BAS_LOOKUP_B(data_flow_selector_type, i);
+		uint16_t a = (uint16_t)((i - 1) * BAS_FLOW_MAX_SELECTOR_PARA);
+		for (uint8_t ii = 1; ii <= BAS_FLOW_MAX_SELECTOR_PARA; ii++)
+			SV(BAS_STORAGE_SELECTOR_PARA_BASE, ++a) = BAS_LOOKUP_B(data_flow_selector_para_type, ii);
+	}
+	for (uint8_t i = 1; i <= BAS_STORE_GAIN_COUNT; i++) {
+		SV(BAS_STORAGE_GAIN_BASE, i) = BAS_LOOKUP_B(data_flow_gain_type, i);
+		uint16_t a = (uint16_t)((i - 1) * BAS_FLOW_MAX_GAIN_PARA);
+		for (uint8_t ii = 1; ii <= BAS_FLOW_MAX_GAIN_PARA; ii++)
+			sw_put(BAS_STORAGE_GAIN_PARA_BASE, (uint8_t)++a, BAS_LOOKUP_W(data_flow_gain_para_type, ii));
+	}
+}
+
+void store_save_bq(void)
+{
+	uint16_t crc = bas_crc16(&buffer_bytes[1], BAS_DSP_REG_SIZE_BIQUAD);
+	buffer_bytes[21] = crc & 0xFF;  /* buffer_words(11) */
+	buffer_bytes[22] = crc >> 8;
+	uint8_t storage = BAS_LOOKUP_B(data_flow_dsp_bq_core, store_bq_nr);
+	uint16_t w = (uint16_t)(store_bq_nr - BAS_LOOKUP_W(data_flow_bq_storage_offset, storage));
+	i2c_addr = (uint16_t)(BAS_LOOKUP_W(data_store_addr_bq, store_preset) + w * BAS_DSP_REG_SIZE_BIQUAD_CHKSUM);
+	i2c_size = BAS_DSP_REG_SIZE_BIQUAD_CHKSUM;
+	switch (storage) {
+	case 1: i2c_device_addr = 0xA0; i2c_wbuffer_eeprom(1); break;
+	case 2: i2c_device_addr = 0xA0; i2c_wbuffer_eeprom(2); break;
+	default: i2c_device_addr = 0xA2; i2c_wbuffer_eeprom(2); break;
+	}
+}
+
+void store_erase_preset(void)
+{
+	store_reset_values();
+	store_save_values_all();
+	uint32_t raw[6];
+	dsp_bq_default(raw);  /* store_reset_bq_cache */
+	for (store_bq_nr = 1; store_bq_nr <= BAS_FLOW_MAX_DSP_BIQUADS; store_bq_nr++) {
+		/* buffer_bytes is also the I2C buffer: refill before every write */
+		for (uint8_t i = 1; i <= 5; i++)
+			for (uint8_t k = 0; k < 4; k++)
+				buffer_bytes[(i - 1) * 4 + 1 + k] = (uint8_t)(raw[i] >> (8 * k));
+		store_save_bq();
+		watchdog_kick();
+	}
+	for (store_bq_nr = 1; store_bq_nr <= BAS_FLOW_MAX_DSP_BIQUADS; store_bq_nr++) {
+		buffer_bytes[1] = BAS_DSP_BQTYPE_ALL_PASS;  /* store_reset_bqtv_cache */
+		for (uint8_t i = 2; i <= 8; i++)
+			buffer_bytes[i] = 0;
+		buffer_bytes[9] = 0;   /* still 0 from the biquad cache in the original */
+		buffer_bytes[10] = 0;
+		store_save_bqtv();
+		watchdog_kick();
+	}
+	event_number(erase_event, store_preset);
+}
