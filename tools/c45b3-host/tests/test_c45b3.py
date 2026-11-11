@@ -185,6 +185,17 @@ class Scenarios:
         self.assertEqual(b.target_crc_errors, 1)
         self.finish(port)
 
+    def test_write_aborts_on_target_crc_error(self):
+        # "e0" overwrites one RAM byte in the bootloader (host.c): writing must stop
+        from c45b3.client import TargetCrcError
+        port = self.make()
+        cp = CorruptingPort(port, tx_frame=3)  # 1 = set address, 2 = first data frame
+        b = self.bl(cp)
+        with self.assertRaises(TargetCrcError):
+            b.write_flash(rand_bytes(4096, 30))
+        self.assertEqual(b.target_crc_errors, 1)
+        self.finish(port)
+
     def test_answer_crc_error_resync(self):
         flash = rand_bytes(APP_SIZE, 11)
         port = self.make(flash=flash)
