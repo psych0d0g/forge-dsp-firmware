@@ -22,10 +22,14 @@ static inline uint16_t bas_data_word(const uint8_t *p) { return bas_data_byte(p)
 /* DATA ...# (64-bit double, requires -mdouble=64 on AVR) */
 static inline double bas_data_double(const uint8_t *p)
 {
-	union { uint8_t b[8]; double d; } u;
+	/* memcpy instead of a union: avr-gcc 16.1 ICEs (extract_bit_field) on the union with
+	 * -fno-split-wide-types */
+	uint8_t b[8];
+	double d;
 	for (uint8_t i = 0; i < 8; i++)
-		u.b[i] = bas_data_byte(p + i);
-	return u.d;
+		b[i] = bas_data_byte(p + i);
+	__builtin_memcpy(&d, b, sizeof d);
+	return d;
 }
 #define BAS_LOOKUP_D(label, i) bas_data_double(&(label)[(uint16_t)(i) * 8])
 

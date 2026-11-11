@@ -607,8 +607,9 @@ static void cmd_answer_set(void)
 	case 0x6465: cmd_set_delay(); break;
 	case 0x7072: cmd_set_preset(); break;
 	case 0x6D69: cmd_set_mixer(); break;
+	case 0x6269: cmd_set_biquad(); break;
 #endif
-	/* PORT: biquad, com, event, extender, i2c, modc, select follow
+	/* PORT: com, event, extender, i2c, modc, select follow
 	 * (issue #4); until then "unknown command" */
 	default: cmd_error_unknown();
 	}
@@ -628,6 +629,7 @@ static void cmd_answer_get(void)
 	case 0x6465: cmd_get_delay(); break;
 	case 0x7072: cmd_get_preset(); break;
 	case 0x6D69: cmd_get_mixer(); break;
+	case 0x6269: cmd_get_biquad(); break;
 #endif
 	default: cmd_error_unknown();
 	}

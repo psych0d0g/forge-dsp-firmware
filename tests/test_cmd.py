@@ -963,6 +963,73 @@ class MixerCmdTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class BiquadCmdTest(LinesMixin, unittest.TestCase):
+    """cmd_biquad: stored values, ranges, calc and raw into DSP and DSP EEPROM."""
+
+    PRE = ["#store_init", "#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect",
+           "1|set.1 preset.loaded=0", "#mainloop"]
+
+    def test_values_ranges_listing(self):
+        for f in FLAVOURS:
+            limits = table_bytes(f, "data_flow_ch_bq_limits")
+            used, = consts(f, "FLOW_MAX_CHANNELS_USED")
+            fmax = int.from_bytes(table_bytes(f, "data_ranges_biquad_max_I")[4:6], "little", signed=True)
+            ch = next(i for i in range(1, 65) if limits[i])
+            bad = next(i for i in range(1, 65) if not limits[i])
+            out = self.lines(f, ["#store_init", f"1|set.1 biquad.{ch}.1=[1]"] + self.PRE[1:] + [
+                f"1|set.1 biquad.{ch}.2=[1,1000,-35,7071,0,128]", f"1|get.1 biquad.{ch}.2",
+                f"1|set.1 biquad.{ch}.3=[1,1000,-35,7,0]", f"1|get.1 biquad.{ch}.3",
+                f"1|set.1 biquad.{ch}.4=[1,30000,-35,707,0,0]", f"1|get.1 biquad.{ch}.4",
+                "1|get.1 biquad", f"1|set.1 biquad.{bad}.1=[1]", f"1|set.1 biquad.{ch}.0=[1]",
+                f"1|set.1 biquad.{ch}.{limits[ch] + 1}=[1]", f"1|get.1 biquad.{ch}"])
+            txt = "\n".join(out)
+            self.assertIn("command out of range", out[0], f)  # no preset loaded yet
+            self.assertIn(f"<.1 biquad.{ch}.2=[1,1000,-35,7071,0,128]", txt, f)
+            self.assertIn(f"<.1 biquad.{ch}.3=[1,1000,-35,700,0,128]", txt, f)    # old format: q/10, default flags
+            self.assertIn(f"<.1 biquad.{ch}.4=[1,{fmax},-35,707,0,0]", txt, f)    # f clamped
+            self.assertIn("<.1 biquad=[" + ",".join(str(limits[i]) for i in range(1, used + 1)) + "]", txt, f)
+            self.assertEqual(txt.count("command out of range"), 4, f)
+            self.assertEqual(txt.count(f"<.1 biquad.{ch}."), 3 + limits[ch], f)
+
+    def test_calc_and_raw_to_dsp_and_eeprom(self):
+        import tempfile
+        f = "V41-96ELN-3"
+        offs = table_words(f, "data_flow_ch_bq_offsets")
+        core_t = table_bytes(f, "data_flow_dsp_bq_core")
+        reg_t = table_bytes(f, "data_flow_dsp_bq_reg")
+        soffs = table_words(f, "data_flow_bq_storage_offset")
+        abq = table_words(f, "data_store_addr_bq")[0]
+        adr = {1: (1, 0x68), 2: (2, 0x68), 3: (2, 0x6A)}
+        limits = table_bytes(f, "data_flow_ch_bq_limits")
+        picks = {}
+        for ch in range(1, 65):
+            for n in range(1, limits[ch] + 1):
+                picks.setdefault(core_t[offs[ch] + n], (ch, n))
+        self.assertEqual(sorted(picks), [1, 2, 3])
+        for ch, n in picks.values():
+            nr = offs[ch] + n
+            core = core_t[nr]
+            bus, a = adr[core]
+            with tempfile.TemporaryDirectory() as d:
+                eo = pathlib.Path(d, "ee.bin")
+                pre = self.PRE + [f"#dspee_out={core},{eo}"]
+                out = self.lines(f, pre + [f"1|set.1 biquad.{ch}.{n}.calc=[1,1000,35,1414,0,128]",
+                                           f"#block={bus},{a:02X},{reg_t[nr]:02X},20",
+                                           f'1|set.1 biquad.{ch}.{n}.raw=["0F000001","1","2","3","00800000"]',
+                                           f"#block={bus},{a:02X},{reg_t[nr]:02X},20"])
+                ee = eo.read_bytes()
+            raw = bq_reference(f, 1, 1000, 35, 1414, 0, 0x80)  # A2, A1, B2, B1, B0
+            data = b"".join(v.to_bytes(4, "big") for v in reversed(raw))
+            blocks = [l[7:] for l in out if l.startswith("@block:")]
+            self.assertEqual(blocks[0], data.hex().upper(), (ch, n))
+            raw2 = [0x0F000001, 1, 2, 3, 0x00800000]
+            data2 = b"".join(v.to_bytes(4, "big") for v in reversed(raw2))
+            self.assertEqual(blocks[1], data2.hex().upper(), (ch, n))
+            at = abq + (nr - soffs[core]) * 22
+            self.assertEqual(ee[at:at + 22], xmodem(data2[::-1]).to_bytes(2, "big") + data2, (ch, n))
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

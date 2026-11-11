@@ -123,6 +123,8 @@ void cmd_set_preset(void);
 void cmd_get_preset(void);
 void cmd_set_mixer(void);
 void cmd_get_mixer(void);
+void cmd_set_biquad(void);
+void cmd_get_biquad(void);
 
 /* events to the GUI: header words from a table (BASCOM: restore + read), value in cmd_req_value */
 void cmd_load_header(const uint16_t words[cmd_req_words_max]);
