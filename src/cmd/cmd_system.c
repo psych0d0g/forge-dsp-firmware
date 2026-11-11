@@ -14,6 +14,7 @@
 #include "store.h"
 #include "tas3108.h"
 #include "factory.h"
+#include "identity.h"
 void watchdog_kick(void);
 #include "cmd.h"
 #include "flavour.h"
@@ -123,6 +124,21 @@ static void cmd_set_system_debug(void)
 	}
 }
 
+/* PORT extension (#31): set system.key.info="MODEL-PCB" chooses the identity of a build that
+ * serves several identical variants (key.info.list); stored in the EEPROM */
+static void cmd_set_system_key(void)
+{
+	if (req_w(cmd_req_word_three) != 0x696E || req_w(cmd_req_word_four) != 0x0000) {
+		cmd_error_unknown();
+		return;
+	}
+	if (!identity_set(cmd_req_value)) {  /* quotes already removed by the parser */
+		cmd_error_cmd_oor();
+		return;
+	}
+	cmd_answer_ok();
+}
+
 /* system.reinit: factory reset at the next start (deletes all tuning). PORT: only with
  * FORGE_FACTORY_RESET, otherwise "unknown command" (the port would only use defaults in RAM). */
 static void cmd_set_system_reinit(void)
@@ -222,6 +238,7 @@ void cmd_set_system(void)
 	case 0x6368: cmd_set_system_channel(); break;
 	case 0x6465: cmd_set_system_debug(); break;
 	case 0x6366: cmd_set_system_cfg(); break;
+	case 0x6B65: cmd_set_system_key(); break;
 	case 0x6861: cmd_set_system_hardware(); break;
 	case 0x7265: cmd_set_system_reinit(); break;
 	default: cmd_error_unknown();
@@ -348,7 +365,9 @@ static void cmd_get_system_info(void)
 		return;
 	}
 	cmd_answer_header();
-	out_str("[\"" FLAVOUR_MODEL "\","
+	out_str("[\"");
+	out_str(identity_model());
+	out_str("\","
 	        XSTR(BAS_FLOW_SAMPLE_RATE) "," XSTR(BAS_FLOW_MAX_AD_PAIR) ","
 	        XSTR(BAS_FLOW_MAX_SPDIF_PAIR) "," XSTR(BAS_FLOW_MAX_OUT_PAIRS) ","
 	        XSTR(BAS_MODUL_MAX_PRESET) ",32]");
@@ -361,7 +380,11 @@ static void cmd_get_system_key_info(void)
 	case 0x0000:
 		cmd_answer_header();
 		Q();
-		out_str(BAS_VENDOR_ID "-" FLAVOUR_MODEL "-" FLAVOUR_BOARD "-");
+		out_str(BAS_VENDOR_ID "-");
+		out_str(identity_model());
+		out_chr('-');
+		out_str(identity_board());
+		out_chr('-');
 		out_str(mcuid_string);
 		out_str("-CCBYNCSA-" FW_BUILD_DATE "-MDD");
 		Q();
@@ -369,12 +392,12 @@ static void cmd_get_system_key_info(void)
 		break;
 	case 0x626F:
 		cmd_answer_header();
-		Q(); out_str(FLAVOUR_BOARD); Q();
+		Q(); out_str(identity_board()); Q();
 		out_crlf();
 		break;
 	case 0x7479:
 		cmd_answer_header();
-		Q(); out_str(FLAVOUR_MODEL); Q();
+		Q(); out_str(identity_model()); Q();
 		out_crlf();
 		break;
 	case 0x7665:
@@ -382,6 +405,19 @@ static void cmd_get_system_key_info(void)
 		Q(); out_str(BAS_VENDOR_ID_LARGE); Q();
 		out_crlf();
 		break;
+	case 0x6C69: {  /* PORT extension (#31): key.info.list = identities this build can take */
+		char buf[16];
+		cmd_answer_header();
+		out_chr('[');
+		for (uint8_t i = 0; i < identity_count(); i++) {
+			if (i)
+				out_chr(',');
+			Q(); out_str(identity_name(i, buf)); Q();
+		}
+		out_chr(']');
+		out_crlf();
+		break;
+	}
 	default:
 		cmd_error_unknown();
 	}

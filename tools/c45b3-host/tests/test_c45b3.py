@@ -60,6 +60,63 @@ class ProtocolTest(unittest.TestCase):
                 d.feed(c)
 
 
+class FakeApp:
+    """Running firmware at the text protocol: answers key.info, ping and the identity set."""
+
+    def __init__(self, ident="CORED8-4.1", settable=True):
+        self.ident, self.settable, self.sent, self.out = ident, settable, [], b""
+        self.baudrate = 38400
+
+    def reset_input_buffer(self):
+        self.out = b""
+
+    def write(self, data):
+        line = data.decode().strip()
+        self.sent.append(line)
+        if line == "get.1 system.key.info":
+            m, p = self.ident.split("-")
+            self.out += f' <.1 system.key.info="BNS-{m}-{p}-0102-CCBYNCSA-20261111-MDD"\r\n'.encode()
+        elif line == "get.1 system.ping":
+            self.out += b' <.1 system.ping="pong"\r\n'
+        elif line.startswith('set.1 system.key.info="') and self.settable:
+            self.ident = line.split('"')[1]
+            self.out += b" *.1 system.key.info ok\r\n"
+
+    def read(self, n):
+        d, self.out = self.out[:n], self.out[n:]
+        return d
+
+
+class IdentityTest(unittest.TestCase):
+    """#31: one build for several identities; the flasher keeps the identity."""
+
+    def args(self, expect):
+        import argparse
+        return argparse.Namespace(app_baud=38400, baud=115200, expect_device=expect)
+
+    def test_check_device_list(self):
+        import c45b3.__main__ as cli
+        a = self.args("96ELN-4.0,CORED8-4.0,CORED8-4.1")
+        self.assertEqual(cli.check_device(FakeApp("CORED8-4.1"), a), ("CORED8", "4.1"))
+        self.assertEqual(a.identity, "CORED8-4.1")
+        with self.assertRaises(SystemExit):
+            cli.check_device(FakeApp("96ELN3-4.0"), self.args("96ELN-4.0,CORED8-4.0"))
+
+    def test_restore_identity(self):
+        import c45b3.__main__ as cli
+        a = self.args("x")
+        a.identity = "CORED8-4.1"
+        port = FakeApp("96ELN-4.0")          # new port firmware starts with its default
+        cli.restore_identity(port, a, timeout=2)
+        self.assertEqual(port.ident, "CORED8-4.1")
+        self.assertIn('set.1 system.key.info="CORED8-4.1"', port.sent)
+        port = FakeApp("CORED8-4.1")         # already right: nothing written
+        cli.restore_identity(port, a, timeout=2)
+        self.assertFalse(any(x.startswith("set.1") for x in port.sent))
+        with self.assertRaises(SystemExit):   # original firmware: command unknown
+            cli.restore_identity(FakeApp("96ELN-4.0", settable=False), a, timeout=2)
+
+
 class IhexTest(unittest.TestCase):
     def test_roundtrip(self):
         data = rand_bytes(0x12345, 1)

@@ -1557,6 +1557,39 @@ class SdPresetTest(unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class IdentityTest(LinesMixin, unittest.TestCase):
+    """#31: one build per group of identical variants, identity in the EEPROM."""
+
+    def test_groups(self):
+        lists = {"V40-96ELN": '["96ELN-4.0","CORED8-4.0","CORED8-4.1"]', "V40-96ELN-3": '["96ELN3-4.0","96ELN3-4.1"]',
+                 "V30-96ELN": '["96ELN-4.0"]', "V30-96LN": '["96LN-3.0"]'}
+        for f, l in lists.items():
+            out = self.lines(f, ["1|get.1 system.key.info.list"])
+            self.assertEqual(out[0], f"@0: <.1 system.key.info.list={l}\\r\\n", f)
+
+    def test_set_identity_is_kept(self):
+        f = "V40-96ELN"
+        p, ee = run(f, ['1|set.1 system.key.info="CORED8-4.1"', "1|get.1 system.key.info", "1|get.1 system.info",
+                        "1|get.1 system.key.info.type", "1|get.1 system.key.info.board",
+                        '1|set.1 system.key.info="96ELN3-4.0"'], eeprom=image(f), want_eeprom=True)
+        out = [l for l in p.stdout.splitlines() if l.startswith("@0")]
+        self.assertIn("*.1 system.key.info ok", out[0])
+        self.assertIn('="BNS-CORED8-4.1-', out[1])
+        self.assertIn('=["CORED8",96000', out[2])
+        self.assertIn('="CORED8"', out[3])
+        self.assertIn('="4.1"', out[4])
+        self.assertIn("command out of range", out[5])   # identity of another group
+        p2 = run(f, ["1|get.1 system.key.info"], eeprom=ee)
+        self.assertIn('="BNS-CORED8-4.1-', p2[0][0])     # kept in the EEPROM
+        self.assertEqual(ee[0xF00:0xF02], bytes([0xA5, 2]))
+
+    def test_unset_identity_is_the_flavour(self):
+        for f, ident in (("V40-CORED8", "CORED8-4.0"), ("V41-96ELN-3", "96ELN3-4.1"), ("V40-96ELN", "96ELN-4.0")):
+            out = self.lines(f, ["1|get.1 system.key.info"])
+            self.assertIn(f"-{ident}-", out[0], f)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class PresetCmdTest(unittest.TestCase):
     """cmd_preset: loaded (via the MODC cleanup), copy, erase, select."""
 

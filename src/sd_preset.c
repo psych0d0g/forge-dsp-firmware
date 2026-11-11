@@ -22,6 +22,7 @@
 #include "ff.h"
 #include "flavour.h"
 #include "iface.h"
+#include "identity.h"
 #include "store.h"
 
 uint8_t sd_ready;
@@ -117,7 +118,7 @@ void sd_preset_load_init(void)
 			if (!l)
 				continue;
 			if (line[0] == '[') {
-				if (!strstr(line, BAS_MODEL_ID))
+				if (!strstr(line, identity_model()))
 					break;  /* section of another model */
 				store_erase_preset();
 			}

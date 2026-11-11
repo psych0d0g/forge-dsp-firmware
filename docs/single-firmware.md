@@ -48,3 +48,11 @@ Eine falsche Erkennung bedeutet falsches EEPROM-Layout (Abstimmung zerstört) od
 
 1. **Jetzt: von 7 auf 4 Builds (A–D).** Kein Risiko, weil Code, Tabellen, Pins und EEPROM-Layout je Gruppe identisch sind. Modell und Board (`96ELN`/`CORED8`, `4.0`/`4.1`) kommen als **Kennung im EEPROM** dazu. Der Flasher schreibt sie beim ersten Flashen aus der Kennung, die die alte Firmware gemeldet hat (`system.key.info`), danach meldet die Port-Firmware genau diese. Fehlt sie, gilt die Vorgabe der Gruppe.
 2. **Später, optional: eine Firmware für alle.** Platz reicht, Erkennung für A/B/C/D ist eindeutig per I2C; Modell/Board kommen wie unter 1 aus dem EEPROM. Aufwand: alle `BAS_*`-Konstanten, die heute Array-Größen und `#if` steuern, werden Laufzeitwerte, der Generator erzeugt Tabellen je Gruppe. Lohnt sich vor allem, wenn ein Update ohne Auswahl der Variante wichtig wird.
+
+## Umsetzung (User: „7 → 4 Builds“)
+
+Umgebungen `V30-96LN`, `V30-96ELN`, `V4x-96ELN` (96ELN, CORED8), `V4x-96ELN-3`. Die Kennung wählt `src/identity.c` aus
+der Liste des Builds; gespeichert ab EEPROM 0xF00 (Magic 0xA5, Index). Ohne Eintrag gilt die generierte Variante.
+Der Upload liest die Kennung der laufenden Firmware (`--expect-device` mit Liste) und setzt sie nach dem Flashen
+(`--keep-identity`). *Forge: flash release 1.11.6000* fragt die Kennung ab und wählt die passende Original-HEX.
+

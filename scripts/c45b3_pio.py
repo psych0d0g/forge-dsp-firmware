@@ -36,7 +36,8 @@ flavour = env.subst("$PIOENV")  # env name = flavour id
 app_baud = opt("app_baud", "38400")  # USB-COM rate of the running firmware (reg_baud_ch1)
 base = '"$PYTHONEXE" -m c45b3 --port "$UPLOAD_PORT" --wait %s --app-baud %s' % (wait, app_baud)
 if expect:
-    # refuses to continue if the running firmware reports another model/PCB
+    # refuses to continue if the running firmware reports another model/PCB; the identity found
+    # is set in the new port firmware afterwards (builds serving several identities, #31)
     base += ' --expect-device "%s"' % expect
 if enter:
     base += ' --enter "%s"' % enter
@@ -50,7 +51,7 @@ def need_port(target, source, env):
           "the USB port, switch it on, keep holding until the orange LED blinks.")
 
 
-env.Replace(UPLOADCMD=base + " write-flash $SOURCE --allow-write")
+env.Replace(UPLOADCMD=base + " --keep-identity write-flash $SOURCE --allow-write")
 env.AddPreAction("upload", need_port)
 
 env.AddCustomTarget(
@@ -71,35 +72,55 @@ env.AddCustomTarget(
     description="Read flash and EEPROM through the bootloader (if the build allows it)",
 )
 
-release_asset = env.GetProjectOption("custom_release_asset")
-release_file = os.path.join(proj, ".pio", "release", release_asset)
+# identity -> official HEX of that variant (one build may serve several, #31)
+release_assets = dict(x.strip().split(":", 1) for x in
+                      env.GetProjectOption("custom_release_assets").replace("\n", " ").split() if ":" in x)
+release_dir = os.path.join(proj, ".pio", "release")
+release_file = os.path.join(release_dir, "selected.hex")
 
 
 def fetch_release(target, source, env):
-    """Download the official HEX of this flavour once, verify the pinned sha256."""
+    """Ask the Forge for its identity, download the official HEX of that variant once and
+    verify the pinned sha256."""
     import hashlib
+    import shutil
+    import subprocess
     import urllib.request
+    if len(release_assets) == 1:
+        ident = next(iter(release_assets))
+    else:
+        r = subprocess.run(env.subst('"$PYTHONEXE" -m c45b3 --port "$UPLOAD_PORT" --app-baud %s identify'
+                                     % app_baud), shell=True, capture_output=True, text=True,
+                           env=dict(os.environ, **env["ENV"]))
+        ident = r.stdout.strip()
+        if ident not in release_assets:
+            print(f"error: Forge identity {ident!r} ({r.stderr.strip()}) not one of {sorted(release_assets)}; "
+                  "the Forge must be on and running a firmware")
+            return 1
+    asset = release_assets[ident]
     sums = {}
     with open(os.path.join(proj, opt("release_sums"))) as f:
         for line in f:
             digest, name = line.split()
             sums[name] = digest
-    want = sums.get(release_asset)
+    want = sums.get(asset)
     if not want:
-        print(f"error: {release_asset} not in {opt('release_sums')}")
+        print(f"error: {asset} not in {opt('release_sums')}")
         return 1
-    if not os.path.exists(release_file):
-        os.makedirs(os.path.dirname(release_file), exist_ok=True)
-        url = opt("release_url") + "/" + release_asset
+    cached = os.path.join(release_dir, asset)
+    if not os.path.exists(cached):
+        os.makedirs(release_dir, exist_ok=True)
+        url = opt("release_url") + "/" + asset
         print("downloading", url)
-        urllib.request.urlretrieve(url, release_file + ".part")
-        os.replace(release_file + ".part", release_file)
-    got = hashlib.sha256(open(release_file, "rb").read()).hexdigest()
+        urllib.request.urlretrieve(url, cached + ".part")
+        os.replace(cached + ".part", cached)
+    got = hashlib.sha256(open(cached, "rb").read()).hexdigest()
     if got != want:
-        os.unlink(release_file)
-        print(f"error: sha256 mismatch for {release_asset}: {got} != {want}")
+        os.unlink(cached)
+        print(f"error: sha256 mismatch for {asset}: {got} != {want}")
         return 1
-    print(f"{release_asset}: sha256 ok")
+    shutil.copyfile(cached, release_file)
+    print(f"{ident}: {asset}, sha256 ok")
     return 0
 
 
@@ -109,5 +130,5 @@ env.AddCustomTarget(
     actions=[need_port, fetch_release,
              base + ' write-flash "%s" --allow-write' % release_file],
     title="Forge: flash release 1.11.6000 (%s)" % flavour,
-    description="Program the official firmware of this flavour (GitHub release 0.0.1116000)",
+    description="Program the official firmware of the connected variant (GitHub release 0.0.1116000)",
 )

@@ -481,7 +481,7 @@ static const struct name names_four[] = {
 	{0x636C, ".clear"}, {0x636F, ".com"}, {0x6461, ".data"}, {0x6475, ".dump"},
 	{0x6473, ".dsp"}, {0x6563, ".echo"}, {0x6572, ".eram"}, {0x6F66, ".off"},
 	{0x6F6E, ".on"}, {0x6F74, ".other"}, {0x7261, ".raw"}, {0x7479, ".type"},
-	{0x7570, ".update"}, {0x7665, ".vendor"}, {0, NULL}
+	{0x7570, ".update"}, {0x7665, ".vendor"}, {0x6C69, ".list"} /* port: system.key.info.list */, {0, NULL}
 };
 
 static void print_input_on_error(uint8_t word)

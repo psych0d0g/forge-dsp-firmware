@@ -171,17 +171,46 @@ def parse_key_info(text):
 
 
 def check_device(port, args):
-    model, _, pcb = args.expect_device.partition("-")
+    """--expect-device MODEL-PCB[,MODEL-PCB...]: one build may serve several identities (#31)."""
+    allowed = [tuple(x.strip().split("-", 1)) for x in args.expect_device.split(",") if x.strip()]
     ans = app_query(port, args, "get.1 system.key.info")
     got = parse_key_info(ans)
     if got is None:
         raise SystemExit("device check: no answer to get.1 system.key.info "
                          f"({ans.strip()!r}). Forge on and running its firmware? "
                          "(skip the check only if you are sure: no --expect-device)")
-    if got != (model, pcb):
-        raise SystemExit(f"device check: Forge reports {got[0]} PCB {got[1]}, "
-                         f"this build is for {model} PCB {pcb}. Not flashing.")
+    if got not in allowed:
+        raise SystemExit(f"device check: Forge reports {got[0]} PCB {got[1]}, this build is for "
+                         + ", ".join("-".join(a) for a in allowed) + ". Not flashing.")
     log(f"device check: {got[0]} PCB {got[1]} ok")
+    args.identity = "-".join(got)
+    return got
+
+
+def restore_identity(port, args, timeout=90.0):
+    """After flashing a build that serves several identities: tell the new firmware which one
+    the device is (set.1 system.key.info="MODEL-PCB", kept in its EEPROM)."""
+    import time
+    ident = getattr(args, "identity", None)
+    if not ident:
+        return
+    t_end = time.monotonic() + timeout
+    while time.monotonic() < t_end:  # the start (preset load) takes some seconds
+        if "pong" in app_query(port, args, "get.1 system.ping", wait=0.5):
+            break
+    else:
+        raise SystemExit("identity: the new firmware does not answer; set it by hand: "
+                         f'set.1 system.key.info="{ident}"')
+    got = parse_key_info(app_query(port, args, "get.1 system.key.info"))
+    if got and "-".join(got) == ident:
+        log(f"identity: {ident} (unchanged)")
+        return
+    ans = app_query(port, args, f'set.1 system.key.info="{ident}"')
+    got = parse_key_info(app_query(port, args, "get.1 system.key.info"))
+    if not got or "-".join(got) != ident:
+        raise SystemExit(f"identity: could not set {ident} ({ans.strip()!r}); "
+                         "the original firmware does not know this command")
+    log(f"identity: {ident} set")
 
 
 def enter_bootloader(port, args):
@@ -237,7 +266,10 @@ def main(argv=None):
                     help="text command that makes the running application jump to the bootloader, "
                          "e.g. 'set.1 system.boot=1' (Forge firmware: software reset into the "
                          "bootloader about 1 s after the answer); sent at --app-baud first")
-    ap.add_argument("--expect-device", metavar="MODEL-PCB",
+    ap.add_argument("--keep-identity", action="store_true",
+                    help="after write-flash: set the identity found by --expect-device in the new "
+                         "firmware (port firmware only, builds that serve several identities)")
+    ap.add_argument("--expect-device", metavar="MODEL-PCB[,...]",
                     help="before anything else ask the running firmware (get.1 system.key.info) and "
                          "abort unless it reports this model and PCB, e.g. 96ELN3-4.1")
     ap.add_argument("--app-baud", type=int, default=38400, help="baud rate of the application")
@@ -249,6 +281,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("info", help="bootloader and firmware version")
     sub.add_parser("start", help="leave the bootloader, start the application")
+    sub.add_parser("identify", help="MODEL-PCB of the running firmware (system.key.info)")
     bk = sub.add_parser("backup", help="versions + flash + EEPROM into DIR (one session)")
     bk.add_argument("dir")
     for what in ("flash", "eeprom"):
@@ -265,6 +298,15 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     port = open_port(args)
+    if args.cmd == "identify":  # running firmware only, no bootloader
+        try:
+            got = parse_key_info(app_query(port, args, "get.1 system.key.info"))
+        finally:
+            port.close()
+        if not got:
+            raise SystemExit("identify: no answer to get.1 system.key.info")
+        print("-".join(got))
+        return
     bl = Bootloader(port, timeout=args.timeout, log=log)
     try:
         if args.expect_device and not args.resume:
@@ -290,6 +332,8 @@ def main(argv=None):
         if args.cmd == "start" or not args.stay:
             bl.start_application()
             log("application started")
+            if args.cmd == "write-flash" and args.keep_identity:
+                restore_identity(bl.port, args)
     except BootloaderError as e:
         raise SystemExit(f"error: {e}")
     finally:

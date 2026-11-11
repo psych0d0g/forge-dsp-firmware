@@ -4,15 +4,16 @@ Freie Firmware in C für die Forge-DSP-Geräte von Mark Duprau (Forge Audio, 201
 BASCOM-Firmware 1.11.6000 (bitbucket.org/forge-dsp/firmware) für **alle Varianten** nach avr-gcc/PlatformIO.
 Geflasht wird über den vorhandenen Bootloader chip45boot3, direkt aus VS Code.
 
-| Umgebung | Gerät | PCB | `system.key.info` |
-|---|---|---|---|
-| `V30-96LN` | Forge DSP 96LN | 3.0 | 96LN-3.0 |
-| `V30-96ELN` | Forge DSP 96ELN | 3.0 | 96ELN-4.0 (sic, Quelltext) |
-| `V40-96ELN` | Forge DSP 96ELN | 4.0 | 96ELN-4.0 |
-| `V40-96ELN-3` | Forge DSP 96ELN-3 | 4.0 | 96ELN3-4.0 |
-| `V40-CORED8` | ETON CORE D8 | 4.0 | CORED8-4.0 |
-| `V41-96ELN-3` | Forge DSP 96ELN-3 | 4.1 | 96ELN3-4.1 |
-| `V41-CORED8` | ETON CORE D8 | 4.1 | CORED8-4.1 |
+Vier Builds decken alle sieben Varianten ab. CORED8 ist firmwareseitig ein 96ELN und V41 dasselbe wie V40, nur die
+Kennung unterscheidet sich ([docs/single-firmware.md](docs/single-firmware.md)). Die Kennung steht im EEPROM; der
+Upload übernimmt sie aus der Meldung der bisherigen Firmware.
+
+| Umgebung | Geräte | `system.key.info` |
+|---|---|---|
+| `V30-96LN` | Forge DSP 96LN (PCB 3.0) | 96LN-3.0 |
+| `V30-96ELN` | Forge DSP 96ELN (PCB 3.0) | 96ELN-4.0 (sic, Quelltext) |
+| `V4x-96ELN` | Forge DSP 96ELN (PCB 4.0), ETON CORE D8 (PCB 4.0 und 4.1) | 96ELN-4.0, CORED8-4.0, CORED8-4.1 |
+| `V4x-96ELN-3` | Forge DSP 96ELN-3 (PCB 4.0 und 4.1) | 96ELN3-4.0, 96ELN3-4.1 |
 
 Alle: ATxmega256A3U, interner 32-MHz-Takt.
 
@@ -40,6 +41,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
 - **Sicherer Werks-Reset**: Abstimmungen werden nur mit `FORGE_FACTORY_RESET=1` gelöscht, nicht bei jedem
   Versionswechsel.
 - **Flashen unter Linux** aus VS Code, mit Backup, Gerätecheck und Rückweg auf die Originalfirmware.
+- **Vier statt sieben Builds**, die Kennung (Modell, PCB) steht im EEPROM: `get.1 system.key.info.list` zeigt die
+  möglichen, `set.1 system.key.info="CORED8-4.1"` wählt eine (#31).
 - Rund **39 % kleiner** als das Original (V40-96ELN: 125 KB statt 205 KB, mit microSD; ohne die Debug-Texte des Originals, #41).
 
 ## Build-Optionen
@@ -79,7 +82,7 @@ Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `lib/fatfs`: FatFs R0
    Gerät, `cs` = Summe der Zeichen ab dem Register, 2 Hex). Ohne Leerzeichen nach dem Befehlszeichen liest das
    Original das erste Zeichen als Ziel (`<system…` = Slave).
 
-c45b3 braucht nur pyserial, das liefert PlatformIO mit. CLI: `pio run -e V41-96ELN-3 -t upload`.
+c45b3 braucht nur pyserial, das liefert PlatformIO mit. CLI: `pio run -e V4x-96ELN-3 -t upload`.
 
 ## Aufbau
 - `src/`: gemeinsamer Code aller Varianten (`src/cmd/`: Textprotokoll), `include/`: Header.
