@@ -117,6 +117,8 @@ void cmd_set_mute(void);
 void cmd_get_mute(void);
 void cmd_set_phase(void);
 void cmd_get_phase(void);
+void cmd_set_delay(void);
+void cmd_get_delay(void);
 
 /* events to the GUI: header words from a table (BASCOM: restore + read), value in cmd_req_value */
 void cmd_load_header(const uint16_t words[cmd_req_words_max]);

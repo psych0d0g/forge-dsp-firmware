@@ -792,15 +792,17 @@ class DspWriteTest(unittest.TestCase):
         self.assertIn(",[129,8]]", p.stdout)  # errorcount_fw_iface_verify (3, 5: cores 2, 3 missing)
 
 
-@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
-class AudioCmdTest(unittest.TestCase):
-    """cmd_gain, cmd_mute, cmd_phase (libs/cmd/v20/common/subs)."""
-
+class LinesMixin:
     def lines(self, flavour, lines):
         p = subprocess.run([os.path.join(NATIVE, f"cmd-{flavour}")], input="\n".join(lines) + "\n",
                            capture_output=True, text=True, timeout=10)
         self.assertEqual(p.returncode, 0, p.stderr)
         return [l for l in p.stdout.splitlines() if not l.startswith(("@pin", "--"))]
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class AudioCmdTest(LinesMixin, unittest.TestCase):
+    """cmd_gain, cmd_mute, cmd_phase (libs/cmd/v20/common/subs)."""
 
     def test_gain_roundtrip_and_ranges(self):
         for f in FLAVOURS:
@@ -872,6 +874,52 @@ class AudioCmdTest(unittest.TestCase):
         reg, = consts(f, "ES9018_REG_DACA_PHASE")
         regs = bytes.fromhex([l for l in out if l.startswith("@regs:")][0][6:])
         self.assertEqual(regs[reg], 0x42)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class DelayCmdTest(LinesMixin, unittest.TestCase):
+    """cmd_delay: samples, units, register pairs in the DSP, input delays."""
+
+    def test_delay_values_units_left(self):
+        for f in FLAVOURS:
+            nout, ndsp, samples = consts(f, "FLOW_MAX_OUT_CHANNEL", "FLOW_MAX_DSP", "FLOW_MAX_SAMPLES")
+            out = self.lines(f, ["1|set.1 delay.out.3=100", "1|set.1 delay.2=50", "1|get.1 delay.out",
+                                 "1|set.1 delay.out.4.ms=2.5", "1|get.1 delay.4", "1|get.1 delay.out.3.ms",
+                                 "1|set.1 delay.out.4.km=2.5", "1|get.1 delay.out.left",
+                                 f"1|set.1 delay.out.{nout + 1}=1"])
+            self.assertEqual(out[2], "@0: <.1 delay.out=[0,50,100" + ",0" * (nout - 3) + "]\\r\\n", f)
+            self.assertEqual(out[4], "@0: <.1 delay.4=240\\r\\n", f)       # 2.5 ms / (1/96 ms)
+            self.assertEqual(out[5], "@0: <.1 delay.out.3=1.042\\r\\n", f)  # 100 / 96 kHz
+            self.assertIn("unknown command", out[6], f)
+            self.assertEqual(len([l for l in out if " ok" in l]), 3, f)       # no ok after the error
+            b = nout // ndsp
+            vals = [0, 50, 100, 240] + [0] * (nout - 4)
+            left = [samples - sum(vals[i * b:(i + 1) * b]) for i in range(ndsp)]
+            self.assertEqual(out[7], "@0: <.1 delay.out=[" + ",".join(map(str, left)) + "]\\r\\n", f)
+            self.assertIn("command out of range", out[8], f)
+
+    def test_delay_pairs_in_dsp(self):
+        f = "V41-96ELN-3"
+        dd = table_bytes(f, "data_flow_pair_delay_dsp")
+        dr = table_bytes(f, "data_flow_pair_delay_reg")
+        adr = {1: (1, 0x68), 2: (2, 0x68), 3: (2, 0x6A)}
+        bus, a = adr[dd[3]]
+        out = self.lines(f, ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect",
+                             "1|set.1 delay.out.3=100", "1|set.1 delay.out.4=7",
+                             f"#block={bus},{a:02X},{dr[3]:02X},4"])
+        # mode 1 stores samples * 2; odd channel = high word
+        self.assertIn(f"@block:{(200 << 16 | 14):08X}", out)
+
+    def test_delay_in(self):
+        f = "V41-96ELN-3"
+        out = self.lines(f, ["1|set.1 delay.out=[11,12,13,14,15,16,17,18]",
+                             "1|set.1 delay.in=[1,2,3,4,5,6,7,8]", "1|get.1 delay.in", "1|get.1 delay.out",
+                             "1|set.1 delay.in.7=3"])
+        self.assertEqual(out[2], "@0: <.1 delay.in=[1,2,3,4,5,6,11,12]\\r\\n")  # 7/8: outputs (original)
+        self.assertEqual(out[3], "@0: <.1 delay.out=[11,12,13,14,15,16,17,18]\\r\\n")
+        self.assertIn("command out of range", out[4])
+        out = self.lines("V30-96LN", ["1|get.1 delay.in", "1|set.1 delay.in.1=3"])
+        self.assertIn("unknown command", out[0])
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")

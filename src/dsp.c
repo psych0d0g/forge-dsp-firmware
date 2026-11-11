@@ -179,17 +179,23 @@ void dsp_set_delay(uint32_t value)
 	plain_write(c, dsp_reg, BAS_DSP_REG_SIZE_DELAY, 1);
 }
 
+static void ack_delay(uint8_t n)
+{
+	const struct core *c = &cores[n];
+	if (!(hardware_dsp & (1u << c->rdy)))
+		return;
+	put32(1, 1);
+	plain_write(c, BAS_DSP_SUB_DELAY_ACK, BAS_DSP_REG_SIZE_DELAY, 1);
+}
+
 void dsp_ack_delay(void)
 {
 	/* every core, as dsp_ack_delay */
-	for (uint8_t n = 1; n <= BAS_MODUL_TAS3108_CORES; n++) {
-		const struct core *c = &cores[n];
-		if (!(hardware_dsp & (1u << c->rdy)))
-			continue;
-		put32(1, 1);
-		plain_write(c, BAS_DSP_SUB_DELAY_ACK, BAS_DSP_REG_SIZE_DELAY, 1);
-	}
+	for (uint8_t n = 1; n <= BAS_MODUL_TAS3108_CORES; n++)
+		ack_delay(n);
 }
+
+void dsp_1_ack_delay(void) { ack_delay(1); }  /* input delays live in core 1 */
 
 void dsp_set_phase_reg(uint32_t value)
 {

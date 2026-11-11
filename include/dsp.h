@@ -19,6 +19,7 @@ void dsp_set_mux(uint32_t state);
 uint32_t dsp_get_mux(void);
 void dsp_set_delay(uint32_t value);
 void dsp_ack_delay(void);
+void dsp_1_ack_delay(void);
 void dsp_set_phase_reg(uint32_t value);      /* one output register, dsp_core/dsp_reg set */
 void dsp_init_vum(void);
 void dsp_get_vum(void);
