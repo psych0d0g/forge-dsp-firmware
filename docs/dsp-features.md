@@ -22,7 +22,7 @@ und V30-96ELN sind gleich, 96ELN-3 wie angegeben.
 
 | | Kern 1 (Programm 1) | Kern 2 und 3 (Programm 2) |
 |---|---|---|
-| ausgeführte Takte je Sample | 1384 von 1408 (98,3 %) | 1244 von 1408 (88,4 %); 96ELN-3: 1264 |
+| ausgeführte Takte je Sample (mit den 3 Pipeline-Takten nach dem Sprung) | 1387 von 1408 (98,5 %) | 1247 von 1408 (88,6 %); 96ELN-3: 1267 |
 | davon reine Wartetakte (alle fünf Felder NOP) | 116, davon 104 = 8 Delays × 13 Takte Wartezeit | 56, davon 52 = 4 × 13 |
 | Biquads | 144 per I2C einstellbar + 2 fest (Pegelmesser) | 196 per I2C einstellbar (2 × 38 + 2 × 60) |
 | Koeffizienten benutzt | 866 von 1022 | 991 von 1022 (96ELN-3: 995) |
@@ -47,8 +47,8 @@ Bass/Höhen-Schnittstelle, DO5–DO8 von Kern 2/3, Abtastraten außer 96 kHz.
 
 1. **Wartetakte nach `DLYPTR` füllen.** Zwischen `DLYPTR` und `ST(DLYO)` müssen 13 Takte liegen, die Programme
    füllen sie mit NOPs. Mit anderer Arbeit verschränkt gewinnt man 104 Takte in Kern 1 (≈ 20 Biquads) und 52 in
-   Kern 2/3. Kern 1 hätte damit 128 freie Takte statt 24.
-2. **Kern 2/3 hat Takte frei, aber kaum Koeffizienten.** 164 freie Takte + 52 Wartetakte ≈ 43 Biquads, der
+   Kern 2/3. Kern 1 hätte damit 125 freie Takte statt 21.
+2. **Kern 2/3 hat Takte frei, aber kaum Koeffizienten.** 161 freie Takte + 52 Wartetakte ≈ 43 Biquads, der
    Koeffizientenspeicher reicht aber nur noch für 6 (31 freie Worte). Mehr Biquads gingen nur mit gemeinsam
    genutzten Koeffizienten (gleiches Filter auf mehreren Kanälen, z. B. Links/Rechts gekoppelt) oder auf Kosten
    anderer Blöcke.
@@ -68,8 +68,14 @@ Voraussetzungen, bevor man das baut:
 
 - Assembler und Prüfwerkzeug: `tools/tas3108_asm.py` (vorhanden, #47). `asm` übersetzt die Syntax des
   Disassemblers (mit Labels) und setzt das Programm auf Wunsch in ein vorhandenes Boot-Image ein; der Test erzeugt
-  alle 14 Originale bitgleich neu. `check` prüft die Regeln unten und das Taktbudget. Noch offen: der Vergleich
-  des Signalflusses mit dem alten Programm (`tas3108_flow.py`).
+  alle 14 Originale bitgleich neu. `check` prüft die Regeln unten und das Taktbudget.
+- Gleichwertigkeit: `tools/tas3108_sim.py compare ALT.bin NEU.bin` rechnet beide Programme Takt für Takt mit
+  denselben Zufallssignalen, Koeffizienten und (bei gleichem Speicherlayout) demselben Anfangszustand und
+  vergleicht nach jedem Sample DO1–DO8 sowie den gesamten Daten- und Koeffizientenspeicher bitgenau. Der Test
+  zeigt, dass vertauschte MACs, falsche Koeffizientenadressen, ein zu frühes `ST(DLYO)` und ein fehlender MAC im
+  Pegelmesser auffallen. Das Modell ist dort, wo TI nichts dokumentiert (Ausgangsskalierung, LOG2), nur
+  deterministisch, nicht hardwaregenau; es bestätigt Gleichwertigkeit, nicht den Klang. Belegt ist: Der Pegelblock
+  ergibt im Modell genau den Registerwert × 0,99988 als Verstärkung.
   Regeln der Hardware, die das Prüfwerkzeug durchsetzen muss: Sprungbefehle in den ersten 1K Befehlen, drei NOPs nach
   JMP/BOC/BNC, `COMP`-Ergebnis erst zwei Takte später, 13 Takte zwischen `DLYPTR` und `ST(DLYO)`.
 - Die MCU schreibt `dsp_N_code` beim Start ins EEPROM des TAS3108, wenn die Prüfsumme abweicht. Ein geändertes

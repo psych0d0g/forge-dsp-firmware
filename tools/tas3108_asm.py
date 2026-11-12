@@ -161,14 +161,24 @@ def replace_program(blocks, words):
     return out
 
 
+def cycles(words):
+    """DSP cycles of one sample: the executed path up to STOP plus the three NOP cycles in the
+    pipe after every taken JMP."""
+    import tas3108_flow
+    order = tas3108_flow.trace(words)
+    jumps = sum(1 for pc in order if dis.fields(words[pc])[0] == 0x12)
+    return len(order) + BRANCH_NOPS * jumps
+
+
 def check(words, fs=96000):
     """Hardware rules -> list of problems (empty: ok). Executes the frame path (JMP followed)."""
     import tas3108_flow
     errors = []
     order = tas3108_flow.trace(words)
     budget = CYCLES[fs]
-    if len(order) > budget:
-        errors.append(f"{len(order)} cycles per sample, budget {budget} at {fs} Hz")
+    used = cycles(words)
+    if used > budget:
+        errors.append(f"{used} cycles per sample, budget {budget} at {fs} Hz")
     last_dly, last_comp = None, None
     for i, pc in enumerate(order):
         a1, a2, m1, d1, m2, d2, m3, d3 = dis.fields(words[pc])

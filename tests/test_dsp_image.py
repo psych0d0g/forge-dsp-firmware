@@ -12,6 +12,7 @@ import tas3108_dis  # noqa: E402
 import tas3108_flow  # noqa: E402
 import c51_dis  # noqa: E402
 import tas3108_asm  # noqa: E402
+import tas3108_sim  # noqa: E402
 
 
 class DspImageTest(unittest.TestCase):
@@ -206,6 +207,36 @@ class DspImageTest(unittest.TestCase):
         self.assertTrue(any("budget" in e for e in tas3108_asm.check(long)))
         with self.assertRaises(tas3108_asm.AsmError):
             tas3108_asm.assemble("NOP | FOO | NOP | NOP | NOP")
+
+    def test_simulator(self):
+        """#47: the equivalence check finds changed programs (swapped MACs, a changed coefficient
+        address, ST(DLYO) too early, a dropped MAC in the level meter) and the volume blocks
+        produce the register value as gain (C_007 = 0.99988 trim)."""
+        import random
+        h = os.path.join(HERE, "..", "src", "flavours", "V40-96ELN", "flavour_data.h")
+        for p in (1, 2):
+            img = dsp_image.extract(h, p)
+            blocks, rest = dsp_image.parse(img)
+            prog = tas3108_dis.program(blocks)
+            self.assertIsNone(tas3108_sim.compare(img, img, frames=2), p)
+            names = tas3108_dis.coef_names(dsp_image.regmap(blocks))
+            i = next(pc for pc, w in enumerate(prog) if "b2>" in tas3108_dis.disasm(w, names)[0])
+            j = next(pc for pc, w in enumerate(prog) if tas3108_dis.fields(w)[6] == 4)
+            k = max(pc for pc, w in enumerate(prog) if "ADD(ACC,MR,NONE,ACC)" in tas3108_dis.disasm(w)[0])
+            muts = []
+            w = list(prog); w[i + 1], w[i + 2] = w[i + 2], w[i + 1]; muts.append(w)  # noqa: E702
+            w = list(prog); w[i + 3] ^= 1 << 14; muts.append(w)  # noqa: E702
+            w = list(prog); w[j - 1], w[j] = w[j], w[j - 1]; muts.append(w)  # noqa: E702
+            w = list(prog); w[k] = 0; muts.append(w)  # noqa: E702
+            for n, w in enumerate(muts):
+                other = dsp_image.build(tas3108_asm.replace_program(blocks, w), rest)
+                self.assertIsNotNone(tas3108_sim.compare(img, other, frames=2), (p, n))
+        blocks = dsp_image.parse(dsp_image.extract(h, 2))[0]
+        coef, data = tas3108_sim.initial_memory(blocks, random.Random(1))
+        core = tas3108_sim.Core(tas3108_dis.program(blocks), coef, data)
+        for _ in range(3000):  # four ramps with alpha = 1/128
+            core.frame([0] * 8)
+        self.assertAlmostEqual(core.coef[0x005] / coef[0x3D1], 0.99988, delta=0.0005)
 
 
 if __name__ == "__main__":

@@ -117,9 +117,11 @@ belegt:
   SHL(1–4) = 10–13.
 - ALU2 0x4F (100 1111) steht nicht im Handbuch. Er kommt nur im Pegel-Block vor, immer zusammen mit `SHR(4)` direkt
   nach `ADD(ACC,MR,NONE,B)`, 6× in Programm 1, 4× in Programm 2. Die Ausgabe zeigt ihn als `ALU2?0x4f`.
-  Vermutung: Die ADD-Codes tragen das Ziel in den unteren 3 Bit (001 MD, 010 B, 011 L, 100 MC, 101 ACC,
-  111 DLYI); `CLRACC` = 100 1101 ist dann „Null → ACC“ und 0x4F = 100 1111 „Null → DLYI“. An diesen Stellen
-  folgt kein Zugriff auf die Delay-Leitung, der Datenpfad bleibt also unberührt.
+  Wirkung, belegt über die Pegelrechnung: Nach dem letzten Glättungsschritt rechnet der Code `ACC = BR + MR`.
+  Wäre MR dort noch das Produkt aus Glättungswert und `C_007`, läge die Verstärkung rund 64-fach zu hoch. Richtig
+  (Verstärkung = Registerwert × 0,99988) wird sie nur, wenn 0x4F MD oder MC auf 0 setzt; beide werden danach
+  sofort überschrieben, die Wahl ist für die Programme gleichgültig. Der Simulator (`tas3108_sim.py`) setzt MC = 0.
+  Die frühere Vermutung „Null → DLYI“ ist damit widerlegt.
 
 Erste Befunde (V40-96ELN):
 
@@ -242,6 +244,6 @@ erreichbare Code ohne ungültige Opcodes dekodieren.
 
 - 8051: Register für I2C, Delay und GPIO (SLEU076, nicht öffentlich) und damit die Arten 3, 4, 7, 8 und 0x62 im
   Einzelnen; Funktion 0x1FD0.
-- ALU2 0x4F belegen (Vermutung „Null → DLYI“, siehe Disassembler).
+- ALU2 0x4F: ob MD oder MC gelöscht wird (für die Forge-Programme gleichgültig).
 - Die Analyse ist statisch (bedingte Sprünge werden nicht genommen); am Gerät gegenprüfen, z. B. Biquad setzen
   und den Ausgang messen.

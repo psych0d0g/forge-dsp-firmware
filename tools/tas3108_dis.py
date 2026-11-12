@@ -11,6 +11,8 @@ Output syntax as in SLEU067A: ALU1 | ALU2 | MOP1 | MOP2 | MOP3. With branches (J
 STOP) the AD3 field is the target (PCADDR). MOP3 = 0 with AD3 != 0 is DLYPTR(ptr).
 
 Deviations from SLEU067A, from the Forge programs (see docs/dsp-images.md):
+  - ALU2 0x4F is not in the guide; it clears MD or MC (the volume blocks only produce the stored
+    gain then, see tas3108_sim.py). Printed as ALU2?0x4f.
   - ALU2 CLRACC is 100 1101 (0x4D); the guide gives 101 1101, which is also its code for
     ADD(BR,MR,CLP32,DO7). The input/output block at the start of every program has 0x4D where
     the guide's example (table 5) has CLRACC.
