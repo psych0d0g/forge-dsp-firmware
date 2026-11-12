@@ -556,6 +556,7 @@ void cmd_answer_header(void)
 			/* no else branch in BASCOM: other words print nothing */
 			if (w1 == 0x6465) out_str(".inch");
 			else if (w1 == 0x6576) out_str(".init");
+			else if (w1 == 0x7379 && w2 == 0x6368) out_str(".in");  /* PORT (#55): system.channel.in.N */
 			else if (w1 == 0x7379) out_str(".info");
 			goto word_four;
 		} else if (w3 == 0x7363) {

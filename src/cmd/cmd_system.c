@@ -91,10 +91,39 @@ static void cmd_set_system_channel_name(void)
 	}
 }
 
+/* PORT extension (#55): names of the inputs, system.channel.in.N (N = mixer input 1..8: 1..6
+ * analog as gain.in.N, 7/8 digital), up to 16 characters, "" deletes. Stored outside the EEPROM
+ * layout of the original; never written storage (0xFF) reads as "". */
+#define EE_INPUT_NAMES 0x0C00
+#define INPUT_NAMES 8
+#define INPUT_NAME_SIZE 17
+static uint16_t input_name_addr(uint8_t n) { return (uint16_t)(EE_INPUT_NAMES + (n - 1) * INPUT_NAME_SIZE); }
+
+static void cmd_set_system_channel_input(void)
+{
+	if (REQ_B(10) != cmd_req_number) {
+		cmd_error_unknown();
+		return;
+	}
+	if (!(cmd_reg_var_state & (1 << cmd_reg_state_isString))) {
+		cmd_error_unknown_para();
+		return;
+	}
+	uint8_t n = REQ_B(9);
+	if (n < 1 || n > INPUT_NAMES) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	cmd_req_value[INPUT_NAME_SIZE - 1] = 0;  /* 16 characters, as the output names */
+	eram_write_str(input_name_addr(n), INPUT_NAME_SIZE, cmd_req_value);
+	cmd_answer_ok();
+}
+
 static void cmd_set_system_channel(void)
 {
 	switch (req_w(cmd_req_word_three)) {
 	case 0x6E61: cmd_set_system_channel_name(); break;
+	case 0x696E: cmd_set_system_channel_input(); break;  /* PORT extension (#55) */
 	default: cmd_error_unknown();
 	}
 }
@@ -420,8 +449,33 @@ static void print_channel_name(uint8_t a)
 	out_crlf();
 }
 
+static void print_input_name(uint8_t n)
+{
+	char t[INPUT_NAME_SIZE];
+	eram_read_str(input_name_addr(n), sizeof t, t);
+	if ((uint8_t)t[0] == 0xFF)
+		t[0] = 0;
+	cmd_answer_header();
+	Q(); out_str(t); Q();
+	out_crlf();
+}
+
 static void cmd_get_system_channel(void)
 {
+	if (req_w(cmd_req_word_three) == 0x696E) {  /* PORT extension (#55): system.channel.in.N */
+		if (req_w(cmd_req_word_four) == 0x002A) {
+			REQ_B(10) = cmd_req_number;
+			for (uint8_t n = 1; n <= INPUT_NAMES; n++) {
+				REQ_B(9) = n;
+				print_input_name(n);
+			}
+		} else if (REQ_B(10) == cmd_req_number && REQ_B(9) >= 1 && REQ_B(9) <= INPUT_NAMES) {
+			print_input_name(REQ_B(9));
+		} else {
+			cmd_error_cmd_oor();
+		}
+		return;
+	}
 	if (req_w(cmd_req_word_three) != 0x6E61) {
 		cmd_error_unknown();
 		return;

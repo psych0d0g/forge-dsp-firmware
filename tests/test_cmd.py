@@ -219,6 +219,13 @@ def consts(flavour, *names):
     return [int(re.search(rf"#define BAS_{n} (\d+)", t).group(1)) for n in names]
 
 
+def layout_end(flavour):
+    """first EEPROM address after the original layout (ERAM_TOTAL_SIZE)"""
+    import re
+    t = pathlib.Path(HERE, "..", "src", "flavours", flavour, "flavour_eram.h").read_text()
+    return int(re.search(r"#define ERAM_TOTAL_SIZE (\d+)", t).group(1))
+
+
 def table_words(flavour, label):
     import re
     t = pathlib.Path(HERE, "..", "src", "flavours", flavour, "flavour_data.h").read_text()
@@ -2078,6 +2085,32 @@ class LevelTest(LinesMixin, unittest.TestCase):
         bus1 = " ".join(l for l in out if l.startswith("@i2c1:"))
         self.assertIn("S 68 06 00 02 00 06 P", bus1)               # PEEK data memory D_006 (in7)
         self.assertIn("S 68 07 Sr 69", bus1)                       # then read 8 bytes of 0x07
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class InputNameTest(unittest.TestCase):
+    """#55: names of the inputs in the device, system.channel.in.N, outside the original layout."""
+
+    def test_names(self):
+        for f in ("V40-96ELN", "V30-96LN"):
+            p, ee = run(f, ["1|get.1 system.channel.in.1", '1|set.1 system.channel.in.1="Radio links"',
+                            '1|set.1 system.channel.in.8="Ein ganz langer Name"', "1|get.1 system.channel.in.*",
+                            '1|set.1 system.channel.in.9="x"', "1|set.1 system.channel.in.2=5",
+                            '1|set.1 system.channel.in.1=""', "1|get.1 system.channel.in.1", "1|get.1 system.channel.name.1"],
+                        eeprom=image(f), want_eeprom=True)
+            out = [l for l in p.stdout.splitlines() if l.startswith("@0:")]
+            self.assertEqual(out[0], '@0: <.1 system.channel.in.1=""\\r\\n', f)             # never written (0xFF)
+            self.assertIn("system.channel.in.1 ok", out[1], f)
+            listing = out[3].split("\\r\\n")
+            self.assertEqual(listing[0], '@0: <.1 system.channel.in.1="Radio links"', f)
+            self.assertEqual(listing[7].strip(), '<.1 system.channel.in.8="Ein ganz langer "', f)  # 16 characters
+            self.assertIn("command out of range", out[4], f)
+            self.assertIn("unknown", out[5], f)                                                 # not a string
+            self.assertEqual(out[7], '@0: <.1 system.channel.in.1=""\\r\\n', f)
+            self.assertIn("system.channel.name.1=", out[8], f)                                  # output names unchanged
+            self.assertEqual(ee[0x0C00 + 7 * 17:0x0C00 + 8 * 17], b"Ein ganz langer \x00")              # 16 + NUL at 0x0C77
+            layout = layout_end(f)
+            self.assertLess(layout, 0x0C00, f)                                                  # outside the original layout
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
