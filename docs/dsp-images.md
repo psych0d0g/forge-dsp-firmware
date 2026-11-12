@@ -50,9 +50,23 @@ Der 8051-Teil ist in allen 96ELN-/CORED8-Varianten gleich lang. Beim 96LN hat de
 - Weitere Blöcke mit mehreren Worten: Steuerworte ab 0x0000, Pegel und Mixer (`0x00000017`, `0x00200000` = 0,25,
   `0x00800000` = 1,0).
 
+## Abbildung Biquad-Register → Koeffizienten (Kern 1, belegt)
+
+Kern 1: **Koeffizientenadresse = 0x16 + 5 × (I2C-Subadresse − 0x1F)**, je 5 Worte (b0, b1, b2, a1, a2 in der
+Reihenfolge des I2C-Schreibens).
+Beleg: Die Register 0x1F–0x66 und 0x6F–0xB6 bilden zwei zusammenhängende Gruppen mit einer Lücke von 8 Registern
+(0x67–0x6E). Die b0-Worte = 1,0 liegen ab 0x16 im Abstand 5. Das letzte der ersten Gruppe (0x66 → 0x179) steckt im
+17-Wort-Block, danach fehlen genau 8 Positionen (0x17E–0x19C), und ab 0x1A1 (→ 0x6F) geht es weiter.
+Die 8 Plätze dazwischen sind keine Biquads mit Durchgangs-Vorgabe; der 17-Wort-Block enthält dort echte
+Filterkoeffizienten.
+
+Kern 2/3 (Programm 2): Die b0-Worte liegen ab 0x11 lückenlos bis 0x3CC (188 Stück), dann folgen 0x3D5, 0x3DA,
+0x3DF und 0x3E4. Die Register sind 0x1F–0xC7 (169) und 0xD5–0xEF (27). Diese Aufteilung passt nicht linear zu den
+Koeffizienten; die Abbildung steht vermutlich in einer Tabelle des 8051-Programms und ist noch offen.
+
 ## Offen
 
-- Abbildung I2C-Subadresse → Koeffizientenadresse (das Register-Mapping des 8051-Programms).
+- Abbildung I2C-Subadresse → Koeffizientenadresse für Programm 2 (Register-Tabelle im 8051-Programm suchen).
 - Disassembler für das DSP-Programm (54-Bit-Befehle, SLEU067A Anhang A) und Signalfluss je Kern.
 - Unterschiede zwischen den Fassungen (96ELN ↔ 96ELN-3 Programm 2: 20 Befehle mehr, ein Koeffizienten-Block mehr).
 - Der 8051-Teil (Firmware des Mikrocontrollers im TAS3108) ist 8051-Code und lässt sich mit üblichen Werkzeugen
