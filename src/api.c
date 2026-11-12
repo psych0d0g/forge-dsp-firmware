@@ -2,6 +2,7 @@
  * Port of libs/api (functions.bas, mute/functions.bas, mix/functions.bas) and the load
  * sequence of modc_load_preset. License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
+#include <math.h>
 #include "api.h"
 #include "sys_init.h"
 #include "bqramp.h"
@@ -269,6 +270,10 @@ void api_set_mix_mono(uint8_t pair, uint8_t mode)
 	if (mix_mono[pair] == mode || (mix_mono[pair] <= 1 && mode == 1))
 		return;
 	mix_mono[pair] = mode;
+	if (bqramp_enabled()) {  /* PORT (#50): ramp the rows instead of muting */
+		api_mix_ramp_all();
+		return;
+	}
 	api_set_out_mute_change();  /* the mixer is written with the auto unmute, as a mixer change */
 	store_mix_changed = BAS_FLOW_MIX_MAX_CHANGED;
 }
@@ -305,6 +310,76 @@ uint8_t api_mix_value(uint8_t c, uint8_t g)  /* effective value of mixer.<active
 	return mix_value((uint16_t)((store_mix_position - 1) * BAS_FLOW_MIX_MAX_POS_FRAME), b);
 }
 
+/* --- mixer ramp (PORT #50): with clickless on a mixer change does not mute; the changed rows
+ * go to their new coefficients in steps of at most MIX_STEP (linear), MIX_ROWS rows per call of
+ * api_mix_ramp_mainloop (64 Hz). mix_cur holds the coefficients last written for the active
+ * position (word b = (row - 1) * 4 + k, 1-based). */
+#define MIX_STEP 0.0125  /* 80 steps for 0..1 (1.25 s), ~0.1 dB near full gain: no audible steps */
+#define MIX_ROWS 2
+static float mix_cur[BAS_FLOW_MIX_MAX_REG * 4 + 1];
+static uint32_t mix_cur_valid, mix_ramp_rows;
+static uint8_t mix_rr;
+
+static void mix_write_row(uint8_t i, const double val[4])
+{
+	for (uint8_t ii = 1; ii <= 4; ii++) {
+		uint32_t v = dsp_math_to523(val[ii - 1]);
+		for (uint8_t k = 0; k < 4; k++)
+			buffer_bytes[(ii - 1) * 4 + 1 + k] = (uint8_t)(v >> (8 * k));
+		mix_cur[(i - 1) * 4 + ii] = (float)val[ii - 1];
+	}
+	mix_cur_valid |= 1UL << i;
+	i2c_device_addr = 0x68;  /* dsp_1_slave_adr_w */
+	i2c_reg = BAS_LOOKUP_B(data_flow_mix_dsp_reg, i);
+	i2c_size = BAS_FLOW_MIX_MAX_REG_SIZE;
+	i2c_wbuffer(1);
+}
+
+void api_mix_ramp_request(uint8_t row)
+{
+	if (row >= 1 && row <= BAS_FLOW_MIX_MAX_REG)
+		mix_ramp_rows |= 1UL << row;
+}
+
+void api_mix_ramp_all(void)
+{
+	for (uint8_t i = 1; i <= BAS_FLOW_MIX_MAX_REG; i++)
+		mix_ramp_rows |= 1UL << i;
+}
+
+void api_mix_ramp_mainloop(void)
+{
+	if (!mix_ramp_rows || !(hardware_dsp & (1u << BAS_TAS3108_1_RDY)))
+		return;
+	if (store_mix_position < 1 || store_mix_position > BAS_FLOW_MIX_MAX_POSITIONS) {
+		mix_ramp_rows = 0;
+		return;
+	}
+	uint16_t frame = (uint16_t)((store_mix_position - 1) * BAS_FLOW_MIX_MAX_POS_FRAME);
+	for (uint8_t n = 0, k = 0; n < MIX_ROWS && k < BAS_FLOW_MIX_MAX_REG; k++) {
+		mix_rr = (uint8_t)(mix_rr % BAS_FLOW_MIX_MAX_REG + 1);
+		uint8_t i = mix_rr;
+		if (!(mix_ramp_rows & (1UL << i)))
+			continue;
+		n++;
+		double val[4];
+		uint8_t done = 1;
+		for (uint8_t ii = 1; ii <= 4; ii++) {
+			double target = mix_value(frame, (uint8_t)((i - 1) * 4 + ii)) / 100.0;
+			double cur = mix_cur[(i - 1) * 4 + ii];
+			if (!(mix_cur_valid & (1UL << i)) || fabs(target - cur) <= MIX_STEP + 1e-6) {
+				val[ii - 1] = target;
+			} else {
+				val[ii - 1] = cur + (target > cur ? MIX_STEP : -MIX_STEP);
+				done = 0;
+			}
+		}
+		mix_write_row(i, val);
+		if (done)
+			mix_ramp_rows &= ~(1UL << i);
+	}
+}
+
 void api_set_mix_reg(void)
 {
 	if (!(hardware_dsp & (1u << BAS_TAS3108_1_RDY)))
@@ -316,20 +391,16 @@ void api_set_mix_reg(void)
 	uint16_t count = (uint16_t)((store_mix_position - 1) * BAS_FLOW_MIX_MAX_POS_FRAME);
 	for (uint8_t i = 1; i <= BAS_FLOW_MIX_MAX_REG; i++) {
 		if (store_mix_changed & (1UL << i)) {
+			double val[4];
 			for (uint8_t ii = 1; ii <= 4; ii++) {
 				count++;
 				/* cvt_long = storage_mix(count); PORT: with the mono overlay (#14) */
 				uint16_t frame = (uint16_t)((store_mix_position - 1) * BAS_FLOW_MIX_MAX_POS_FRAME);
 				double d = mix_value(frame, (uint8_t)(count - frame));
-				d = d / 100;
-				uint32_t v = dsp_math_to523(d);
-				for (uint8_t k = 0; k < 4; k++)
-					buffer_bytes[(ii - 1) * 4 + 1 + k] = (uint8_t)(v >> (8 * k));
+				val[ii - 1] = d / 100;
 			}
-			i2c_device_addr = 0x68;  /* dsp_1_slave_adr_w */
-			i2c_reg = BAS_LOOKUP_B(data_flow_mix_dsp_reg, i);
-			i2c_size = BAS_FLOW_MIX_MAX_REG_SIZE;
-			i2c_wbuffer(1);
+			mix_write_row(i, val);
+			mix_ramp_rows &= ~(1UL << i);  /* written directly (with the mute) */
 		} else {
 			count += 4;
 		}

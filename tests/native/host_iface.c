@@ -258,6 +258,8 @@ static void store_cmd(const char *l)
 			level_feed(i & 1 ? -a : a);
 	} else if (!strcmp(l, "#level?")) {
 		printf("@level:%u,%u\n", level_valid(), level_value());
+	} else if (!strcmp(l, "#mixramp")) {          /* PORT (#50): one mixer ramp pass */
+		api_mix_ramp_mainloop();
 	} else if (!strcmp(l, "#level_loop")) {         /* one level_mainloop call (PEEK) */
 		level_mainloop();
 	} else if (!strcmp(l, "#supply_loop")) {     /* PORT (#46): 8 samples + 1 evaluation */

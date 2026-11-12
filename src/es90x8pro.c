@@ -2,6 +2,7 @@
  * Port of libs/da/es90x8pro (bus 2, 0x90).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "bqramp.h"
 #include "flavour.h"
 #if BAS_MODUL_ES90X8PRO > 0
 #include "bas_data.h"
@@ -40,18 +41,23 @@ void es90x8pro_set_mute(uint8_t mask)
 {
 	/* as BASCOM: no ready check here */
 	i2c_device_addr = ADR;
+	/* PORT (#50): with clickless on all channels ramp at the same time (one wait instead of one
+	 * per channel: 0.23 s instead of 1.8 s blocking the main loop); otherwise as the original */
+	uint8_t parallel = bqramp_enabled(), down = 0, up = 0;
 	for (uint8_t ch = 1; ch <= 8; ch++) {
 		i2c_reg = BAS_LOOKUP_B(data_es90x8pro_vol_reg, ch);
 		if (mask & (1u << (ch - 1))) {
 			buffer_byte = 0xFF;
 			i2c_wbyte(BUS);
-			delay_ms(BAS_DAC_MUTE_RAMP_DOWN);
+			if (parallel) down = 1; else delay_ms(BAS_DAC_MUTE_RAMP_DOWN);
 		} else {
 			buffer_byte = 0x00;
 			i2c_wbyte(BUS);
-			delay_ms(BAS_DAC_MUTE_RAMP_UP);
+			if (parallel) up = 1; else delay_ms(BAS_DAC_MUTE_RAMP_UP);
 		}
 	}
+	if (parallel)
+		delay_ms(up ? BAS_DAC_MUTE_RAMP_UP : down ? BAS_DAC_MUTE_RAMP_DOWN : 0);
 }
 
 static void es90x8pro_init(void)

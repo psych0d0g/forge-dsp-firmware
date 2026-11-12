@@ -988,6 +988,32 @@ class MixerCmdTest(LinesMixin, unittest.TestCase):
         k = (4 - ii) * 4
         self.assertEqual(blk[k:k + 4].hex(), "00400000")
 
+    def test_mixer_ramp_clickless(self):
+        """#50: with clickless on a mixer change ramps the row (0.05 per pass) and does not mute
+        the DAC; without clickless the DAC is muted as in the original."""
+        f = "V40-96ELN"
+        c2a = table_bytes(f, "data_flow_mix_cmd2array")
+        cc = table_bytes(f, "data_flow_mix_can_change")
+        regs = table_bytes(f, "data_flow_mix_dsp_reg")
+        b = c2a[(9 - 1) * 10 + 5]       # mixer.P.9.5
+        reg = regs[cc[b]]
+        k = (4 - ((b - 1) % 4 + 1)) * 4
+        dac = table_bytes(f, "data_es9018_vol_reg")[1]
+        pre = ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#i2cdev=2,90", "#dsp_detect",
+               "1|set.1 mixer.position=1"] + ["#mainloop"] * 12
+        for clickless, muted in ((1, False), (0, True)):
+            out = self.lines(f, pre + [f"1|set.1 biquad.clickless={clickless}", "1|set.1 mixer.1.9.5=50",
+                                       "#regs=2,90,16", "#mixramp", f"#block=1,68,{reg:02X},16"]
+                             + ["#mixramp"] * 45 + ["#mainloop"] * 12 + [f"#block=1,68,{reg:02X},16"])
+            r = [l for l in out if l.startswith("@regs:")][0][6:]
+            dacv = r[2 * dac:2 * dac + 2]
+            blks = [bytes.fromhex(l[7:]) for l in out if l.startswith("@block:")]
+            self.assertEqual(dacv == "FF", muted, (clickless, dacv))
+            if clickless:
+                first = int.from_bytes(blks[0][k:k + 4], "big")
+                self.assertTrue(0x18000 < first < 0x1C000, hex(first))      # 0.0125 after one pass
+            self.assertEqual(blks[-1][k:k + 4].hex(), "00400000")           # 0.5 at the end
+
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class BiquadCmdTest(LinesMixin, unittest.TestCase):

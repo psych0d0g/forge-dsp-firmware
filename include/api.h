@@ -43,6 +43,9 @@ uint16_t api_get_delay_in(uint8_t ch);
 void api_set_mix_position(uint8_t pos);
 uint8_t api_get_mix_position(void);
 void api_set_mix_reg(void);
+void api_mix_ramp_request(uint8_t row);   /* PORT (#50): ramp one mixer row (clickless) */
+void api_mix_ramp_all(void);
+void api_mix_ramp_mainloop(void);         /* 64 Hz */
 void api_restore_mix(void);
 /* mono per output pair (#14): 1 stereo, 2 right, 3 left, 4 (L+R)/2; not stored */
 void api_set_mix_mono(uint8_t pair, uint8_t mode);

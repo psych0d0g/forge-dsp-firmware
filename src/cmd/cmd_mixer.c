@@ -6,6 +6,7 @@
  * (word 0x0000) through, e.g. "mixer.1.2" sets the mux of position 1.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
+#include "bqramp.h"
 #include "cmd.h"
 #include "api.h"
 #include "bas_data.h"
@@ -35,7 +36,9 @@ static void cmd_set_mixer_value(void)
 	}
 	uint8_t b = cmd2array(REQ_B(7), REQ_B(9));
 	uint8_t a = REQ_B(5);
-	if (a == store_mix_position)
+	/* PORT (#50): with clickless on a gain change ramps the row instead of muting */
+	uint8_t ramp = bqramp_enabled() && b != 0x00 && b != 0xFF && a == store_mix_position;
+	if (a == store_mix_position && !ramp)
 		api_set_out_mute_change();
 	switch (b) {
 	case 0x00:  /* nothing */
@@ -48,7 +51,9 @@ static void cmd_set_mixer_value(void)
 		api_publish_in_input();  /* PORT: events 45..48 (#23) */
 		break;
 	default:
-		if (a == store_mix_position)  /* (original also reads can_change(0xFF) for the mux, unused) */
+		if (ramp)
+			api_mix_ramp_request(BAS_LOOKUP_B(data_flow_mix_can_change, b));
+		else if (a == store_mix_position)  /* (original also reads can_change(0xFF) for the mux, unused) */
 			store_mix_changed |= 1UL << BAS_LOOKUP_B(data_flow_mix_can_change, b);
 		SV(BAS_STORAGE_MIX_BASE, (uint16_t)((a - 1) * BAS_FLOW_MIX_MAX_POS_FRAME + b)) = (uint8_t)cmd_reg_var_integers[1];
 		cmd_answer_ok();

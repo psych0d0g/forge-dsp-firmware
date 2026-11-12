@@ -29,8 +29,10 @@ void loopcall(uint16_t bits)
 		cmd_check4buffer();
 		irreceiver_mainloop();
 	}
-	if (B(timer_tce0_div_64))
+	if (B(timer_tce0_div_64)) {
 		level_mainloop();    /* PORT (#51): input level for the loudness block */
+		api_mix_ramp_mainloop();  /* PORT (#50): clickless mixer changes */
+	}
 	if (B(timer_tce0_div_32)) {
 		events_adc_mainloop_32();
 		supply_sample();     /* PORT (#46) */
