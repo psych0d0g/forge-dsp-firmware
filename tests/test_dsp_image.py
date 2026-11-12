@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "tools"))
 import dsp_image  # noqa: E402
 import tas3108_dis  # noqa: E402
 import tas3108_flow  # noqa: E402
+import c51_dis  # noqa: E402
 
 
 class DspImageTest(unittest.TestCase):
@@ -143,6 +144,24 @@ class DspImageTest(unittest.TestCase):
             for g, sigs in per_g.items():
                 self.assertEqual(len(sigs), 1, (h, g, sigs))
             self.assertGreaterEqual(len(per_c), 8, h)
+
+    def test_8051(self):
+        """The 8051 program dispatches the subaddress kinds through a table of read/write handlers;
+        all handlers and the code reachable from them and the vectors decode without invalid
+        opcodes. Unused subaddresses (kind 0) read through the default handler."""
+        headers = sorted(glob.glob(os.path.join(HERE, "..", "src", "flavours", "*", "flavour_data.h")))
+        for h in headers:
+            for p in (1, 2):
+                m = dsp_image.c51(dsp_image.parse(dsp_image.extract(h, p))[0])
+                self.assertIsNotNone(c51_dis.handler_table(m), (h, p))
+                kinds = {k for _, _, _, k in dsp_image.regmap(dsp_image.parse(dsp_image.extract(h, p))[0])}
+                hs = c51_dis.handlers(m, kinds)
+                entries = [v for v in c51_dis.VECTORS if m[v]] + [a for rw in hs.values() for a in rw]
+                for a in entries:
+                    self.assertLess(a, 0x2B00, (h, p, hex(a)))
+                code, _ = c51_dis.disassemble(m, entries)
+                bad = [hex(pc) for pc, (_, text) in code.items() if text.startswith("DB")]
+                self.assertEqual(bad, [], (h, p))
 
 
 if __name__ == "__main__":

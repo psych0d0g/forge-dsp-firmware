@@ -1,7 +1,8 @@
 # TAS3108-Programme (EEPROM-Boot-Images)
 
 Stand der Analyse zu #43. Werkzeuge: `tools/dsp_image.py` (list, extract, check, regs) und
-`tools/tas3108_dis.py` (Disassembler), `tools/tas3108_flow.py` (Signalfluss), Test: `tests/test_dsp_image.py`.
+`tools/tas3108_dis.py` (Disassembler), `tools/tas3108_flow.py` (Signalfluss), `tools/c51_dis.py` (8051),
+Test: `tests/test_dsp_image.py`.
 
 ## Format
 
@@ -191,11 +192,37 @@ Nach `data_flow_dsp_output_vol_*` sind die Ausgangskanäle 1/2 (Kern 3) und 5/6 
 20 Befehle und der Koeffizienten-Block mehr. V30-96LN ist anders aufgeteilt (Kern 1 mit eigenen Ketten nach dem
 Mixer, Kern 2 mit fünf Ketten und drei Kanälen nur mit Pegel); `tas3108_flow.py` zeigt die Einzelheiten.
 
+## 8051-Programm
+
+`tools/c51_dis.py IMAGE.bin` disassembliert den 8051-Teil, rekursiv ab den Vektoren und den Handlern (Tabellen
+bleiben Daten). Bekannt sind nur die Standard-SFRs des 8051. Die Register des TAS3108 (I2C, Delay, DSP-Schnittstelle)
+beschreibt ein TI-Handbuch, das uns nicht vorliegt; sie erscheinen als `SFR_xx`.
+
+Ablauf einer I2C-Anfrage (V40-96ELN, beide Programme): Der Code bei 0x1272 liest aus der Registertabelle
+(0x2C00 + 4 × Subadresse) die Zieladresse und die Art. Über die Art springt er in eine Handler-Tabelle bei 0x03ED
+(4 Byte je Art: Lese-Handler, Schreib-Handler, Big Endian). Lese-Handler legen die Antwort in den internen RAM
+0x38–0x3B. Der Test prüft für alle Fassungen, dass die Tabelle gefunden wird und dass alle Handler und der von dort
+erreichbare Code ohne ungültige Opcodes dekodieren.
+
+| Art | Subadressen | Lesen | Schreiben | Befund |
+|---|---|---|---|---|
+| 0 | unbenutzte | 0x2732 | 0x1D5D | Lesen reicht die Anfrage an 0x1FD0 weiter (Code 3) |
+| 1 | Koeffizienten | 0x1EAC | 0x24C1 | Adresse und Länge aus der Registertabelle |
+| 3 | 0x06 | 0x2719 | 0x1000 | |
+| 4 | 0x07 (8 Byte) | 0x0BF8 | 0x2788 | Lesen mit Sprungtabelle über 10 Fälle |
+| 5 | 0x00 | 0x27EE | 0x275F | Lesen: vier SFR-Bytes (0xA1, 0xA2, 0x96, 0x97), vermutlich Kennung |
+| 6 | 0x02 Status | 0x26AD | 0x25E1 | Lesen: XDATA 0x15, 0x14, 0x99, 0x12; die MCU wertet ein Byte > 0 als Fehler |
+| 7 | 0x0B | 0x2670 | 0x226C | Lesen: XDATA 0x97/0x96 |
+| 8 | 0x0C | 0x23B4 | 0x27AC | Lesen: Zustandsbits aus SFR 0xC5, 0xC6 und Bit SFR_D8.1 sowie RAM 0x35/0x36/0x30 |
+| 0x0B | 0x0F | 0x2732 | 0x245A | Lesen wie unbenutzte Subadressen |
+| 0x0C | 0xC8–0xCF | 0x26C9 | 0x27DE | Schreiben: Wert 1 setzt ein Flag (RAM-Bit 0x21.4), sonst löschen; Lesen: XDATA je Subadresse |
+| 0x0D | 0xD4 Delay-Ack | 0x2749 | 0x27AC | Lesen liefert das Flag 0x21.4 als 0/1; Schreiben reicht an 0x1FD0 weiter (Code 2) |
+| 0x10 | 0xD0–0xD3 Delay | 0x26E4 | 0x2225 | Schreiben: Wert nach XDATA 0x7E/0x84–0x86, dann Bit 0 in SFR 0xC7 (Übergabe an die Delay-Hardware); Lesen: gespeicherte Werte |
+| 0x62 | 0xF9 (Kern 1) | 0x20A5 | 0x1957 | Schreiben mit Sprungtabelle über 7 Fälle, Adresse 0x0420 |
+
 ## Offen
 
-- Bedeutung der vom 8051-Code behandelten Arten (3–0x10, 0x62); dazu den 8051-Code disassemblieren.
+- 8051: Bedeutung der TAS3108-SFRs und damit der Arten 3, 4, 7, 8 und 0x62 im Einzelnen; Funktion 0x1FD0.
 - ALU2 0x4F belegen (Vermutung „Null → DLYI“, siehe Disassembler).
 - Die Analyse ist statisch (bedingte Sprünge werden nicht genommen); am Gerät gegenprüfen, z. B. Biquad setzen
   und den Ausgang messen.
-- Der 8051-Teil (Firmware des Mikrocontrollers im TAS3108) ist 8051-Code und lässt sich mit üblichen Werkzeugen
-  disassemblieren.
