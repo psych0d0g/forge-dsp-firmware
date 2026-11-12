@@ -5,7 +5,7 @@
  * PORT fix (#32): V30-96ELN expects the clock generator (bit 11), which that build does not
  * have (modul_si5338 = 0), and not the ES9018 (bit 2) and CT7302 #20 (bit 3) it detects; the
  * original therefore always muted. The port expects 0x007D there (V40-96ELN without Si5338).
- * PORT fix (#45): if DSP cores are still missing, restart once (software reset), as the
+ * PORT fix (#45, #47): if DSP cores are still missing or report an error state, restart once (software reset), as the
  * original does in effect through its watchdog (it waits for the program load without a
  * limit). An EEPROM flag allows only one restart in a row, so a missing DSP cannot loop.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
@@ -51,7 +51,9 @@ void hw_check_dsp_restart(void)
 {
 	uint8_t f = eram_rb(EE_DSP_RESTART);
 	hw_dsp_restarted = f == 1;
-	if (hardware_dsp == hw_check_expected_dsp() || f == 1) {
+	/* PORT (#47): a core that answers but reports an error state did not load its program (seen
+	 * once on the device right after its EEPROM had been rewritten); a restart loads it */
+	if ((hardware_dsp == hw_check_expected_dsp() && !dsp_state_error) || f == 1) {
 		eram_wb(EE_DSP_RESTART, 0xFF);  /* found, or already restarted once: go on */
 		return;
 	}

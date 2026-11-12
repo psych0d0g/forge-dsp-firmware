@@ -21,6 +21,7 @@
 void watchdog_kick(void);
 
 uint16_t hardware_dsp;
+uint8_t dsp_state_error;  /* a core reported an error state (no program loaded) during this start */
 
 struct dsp_def {
 	uint8_t bus, eeprom_adr, core_adr, eeprom_rdy, core_rdy;
@@ -28,15 +29,29 @@ struct dsp_def {
 	uint16_t chksum_eram;
 };
 
+/* FORGE_DSP_OPT=1 (issue #47): the programs with the delay waits filled (tools/dsp_opt_gen.py,
+ * bit-identical to the original in the simulator); V30-96LN has another layout and keeps its own */
+#ifndef FORGE_DSP_OPT
+#define FORGE_DSP_OPT 0
+#endif
+#if FORGE_DSP_OPT && __has_include("dsp_opt.h")
+#include "dsp_opt.h"
+#define DSP_1_CODE dsp_1_code_opt
+#define DSP_2_CODE dsp_2_code_opt
+#else
+#define DSP_1_CODE dsp_1_code
+#define DSP_2_CODE dsp_2_code
+#endif
+
 static const struct dsp_def dsps[] = {
 #if BAS_MODUL_TAS3108_CORES > 0
-	{ 1, 0xA0, 0x68, BAS_AT24C512_1_RDY, BAS_TAS3108_1_RDY, dsp_1_code, ERAM_DSP_1_EEPROM_CHKSUM_ERAM },
+	{ 1, 0xA0, 0x68, BAS_AT24C512_1_RDY, BAS_TAS3108_1_RDY, DSP_1_CODE, ERAM_DSP_1_EEPROM_CHKSUM_ERAM },
 #endif
 #if BAS_MODUL_TAS3108_CORES > 1
-	{ 2, 0xA0, 0x68, BAS_AT24C512_2_RDY, BAS_TAS3108_2_RDY, dsp_2_code, ERAM_DSP_2_EEPROM_CHKSUM_ERAM },
+	{ 2, 0xA0, 0x68, BAS_AT24C512_2_RDY, BAS_TAS3108_2_RDY, DSP_2_CODE, ERAM_DSP_2_EEPROM_CHKSUM_ERAM },
 #endif
 #if BAS_MODUL_TAS3108_CORES > 2
-	{ 2, 0xA2, 0x6A, BAS_AT24C512_3_RDY, BAS_TAS3108_3_RDY, dsp_2_code, ERAM_DSP_3_EEPROM_CHKSUM_ERAM },
+	{ 2, 0xA2, 0x6A, BAS_AT24C512_3_RDY, BAS_TAS3108_3_RDY, DSP_2_CODE, ERAM_DSP_3_EEPROM_CHKSUM_ERAM },
 #endif
 };
 
@@ -45,17 +60,18 @@ static uint16_t data_size(const struct dsp_def *d)
 	return bas_data_word(d->code);  /* restore dsp_N_code : read dsp_N_eeprom_size */
 }
 
+/* PORT fix (#47): the original computes the checksum of the program only at a factory reset
+ * and uses the stored value otherwise, so a firmware with another DSP program would not write it
+ * to the DSP's EEPROM. The port always computes it (24 KB from flash, a few ms) and keeps the
+ * stored value up to date. */
 static uint16_t data_get_chksum(const struct dsp_def *d)
 {
 	uint16_t sum = 0;
-	if (registers[BAS_REG_STARTUP_STATE] == BAS_STARTUP_STATE_SYSINIT) {
-		uint16_t n = data_size(d);
-		for (uint16_t i = 0; i < n; i++)
-			sum = (uint16_t)(sum + bas_data_byte(d->code + 2 + i));
+	uint16_t n = data_size(d);
+	for (uint16_t i = 0; i < n; i++)
+		sum = (uint16_t)(sum + bas_data_byte(d->code + 2 + i));
+	if (eram_rw(d->chksum_eram) != sum)
 		eram_ww(d->chksum_eram, sum);
-	} else {
-		sum = eram_rw(d->chksum_eram);
-	}
 	return sum;
 }
 
@@ -191,6 +207,8 @@ void dsp_core_init(uint8_t n)
 	i2c_reg = BAS_DSP_SUB_STATUS;
 	i2c_size = BAS_DSP_REG_SIZE_STATE;
 	i2c_rbuffer(d->bus);
-	if (buffer_byte > 0x00)
+	if (buffer_byte > 0x00) {
 		errorcount(BAS_ERRORCOUNT_SW_DSP);
+		dsp_state_error = 1;  /* PORT (#47): hw_check_dsp_restart restarts once */
+	}
 }

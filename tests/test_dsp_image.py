@@ -262,3 +262,24 @@ class DspImageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OptHeaderTest(unittest.TestCase):
+    """#47: dsp_opt.h holds the optimized programs; they pass the rules and differ from the original."""
+
+    def test_headers(self):
+        import re
+        sys.path.insert(0, os.path.join(HERE, "..", "tools"))
+        import dsp_image as di
+        import tas3108_asm as asm
+        import tas3108_dis as dis
+        for f in ("V40-96ELN", "V40-96ELN-3", "V30-96ELN"):
+            base = os.path.join(HERE, "..", "src", "flavours", f)
+            t = open(os.path.join(base, "dsp_opt.h")).read()
+            for n in (1, 2):
+                body = re.search(r"BAS_DATA_TABLE\(dsp_%d_code_opt, \d+\) = \{(.*?)\};" % n, t, re.S).group(1)
+                b = bytes(int(x, 16) for x in re.findall(r"0x([0-9A-F]{2})", body))
+                img = b[2:2 + (b[0] | b[1] << 8)]
+                words = dis.program(di.parse(img)[0])
+                self.assertEqual(asm.check(words), [], (f, n))
+                self.assertLess(asm.cycles(words), asm.cycles(dis.program(di.parse(di.extract(os.path.join(base, "flavour_data.h"), n))[0])), (f, n))

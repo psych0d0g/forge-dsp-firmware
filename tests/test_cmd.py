@@ -491,6 +491,20 @@ class Tas3108Test(unittest.TestCase):
             for n in range(1, cores + 1):
                 self.assertRegex(out, rf"@dsp_eeprom{n}: hw=\w+ writes=0\n", f)
 
+    def test_new_program_is_written_without_factory_reset(self):
+        """#47: a firmware with another program writes it although the stored checksum is the old one."""
+        f = "V40-96ELN"
+        cores, ee, dsp = self.original_device(f)
+        prog = self.program(f, 1)
+        dsp[1] = bytes(b ^ 0x55 if i == 100 else b for i, b in enumerate(prog)) + b"\xff" * (65536 - len(prog))
+        L = layout(f)
+        a = L["dsp_1_eeprom_chksum_eram"][0]
+        ee = bytearray(ee)
+        ee[a:a + 2] = (sum(dsp[1][:len(prog)]) & 0xFFFF).to_bytes(2, "little")   # stored checksum = what is in the DSP EEPROM
+        out, res = self.run_dsp(f, bytes(ee), dsp, ["#dsp_eeprom=1"], dump=(1,))
+        self.assertNotRegex(out, r"@dsp_eeprom1: hw=\w+ writes=0\n")            # the original would not write
+        self.assertEqual(res[1][:len(prog)], prog)
+
     def test_mismatch_rewrites_program(self):
         f = "V41-96ELN-3"
         cores, ee, dsp = self.original_device(f)
@@ -543,6 +557,11 @@ class Tas3108Test(unittest.TestCase):
                                                 "#dsp_restart", "1|get.1 system.hardware.dsp"])
         self.assertIn("@dsp_restart: hw=003F flag=255 restarted=0", out)    # all found: no reset
         self.assertNotIn("@soft_reset", out)
+        # a core that answers but reports an error state (program not loaded): restart once as well
+        out, _ = self.run_dsp(f, image(f), {}, ["#i2cdev=1,68", "#i2cdev=2,68", "#i2cdev=2,6A,5=255", "#dsp_eeprom=1",
+                                                "#dsp_eeprom=2", "#dsp_eeprom=3", "#dsp_detect", "#dsp_restart"])
+        self.assertIn("@soft_reset", out)
+        self.assertIn("@dsp_restart: hw=003F flag=1 restarted=0", out)
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")

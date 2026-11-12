@@ -48,6 +48,8 @@ jobs:
           python3 -m unittest -v tests.test_cmd
       - name: DSP boot images (#43)
         run: python3 -m unittest -v tests.test_dsp_image
+      - name: Optimized DSP programs up to date (#47)
+        run: python3 tools/dsp_opt_gen.py --check
       - name: Measurement analysis (#49)
         run: |
           python3 -m pip install --quiet numpy scipy

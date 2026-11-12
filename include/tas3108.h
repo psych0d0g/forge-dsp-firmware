@@ -10,4 +10,6 @@
 extern uint16_t hardware_dsp;
 void dsp_eeprom_init(uint8_t n);     /* at24c512/<n>/init.bas: detect, compare, rewrite if needed */
 void dsp_core_init(uint8_t n);       /* cores/<n>/init.bas: detect, version, state */
+/* PORT (#47): a core reported an error state during this start (e.g. it did not load its program) */
+extern uint8_t dsp_state_error;
 #endif
