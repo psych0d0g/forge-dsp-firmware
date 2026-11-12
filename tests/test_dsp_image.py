@@ -13,6 +13,7 @@ import tas3108_flow  # noqa: E402
 import c51_dis  # noqa: E402
 import tas3108_asm  # noqa: E402
 import tas3108_sim  # noqa: E402
+import tas3108_opt  # noqa: E402
 
 
 class DspImageTest(unittest.TestCase):
@@ -237,6 +238,26 @@ class DspImageTest(unittest.TestCase):
         for _ in range(3000):  # four ramps with alpha = 1/128
             core.frame([0] * 8)
         self.assertAlmostEqual(core.coef[0x005] / coef[0x3D1], 0.99988, delta=0.0005)
+
+    def test_optimised_programs(self):
+        """#47: delay waits filled (program 1: volume blocks, program 2: next chain) for all
+        96ELN/CORED8 flavours: rules ok, fewer cycles, bit identical outputs and memory."""
+        headers = sorted(glob.glob(os.path.join(HERE, "..", "src", "flavours", "*", "flavour_data.h")))
+        for h in headers:
+            if "96LN" in h:
+                continue  # other structure (waits partly used already)
+            for p in (1, 2):
+                img = dsp_image.extract(h, p)
+                blocks, rest = dsp_image.parse(img)
+                prog = tas3108_dis.program(blocks)
+                if p == 1:
+                    new = tas3108_opt.interleave_delays(prog)
+                else:
+                    new = tas3108_opt.fill_waits_forward(prog, dsp_image.regmap(blocks))
+                self.assertEqual(tas3108_asm.check(new), [], (h, p))
+                self.assertLess(tas3108_asm.cycles(new), tas3108_asm.cycles(prog) - (100 if p == 1 else 30), (h, p))
+                other = dsp_image.build(tas3108_asm.replace_program(blocks, new), rest)
+                self.assertIsNone(tas3108_sim.compare(img, other, frames=6), (h, p))
 
 
 if __name__ == "__main__":

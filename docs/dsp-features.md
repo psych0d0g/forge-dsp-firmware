@@ -45,7 +45,12 @@ Bass/Höhen-Schnittstelle, DO5–DO8 von Kern 2/3, Abtastraten außer 96 kHz.
 
 ## Spielraum für Optimierungen
 
-1. **Wartetakte nach `DLYPTR` füllen.** Zwischen `DLYPTR` und `ST(DLYO)` müssen 13 Takte liegen, die Programme
+1. **Wartetakte nach `DLYPTR` füllen** (umgesetzt in `tools/tas3108_opt.py`, noch nicht auf dem Gerät):
+   Programm 1 1387 → **1255** Takte (Delay des nächsten Kanals anstoßen, in der Wartezeit den Pegel des vorigen
+   rechnen, dazu die redundanten Rückschreibungen `LD(X,B)` + 4 × `ST(B,DATA,X)` entfernt), Programm 2 1247 →
+   **1205** (die nächste Kette rechnet in der Wartezeit). Frei damit: 153 bzw. 203 Takte. Bitgleich laut
+   Simulator (Ausgänge und Speicher), alle Regeln erfüllt; gilt für alle 96ELN- und CORED8-Fassungen
+   (V30-96LN ist anders aufgebaut). Ursprüngliche Abschätzung: Zwischen `DLYPTR` und `ST(DLYO)` müssen 13 Takte liegen, die Programme
    füllen sie mit NOPs. Mit anderer Arbeit verschränkt gewinnt man 104 Takte in Kern 1 (≈ 20 Biquads) und 52 in
    Kern 2/3. Kern 1 hätte damit 125 freie Takte statt 21.
 2. **Kern 2/3 hat Takte frei, aber kaum Koeffizienten.** 161 freie Takte + 52 Wartetakte ≈ 43 Biquads, der
