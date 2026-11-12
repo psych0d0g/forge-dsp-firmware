@@ -2060,6 +2060,40 @@ class MonoTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class MixerModcTest(LinesMixin, unittest.TestCase):
+    """#16: MODC type 0x6D mixer, sets 1..3 = gain of analog input pairs 1..3 (G 1/2, 3/4, 5/6)."""
+
+    PRE = ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init", "#dtr=1", "#modc_init", "1|set.1 mixer.position=1",
+           "1|set.1 mixer.1.3.2=100", "1|set.1 mixer.1.3.3=80",       # out 1 <- pair 1 L, pair 2 R
+           "1|set.1 mixer.1.4.6=60", "1|set.1 mixer.1.4.7=100",       # out 2 <- pair 3 L, digital
+           "1|set.1 mixer.1.1.1=100"]                                 # sum before chain 1 <- pair 1 R
+    VALS = ["#mixval=3,2", "#mixval=3,3", "#mixval=4,6", "#mixval=4,7", "#mixval=1,1"]
+
+    def vals(self, out):
+        return [int(l.split(":")[1]) for l in out if l.startswith("@mix:")]
+
+    def test_gains_and_off(self):
+        for f in ("V40-96ELN", "V30-96LN"):
+            out = self.lines(f, self.PRE + self.VALS
+                             + ["1|set.1 modc.9=[1,109,00000000,0,0,0,0,32004BFF]", "#modc"] + self.VALS
+                             + ["1|set.1 modc.9.enable=0", "#modc"] + self.VALS
+                             + ["1|get.1 modc.version.attributes.ac"])
+            v = self.vals(out)
+            self.assertEqual(v[0:5], [100, 80, 60, 100, 100], f)
+            self.assertEqual(v[5:10], [50, 0, 45, 100, 50], f)        # 50 %, 0 %, 75 %; digital untouched
+            self.assertEqual(v[10:15], [100, 80, 60, 100, 100], f)    # block off: tuning unchanged
+            self.assertEqual(out[-1].split("[")[1].split(",")[13], "20", f)   # 0x6D & 0x3F = 0x2D = ac + 13
+
+    def test_with_mono(self):
+        f = "V40-96ELN"
+        out = self.lines(f, self.PRE + ["1|set.1 mixer.1.4.2=40",
+                                        "1|set.1 modc.9=[1,106,01000000,0,0,0,0,04000000]",   # pair 1/2 sum
+                                        "1|set.1 modc.10=[1,109,00000000,0,0,0,0,32646400]", "#modc",
+                                        "#mixval=3,2", "#mixval=4,2"])
+        self.assertEqual(self.vals(out), [35, 35])                     # (100+40)/2 = 70, then 50 %
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class MuxITest(LinesMixin, unittest.TestCase):
     """#17: MODC type 0x60 mux_I, priority list of events as the GUI dialog "Eingangs-Umschalter"."""
 

@@ -58,6 +58,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
   eingeblendet, andere Änderungen (Delay, Eingangswahl) sind nur noch ca. 1 s statt 2 s stumm (#44, #50).
 - **Mono je Ausgangspaar** (MODC „CTRL-MONO“ aus der Original-GUI, #14): Stereo, Mono links/rechts oder L+R, schaltbar
   per Event, ohne die Abstimmung zu ändern.
+- **Analoger Mischer** (MODC „Analoger Mischer“ aus der Original-GUI, dort ohne Firmware-Gegenstück, #16): Anteil
+  der drei analogen Eingangspaare 0–100 % über die gespeicherte Mischung, mit Clickless gleitend.
 - **Automatische Eingangswahl** per Events (MODC „CTRL-MUX I“ aus der Original-GUI, #17), z. B. auf USB, sobald
   dort Audio anliegt.
 - **IR-Fernbedienung, Taste 2** schaltet den Eingang weiter (#27).

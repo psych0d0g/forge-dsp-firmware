@@ -542,6 +542,19 @@ static void modc_mono(void)
 	out(on ? mode : 0);
 }
 
+/* PORT extension (#16): modc_mixer (0x6D), declared in the original without a body; its GUI
+ * dialog CTRL_MIXER_Settings ("Analoger Mischer") shows sets 1..3 = "gain input pair 1..3",
+ * 0..100 %, flags and events hidden. The block weights the analog input pairs on top of the
+ * stored mixer (api_set_mix_input_gain), the tuning is not changed; disabled = 100 %.
+ * Output: the gain of pair 1. */
+static void modc_mixer(void)
+{
+	uint8_t on = modc_enable[M] > 0;
+	for (uint8_t p = 1; p <= 3; p++)
+		api_set_mix_input_gain(p, on ? (SET(p) > 100 ? 100 : SET(p)) : 100);
+	out(api_get_mix_input_gain(1));
+}
+
 static const uint16_t block_event[cmd_req_words_max] = {0xFF03, 0x6576, 0x626C, 0x0000, 0x0000};
 
 /* sends "event.block.N=[a,b,c,d]" to the slave port about every 480 passes or on a change */
@@ -705,6 +718,8 @@ uint8_t modc_type_version(uint8_t t)
 		return 20;  /* PORT extension: mux_I (#17) */
 	if (t == (MODC_TYPE_MONO & 0x3F))
 		return 20;  /* PORT extension: mono (#14) */
+	if (t == (MODC_TYPE_MIXER & 0x3F))
+		return 20;  /* PORT extension: mixer (#16) */
 	return BAS_LOOKUP_B(data_mods_versions, t);
 }
 
@@ -874,6 +889,7 @@ void ctrl_modc_mainloop(void)
 			case MODC_TYPE_LOUDNESS:       modc_loudness(); break;  /* PORT extension (M6) */
 			case MODC_TYPE_MUX_I:          modc_mux_i(); break;     /* PORT extension (#17) */
 			case MODC_TYPE_MONO:           modc_mono(); break;      /* PORT extension (#14) */
+			case MODC_TYPE_MIXER:          modc_mixer(); break;     /* PORT extension (#16) */
 			case BAS_MODC_TYPE_VOLUMEN:    modc_volumen(); break;
 			case BAS_MODC_TYPE_MUTE:       modc_mute(); break;
 			case BAS_MODC_TYPE_MIX_I:      modc_mix_i(); break;

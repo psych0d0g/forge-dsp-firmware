@@ -255,6 +255,7 @@ void api_set_mix_position(uint8_t pos)
  * output pair p makes the rows of channels 2p-1 and 2p equal when the coefficients are written:
  * 1 stereo, 2 right on both, 3 left on both, 4 sum (L+R)/2. The stored tuning is not changed. */
 static uint8_t mix_mono[BAS_FLOW_MAX_OUT_PAIRS + 1];
+#define MIX_IN_PAIRS 3
 
 static uint8_t mix_b(uint8_t c, uint8_t g)  /* storage index of mixer.P.c.g, 0 = none, 0xFF = mux */
 {
@@ -284,7 +285,7 @@ uint8_t api_get_mix_mono(uint8_t pair)
 }
 
 /* value written for storage index b of the active position (with the mono overlay) */
-static uint8_t mix_value(uint16_t frame, uint8_t b)
+static uint8_t mix_value_mono(uint16_t frame, uint8_t b)
 {
 	for (uint8_t c = 3; c <= BAS_FLOW_MIX_MAX_CHANNELS; c++) {
 		uint8_t p = (uint8_t)((c - 1) / 2), mode = p <= BAS_FLOW_MAX_OUT_PAIRS ? mix_mono[p] : 0;
@@ -300,6 +301,50 @@ static uint8_t mix_value(uint16_t frame, uint8_t b)
 		}
 	}
 	return SV(BAS_STORAGE_MIX_BASE, frame + b);
+}
+
+/* --- analog input gain (PORT extension #16, MODC type 0x6D "Analoger Mischer") ---------------
+ * Weights the analog input pairs 1..3 (GUI "Kanal 1..3" = G 1/2, 3/4, 5/6) with 0..100 % on top
+ * of the stored mixer, in all rows. Like mono an overlay: the tuning is not changed. */
+static uint8_t mix_in_pct[MIX_IN_PAIRS + 1] = {100, 100, 100, 100};
+static uint8_t mix_in_any;  /* some pair below 100 % */
+
+void api_set_mix_input_gain(uint8_t pair, uint8_t pct)
+{
+	if (pair < 1 || pair > MIX_IN_PAIRS)
+		return;
+	if (pct > 100)
+		pct = 100;
+	if (mix_in_pct[pair] == pct)
+		return;
+	mix_in_pct[pair] = pct;
+	mix_in_any = 0;
+	for (uint8_t i = 1; i <= MIX_IN_PAIRS; i++)
+		if (mix_in_pct[i] < 100)
+			mix_in_any = 1;
+	if (bqramp_enabled()) {  /* (#50): ramp instead of mute */
+		api_mix_ramp_all();
+		return;
+	}
+	api_set_out_mute_change();
+	store_mix_changed = BAS_FLOW_MIX_MAX_CHANGED;
+}
+
+uint8_t api_get_mix_input_gain(uint8_t pair)
+{
+	return pair >= 1 && pair <= MIX_IN_PAIRS ? mix_in_pct[pair] : 100;
+}
+
+static uint8_t mix_value(uint16_t frame, uint8_t b)
+{
+	uint8_t v = mix_value_mono(frame, b);
+	if (!mix_in_any || v == 0)
+		return v;
+	for (uint8_t c = 1; c <= BAS_FLOW_MIX_MAX_CHANNELS; c++)
+		for (uint8_t g = 1; g <= 2 * MIX_IN_PAIRS; g++)
+			if (mix_b(c, g) == b)
+				return (uint8_t)((v * mix_in_pct[(g + 1) / 2] + 50) / 100);
+	return v;
 }
 
 uint8_t api_mix_value(uint8_t c, uint8_t g)  /* effective value of mixer.<active>.c.g */
