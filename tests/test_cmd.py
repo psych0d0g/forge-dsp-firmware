@@ -677,8 +677,11 @@ def bq_reference(flavour, t, f, g, q, b, flags):
         return math.sin(w) / (2.0 * qq)
 
     def power(gain):
+        g0 = gain
         gain = gain * 10
         l = int(gain)
+        if abs(gain - l) > 0.001 and -120 <= l <= 120:   # PORT (#51): between table steps
+            return 10.0 ** (g0 / 40.0)
         neg = l < 0
         l = abs(l)
         c = l & 0xFF
@@ -1783,6 +1786,21 @@ class LoudnessTest(LinesMixin, unittest.TestCase):
             self.assertEqual(b[5], self.ref(f, 15, 10000, 28), f)
             flat = self.ref(f, 0, 0, 0)
             self.assertEqual(b[8:12], [flat] * 4, f)                     # off: 0 dB at once
+
+    def test_step_event2(self):
+        """#51: event 2 = step per pass in 0.01 dB; 0.05 dB steps between the 0.1 dB table values."""
+        f = "V40-96ELN"
+        cfg = "1|set.1 modc.9=[1,108,10DF280F,70,5,0,0,00000000]"   # step 0.05 dB
+        reads = self.blocks(f, 35, None)
+        out = self.lines(f, self.PRE + [cfg, "1|set.1 event.70.value=183", "#modc"] + reads   # -20 dB
+                         + ["1|set.1 event.70.value=193", "#modc"] + reads                      # -15 dB
+                         + ["#modc"] + reads)
+        b = [l[7:] for l in out if l.startswith("@block:")]
+        self.assertEqual(b[0], self.ref(f, 14, 100, 80))      # first write: target (8.0 dB)
+        self.assertEqual(b[2], self.ref(f, 14, 100, 79.5))    # then 0.05 dB per pass
+        self.assertEqual(b[3], self.ref(f, 15, 10000, 29.5))
+        self.assertEqual(b[4], self.ref(f, 14, 100, 79))      # 7.9 dB: table value again
+        self.assertNotEqual(b[2], b[4])
 
     def test_follows_gain_spdif(self):
         f = "V40-96ELN"

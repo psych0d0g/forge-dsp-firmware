@@ -720,9 +720,11 @@ uint8_t modc_type_version(uint8_t t)
  *   event 1            "Loudness Input": volume, 0..255 in the gain scale (0.5 dB/step,
  *                      223 = 0 dB); 0 = gain.spdif.1
  *   PORT: flags 2      reference (no boost at or above), 0 = 223
- * The boost is capped at 12 dB (data_power_gain), follows in 0.2 dB per MODC pass, writes only
- * the DSP (no EEPROM, no mute). Output (event 96+N): bass boost in 0.5 dB steps. */
-static int16_t ld_cur[2][MODC_N + 1];   /* tenths of dB: [0] bass, [1] treble; -1 = rewrite */
+ *   PORT: event 2      step per MODC pass (32 Hz) in 0.01 dB, 0 = 20 (0.2 dB); smaller steps
+ *                      make smaller transients while the shelves track (#51), but track slower
+ * The boost is capped at 12 dB (data_power_gain), writes only the DSP (no EEPROM, no mute).
+ * Output (event 96+N): bass boost in 0.5 dB steps. */
+static int16_t ld_cur[2][MODC_N + 1];   /* hundredths of dB: [0] bass, [1] treble; -1 = rewrite */
 static uint8_t ld_valid[MODC_N + 1], ld_moving[MODC_N + 1], ld_mask[MODC_N + 1];
 
 /* run the loudness blocks again: volume source changed (gain.spdif) or biquads rewritten */
@@ -740,18 +742,18 @@ void modc_loudness_invalidate(void)
 	modc_loudness_touch();
 }
 
-static void loudness_write(uint8_t ch, uint8_t last_offset, uint8_t type, double f, int16_t tenths)
+static void loudness_write(uint8_t ch, uint8_t last_offset, uint8_t type, double f, int16_t hundredths)
 {
 	uint8_t lim = BAS_LOOKUP_B(data_flow_ch_bq_limits, ch);
 	if (ch < 1 || ch > BAS_FLOW_MAX_CHANNELS || lim < 2)
 		return;
 	uint32_t raw[6];
-	if (tenths <= 0) {
+	if (hundredths <= 0) {
 		dsp_bq_default(raw);  /* 0 dB: pass through */
 	} else {
 		dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_F] = f;
 		dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_Q] = 0.7071;
-		dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_GAIN] = tenths / 10.0;
+		dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_GAIN] = hundredths / 100.0;
 		dsp_bq_cache_values[BAS_DSP_BQ_CACHE_VALUE_B] = 0;
 		dsp_bq_calc_type(type);
 		dsp_bq_calcto5coeff();
@@ -763,12 +765,12 @@ static void loudness_write(uint8_t ch, uint8_t last_offset, uint8_t type, double
 	dsp_set_biquad(raw);
 }
 
-static int16_t ld_step(int16_t cur, int16_t target)
+static int16_t ld_step(int16_t cur, int16_t target, int16_t step)
 {
 	if (cur < 0)
 		return target;  /* first write after (re)start */
-	if (target > cur + 2) return (int16_t)(cur + 2);
-	if (target < cur - 2) return (int16_t)(cur - 2);
+	if (target > cur + step) return (int16_t)(cur + step);
+	if (target < cur - step) return (int16_t)(cur - step);
 	return target;
 }
 
@@ -782,14 +784,14 @@ static void loudness_channels(uint8_t mask, uint8_t *chs)  /* chs: 10 entries, 0
 	chs[9] = (mask & 0x10) ? 36 : 0;
 }
 
-static void loudness_apply(uint8_t mask, uint8_t k, double f, int16_t tenths)
+static void loudness_apply(uint8_t mask, uint8_t k, double f, int16_t hundredths)
 {
 	uint8_t chs[10];
 	loudness_channels(mask, chs);
 	for (uint8_t c = 0; c < 10; c++)
 		if (chs[c])
 			loudness_write(chs[c], (uint8_t)(1 - k),  /* bass: last-1, treble: last */
-			               k == 0 ? BAS_DSP_BQTYPE_BASS_SHELF : BAS_DSP_BQTYPE_TREBLE_SHELF, f, tenths);
+			               k == 0 ? BAS_DSP_BQTYPE_BASS_SHELF : BAS_DSP_BQTYPE_TREBLE_SHELF, f, hundredths);
 }
 
 static void modc_loudness(void)
@@ -802,10 +804,10 @@ static void modc_loudness(void)
 	double freq[2] = {fb >= 10 && fb <= 20000 ? fb : 100.0, ft >= 10 && ft <= 40000 ? ft : 10000.0};
 	int16_t target[2] = {0, 0};
 	if (modc_enable[M] > 0 && vol < ref) {
-		int16_t att = (int16_t)((ref - vol) * 5);  /* tenths of dB */
+		int16_t att = (int16_t)((ref - vol) * 50);  /* hundredths of dB */
 		for (uint8_t k = 0; k < 2; k++) {
 			int32_t t = (int32_t)att * slope[k] / 100;
-			target[k] = (int16_t)(t > 120 ? 120 : t);  /* 12 dB */
+			target[k] = (int16_t)(t > 1200 ? 1200 : t);  /* 12 dB */
 		}
 	}
 	if (!ld_valid[M] || ld_mask[M] != mask) {
@@ -817,9 +819,13 @@ static void modc_loudness(void)
 		ld_valid[M] = 1;
 	}
 	uint8_t moving = 0;
+	int16_t step = EVENT(2) ? EVENT(2) : 20;
+	if (step % 10 == 0)  /* 0.1 dB grid as before: unchanged results for the default step */
+		for (uint8_t k = 0; k < 2; k++)
+			target[k] = (int16_t)(target[k] / 10 * 10);
 	for (uint8_t k = 0; k < 2; k++) {
 		/* switched off: straight to 0 dB, the block does not run again to finish a ramp */
-		int16_t next = modc_enable[M] ? ld_step(ld_cur[k][M], target[k]) : target[k];
+		int16_t next = modc_enable[M] ? ld_step(ld_cur[k][M], target[k], step) : target[k];
 		if (next != ld_cur[k][M]) {
 			loudness_apply(mask, k, freq[k], next);
 			ld_cur[k][M] = next;
@@ -827,7 +833,7 @@ static void modc_loudness(void)
 		if (next != target[k])
 			moving = 1;
 	}
-	out((uint8_t)(ld_cur[0][M] / 5));
+	out((uint8_t)(ld_cur[0][M] / 50));
 	ld_moving[M] = moving;
 }
 

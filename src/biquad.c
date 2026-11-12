@@ -30,11 +30,19 @@ static double dsp_omega_calc, dsp_alpha_calc, dsp_power_calc, dsp_omega_cos, dsp
 static void omega_calc(void) { dsp_omega_calc = dsp_math_double_pi * dsp_omega_calc; dsp_omega_calc = dsp_omega_calc / BAS_FLOW_SAMPLE_RATE; }
 static void alpha_calc(void) { double d = sin(dsp_omega_calc); dsp_alpha_calc = 2.0 * dsp_q; dsp_alpha_calc = d / dsp_alpha_calc; }
 
-/* dsp_bq_power: 10^(gain/40) from the table data_power_gain in 0.1 dB steps (0..12 dB) */
+/* dsp_bq_power: 10^(gain/40) from the table data_power_gain in 0.1 dB steps (0..12 dB).
+ * PORT (#51): a gain between two table steps (finer loudness ramps) is computed directly;
+ * whole 0.1 dB steps still come from the table, bit identical to the original. */
 static void power(void)
 {
+	double g = dsp_power_calc;
 	dsp_power_calc = dsp_power_calc * 10;
 	int32_t l = (int32_t)dsp_power_calc;  /* double -> long */
+	double frac = dsp_power_calc - (double)l;
+	if ((frac > 0.001 || frac < -0.001) && l >= -120 && l <= 120) {
+		dsp_power_calc = pow(10.0, g / 40.0);
+		return;
+	}
 	uint8_t neg = 0;
 	if (l < 0) {
 		neg = 1;

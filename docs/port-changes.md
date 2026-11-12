@@ -107,9 +107,10 @@ MODC-Block vom Typ 108 (0x6C). Die Felder folgen dem Loudness-Dialog, den die Or
 | Sets 1+2 / Sets 3+4 | Frequenz des Bass- / Höhen-Shelfs in Hz (Low-Byte zuerst) | 100 / 10 000 Hz |
 | Event 1 | „Loudness Input“: Lautstärke 0–255 in der Skala von `gain.*` (0,5 dB je Schritt, 223 = 0 dB), z. B. ein Lautstärke- oder IR-Block | `gain.spdif.1` |
 | Flags 2 (Port, in der GUI ausgeblendet) | Referenz: ab diesem Wert keine Anhebung | 223 (0 dB) |
+| Event 2 (Port, #51) | Schrittweite je Durchlauf (32 Hz) in 0,01 dB. Kleinere Schritte führen langsamer nach (0,05 dB: 1,6 dB/s) | 20 (0,2 dB) |
 | Ausgang (Event 96+N) | aktuelle Bass-Anhebung in 0,5-dB-Schritten | |
 
-Höchstens 12 dB Anhebung. Beispiel: `set.1 modc.9=[1,108,01DF280F,70,0,0,0,5000A00F]` = Ausgänge 1/2, folgt Event 70, Bass
+Höchstens 12 dB Anhebung. Gains zwischen den 0,1-dB-Stufen der Tabelle `data_power_gain` rechnet die Firmware direkt aus (`10^(g/40)`); ganze 0,1-dB-Stufen kommen weiter aus der Tabelle, bitgleich zum Original. Beispiel: `set.1 modc.9=[1,108,01DF280F,70,0,0,0,5000A00F]` = Ausgänge 1/2, folgt Event 70, Bass
 80 Hz × 0,40, Höhen 4 kHz × 0,15; 20 dB unter der Referenz ergibt Bass +8 dB und Höhen +3 dB.
 
 Auslegung: Die GUI nennt die Flags 3/4 „Gain“ (Anzeige x,xx dB). Als feste Anhebung wären 0,01–2,5 dB zu wenig, deshalb
@@ -119,5 +120,5 @@ gilt der Wert hier als Anstieg je dB Dämpfung. Die Bedeutung von Event 1 („de
 
 Hinweise: Die belegten Biquads überschreibt der Block; Filter, die die GUI dort anzeigt, wirken nicht. Wird ein
 Ausgangspaar abgewählt, gehen seine Shelves auf 0 dB. Nach dem Laden eines Presets setzt der Block die Shelves neu.
-Am Gerät gemessen (12.11.2026): Anhebung wie spezifiziert (−10 dB → Bass +4,2 dB, −20 dB → +7,9 dB); während die Shelves nachführen, entstehen vereinzelt kleine Spitzen rund 30 dB unter dem Nutzsignal (vermutlich nicht atomares Schreiben der 5 Koeffizienten, #51).
+Am Gerät gemessen (12.11.2026): Anhebung wie spezifiziert (−10 dB → Bass +4,2 dB, −20 dB → +7,9 dB). Ein Knacken beim Nachführen der Shelves war nicht nachweisbar; die Messkette zeigt gelegentlich Impulsstörungen, auch ganz ohne Befehle (#51).
 
