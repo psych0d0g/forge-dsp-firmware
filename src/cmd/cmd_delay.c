@@ -9,6 +9,10 @@
  * - unknown unit on set: only the error (the original also answers ok and sets a stale value)
  * - ".*" sets the channel byte of the path that was used (the original always sets byte 5)
  * - reading with a unit prints the value (the original prints only the header, issue #21)
+ * - delay.left and the limit (issue #53): the delay lines of one DSP share flow_max_samples. The
+ *   original divides the outputs evenly over flow_max_dsp DSPs (wrong with three DSPs, where DSP 1
+ *   holds only the input delays) and accepts any value. The port sums the channels per DSP after
+ *   data_flow_pair_delay(_in)_dsp and refuses a value that would exceed it (command out of range).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include <math.h>
@@ -17,6 +21,7 @@
 #include "api.h"
 #include "dsp.h"
 #include "flavour.h"
+#include "flavour_data.h"
 
 static uint8_t unit_ok(uint16_t unit, double *factor)
 {
@@ -96,8 +101,58 @@ static uint16_t get_out(uint8_t ch)
 	return BAS_FEATURE_OUTPUT_DELAY_MODE > 0 ? w / 2 : w;
 }
 
+#if BAS_FEATURE_INPUT_DELAY > 0
+#define BAS_STORE_DELAY_IN_COUNT_OR_0 BAS_STORE_DELAY_IN_COUNT
+#define GET_IN_OR_0(i) get_in(i)
+#else
+#define BAS_STORE_DELAY_IN_COUNT_OR_0 0
+#define GET_IN_OR_0(i) ((void)(i), 0)
+#endif
+
+/* --- delay memory per DSP (issue #53) -------------------------------------------------------- */
+static uint8_t dsp_of(uint8_t in, uint8_t ch)
+{
+#if BAS_FEATURE_INPUT_DELAY > 0
+	if (in)
+		return BAS_LOOKUP_B(data_flow_pair_delay_in_dsp, ch);
+#else
+	(void)in;
+#endif
+	return BAS_LOOKUP_B(data_flow_pair_delay_dsp, ch);
+}
+
+/* a stored value above the memory is storage never written (0xFFFF reads as 32767): it does not
+ * take memory, otherwise such a device could not set any delay */
+static uint16_t taken(uint16_t v) { return v > BAS_FLOW_MAX_SAMPLES ? 0 : v; }
+
+/* samples used on DSP `dsp`; the channel (in, ch) counts with `w` instead of its stored value
+ * (ch = 0: all as stored). Values as the user sees them (mode 1 halves the stored words). */
+static uint32_t dsp_used(uint8_t dsp, uint8_t in, uint8_t ch, uint16_t w)
+{
+	uint32_t sum = 0;
+	for (uint8_t i = 1; i <= BAS_FLOW_MAX_OUT_CHANNEL; i++)
+		if (dsp_of(0, i) == dsp)
+			sum += (!in && i == ch) ? w : taken(get_out(i));
+#if BAS_FEATURE_INPUT_DELAY > 0
+	for (uint8_t i = 1; i <= BAS_STORE_DELAY_IN_COUNT; i++)
+		if (dsp_of(1, i) == dsp)
+			sum += (in && i == ch) ? w : taken(get_in(i));
+#endif
+	return sum;
+}
+
+/* 1 if channel (in, ch) may take w samples without exceeding the memory of its DSP */
+static uint8_t fits(uint8_t in, uint8_t ch, uint16_t w)
+{
+	return dsp_used(dsp_of(in, ch), in, ch, w) <= BAS_FLOW_MAX_SAMPLES;
+}
+
 static void set_one(uint8_t in, uint8_t ch, uint16_t w)
 {
+	if (!fits(in, ch, w)) {  /* PORT (#53) */
+		cmd_error_cmd_oor();
+		return;
+	}
 	cmd_answer_ok();
 #if BAS_FEATURE_INPUT_DELAY > 0
 	if (in) {
@@ -123,6 +178,23 @@ static void set_delay(uint8_t in, uint8_t offset)
 		max = BAS_STORE_DELAY_IN_COUNT;
 #endif
 	if (req_w(w2) == 0x0000) {  /* all channels: [a,b,...] */
+		/* PORT (#53): the new values together must fit each DSP, otherwise nothing is written */
+		for (uint8_t dsp = 1; dsp <= BAS_FLOW_MAX_DSP; dsp++) {
+			uint32_t sum = 0;
+			for (uint8_t i = 1; i <= BAS_FLOW_MAX_OUT_CHANNEL; i++) {
+				uint16_t w = (uint16_t)cmd_reg_var_integers[i];
+				uint8_t mine = i <= max && dsp_of(in, i) == dsp;
+				if (mine)
+					sum += w;
+			}
+			for (uint8_t i = 1; i <= BAS_FLOW_MAX_OUT_CHANNEL; i++)  /* the other list keeps its values */
+				if (dsp_of(!in, i) == dsp && (in || i <= BAS_STORE_DELAY_IN_COUNT_OR_0))
+					sum += taken(in ? get_out(i) : GET_IN_OR_0(i));
+			if (sum > BAS_FLOW_MAX_SAMPLES) {
+				cmd_error_cmd_oor();
+				return;
+			}
+		}
 		cmd_answer_ok();
 		for (uint8_t i = 1; i <= max; i++) {
 			uint16_t w = (uint16_t)cmd_reg_var_integers[i];
@@ -205,16 +277,13 @@ static void get_delay(uint16_t (*get)(uint8_t), uint8_t offset)
 			print_one(w3, get(i));
 		}
 		break;
-	case 0x6C65: {  /* left: free samples per DSP */
-		uint8_t a = 1, b = BAS_FLOW_MAX_OUT_CHANNEL / BAS_FLOW_MAX_DSP;
+	case 0x6C65: {  /* left: free samples per DSP 1..flow_max_dsp (PORT #53: after the real mapping) */
 		cmd_answer_header();
 		out_chr('[');
-		for (uint8_t i = 1; i <= BAS_FLOW_MAX_DSP; i++) {
-			uint16_t w = BAS_FLOW_MAX_SAMPLES;
-			for (uint8_t ii = 1; ii <= b; ii++)
-				w = (uint16_t)(w - get(a++));
-			out_u16(w);
-			if (i < BAS_FLOW_MAX_DSP)
+		for (uint8_t dsp = 1; dsp <= BAS_FLOW_MAX_DSP; dsp++) {
+			uint32_t used = dsp_used(dsp, 0, 0, 0);
+			out_u16(used >= BAS_FLOW_MAX_SAMPLES ? 0 : (uint16_t)(BAS_FLOW_MAX_SAMPLES - used));
+			if (dsp < BAS_FLOW_MAX_DSP)
 				out_chr(',');
 		}
 		out_chr(']');

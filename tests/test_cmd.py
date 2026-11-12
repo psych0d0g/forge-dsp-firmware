@@ -1007,9 +1007,10 @@ class DelayCmdTest(LinesMixin, unittest.TestCase):
             self.assertEqual(out[5], "@0: <.1 delay.out.3=1.042\\r\\n", f)  # 100 / 96 kHz
             self.assertIn("unknown command", out[6], f)
             self.assertEqual(len([l for l in out if " ok" in l]), 3, f)       # no ok after the error
-            b = nout // ndsp
+            # PORT (#53): free samples per DSP after the real mapping (data_flow_pair_delay_dsp)
+            dd = table_bytes(f, "data_flow_pair_delay_dsp")
             vals = [0, 50, 100, 240] + [0] * (nout - 4)
-            left = [samples - sum(vals[i * b:(i + 1) * b]) for i in range(ndsp)]
+            left = [samples - sum(v for i, v in enumerate(vals, 1) if dd[i] == dsp) for dsp in range(1, ndsp + 1)]
             self.assertEqual(out[7], "@0: <.1 delay.out=[" + ",".join(map(str, left)) + "]\\r\\n", f)
             self.assertIn("command out of range", out[8], f)
 
@@ -1024,6 +1025,41 @@ class DelayCmdTest(LinesMixin, unittest.TestCase):
                              f"#block={bus},{a:02X},{dr[3]:02X},4"])
         # mode 1 stores samples * 2; odd channel = high word
         self.assertIn(f"@block:{(200 << 16 | 14):08X}", out)
+
+    def test_delay_memory_per_dsp(self):
+        """#53: the delay lines of one DSP share flow_max_samples; a value beyond is refused."""
+        for f in ("V40-96ELN", "V30-96LN"):
+            samples, = consts(f, "FLOW_MAX_SAMPLES")
+            dd = table_bytes(f, "data_flow_pair_delay_dsp")
+            a = [i for i in range(1, 9) if dd[i] == dd[1]]           # outputs on the DSP of output 1
+            other = next(i for i in range(1, 9) if dd[i] != dd[1])
+            out = self.lines(f, ["1|set.1 delay=[0,0,0,0,0,0,0,0]",
+                                 f"1|set.1 delay.{a[0]}={samples - 100}", f"1|set.1 delay.{a[1]}=100",
+                                 f"1|set.1 delay.{a[2]}=1",                                     # one too many
+                                 f"1|set.1 delay.{other}={samples}",                           # another DSP: own memory
+                                 f"1|set.1 delay.{a[0]}={samples - 150}", f"1|set.1 delay.{a[2]}=50",
+                                 "1|get.1 delay", "1|get.1 delay.left",
+                                 f"1|set.1 delay=[{samples},{samples},0,0,0,0,0,0]"])          # array beyond: nothing written
+            oks = [("ok" in l) for l in out[:7]]
+            self.assertEqual(oks, [True, True, True, False, True, True, True], (f, out))
+            vals = [int(x) for x in out[7].split("[")[1].split("]")[0].split(",")]
+            self.assertEqual(sum(v for i, v in enumerate(vals, 1) if dd[i] == dd[1]), samples, f)
+            left = [int(x) for x in out[8].split("[")[1].split("]")[0].split(",")]
+            self.assertEqual(left[dd[1] - 1], 0, f)
+            self.assertEqual(left[dd[other] - 1], 0, f)
+            if dd[1] == dd[2]:
+                self.assertIn("command out of range", out[9], f)
+
+    def test_blank_storage_takes_no_memory(self):
+        """#53: storage never written (32767) must not block setting a delay."""
+        f = "V40-96ELN"
+        out = self.lines(f, BiquadCmdTest.PRE + ["1|get.1 delay.in", "1|set.1 delay.in.1=100", "1|get.1 delay.in.1", "1|get.1 delay.left"])
+        out = [l for l in out if "delay" in l]
+        self.assertIn("32767", out[0])                                    # the harness storage is blank
+        self.assertIn("ok", out[1])
+        self.assertIn("delay.in.1=100", out[2])
+        dsp1 = int(out[3].split("[")[1].split(",")[0])
+        self.assertEqual(dsp1, consts(f, "FLOW_MAX_SAMPLES")[0] - 100)   # DSP 1: only the input delays
 
     def test_delay_in(self):
         f = "V41-96ELN-3"
