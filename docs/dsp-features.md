@@ -34,7 +34,7 @@ Funktionen im Signalweg:
 
 - **Kern 1:** Eingangs-Delay je Kanal → Eingangspegel (6 Kanäle) → Mixer 8 × 10 → zwei Biquad-Ketten zu je 72 →
   Ausgangsmischung (Mischung + beide Ketten) → DO1–DO8. Daneben ein Spitzenwert-Pegelmesser: Maximum der vier
-  linken bzw. rechten Eingänge (`COMP` + bedingtes Laden), zwei feste Biquads als Bewertungsfilter, Betrag,
+  linken bzw. rechten Eingänge nach Betrag (`COMP` + bedingtes Laden), zwei feste Biquads als Bewertungsfilter, Betrag,
   Glättung (`sF8`), `LOG2` → D_021/D_022 (logarithmischer Pegel, vermutlich für die VU-Anzeige/Signalerkennung).
 - **Kern 2/3:** je Kanal eine Biquad-Kette (38 bzw. 60) → Delay → (96ELN-3: Phasenumkehr) → Ausgangspegel.
 - Pegel: lineare Werte aus der MCU, im DSP geglättet (vier Tiefpässe, α = 1/128), nicht über den Volume-Update-Block.
@@ -68,6 +68,8 @@ Voraussetzungen, bevor man das baut:
 
 - Ein Assembler (Umkehrung von `tas3108_dis.py`, die Kodierung ist vollständig bekannt) und ein Prüfwerkzeug, das
   ein neues Programm mit `tas3108_flow.py` gegen den alten Signalfluss und das Taktbudget prüft.
+  Regeln der Hardware, die das Prüfwerkzeug durchsetzen muss: Sprungziele unter 0x400, drei NOPs nach
+  JMP/BOC/BNC, `COMP`-Ergebnis erst zwei Takte später, 13 Takte zwischen `DLYPTR` und `ST(DLYO)`.
 - Die MCU schreibt `dsp_N_code` beim Start ins EEPROM des TAS3108, wenn die Prüfsumme abweicht. Ein geändertes
   Programm kommt also mit der Port-Firmware aufs Gerät, ohne zusätzlichen Weg.
 - Messungen am Gerät (Pegel, Frequenzgang, Latenz) vor und nach jeder Änderung, mit der Lautstärkegrenze für Tests.

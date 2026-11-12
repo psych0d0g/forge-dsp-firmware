@@ -102,6 +102,12 @@ z. B. `C_013<s1F.b2>`. Felder des 54-Bit-Worts: ALU1 b53–49, ALU2 b48–42, MO
 MOP2/AD2 b26–24/b23–14 (Koeffizient laden), MOP3/AD3 b13–10/b9–0 (Speichern, bei Sprüngen das Ziel, sonst mit
 MOP3 = 0 `DLYPTR`).
 
+Zweite Quelle: TI „TAS3xxx DSP Instruction Set Reference Guide“ (Januar 2009, Familienfassung). Sie enthält
+dieselben Tabellen, mit weiteren Fehlern (ALOG2 und SHR(1) mit dem Code von LOG2, ST(L,COEF) mit dem von ST(DI)),
+aber zusätzlich: `COMP` vergleicht die Beträge (|A| > |B| → 1, bei Gleichheit entscheidet das Vorzeichen), das
+Ergebnis steht zwei Takte später für BOC/BNC/LDC/LNC bereit; Sprungziele müssen beim TAS3108 in den ersten 1K
+Befehlen liegen, nach JMP/BOC/BNC folgen drei NOPs.
+
 Alle 14 Programme dekodieren vollständig bis auf einen Code (Test). Abweichungen von SLEU067A, aus den Programmen
 belegt:
 
