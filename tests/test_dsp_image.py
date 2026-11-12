@@ -341,3 +341,55 @@ class ChainTest(unittest.TestCase):
         self.assertEqual(tas3108_asm.check(fast), [])
         self.assertLess(tas3108_asm.cycles(fast), tas3108_asm.cycles(new))
         self.assertEqual(self._run(new, coef, data, 60), self._run(fast, coef, data, 60))
+
+
+class PoolTest(unittest.TestCase):
+    """#47 step 3: pool tables and the reference generator the MCU mirrors"""
+
+    @classmethod
+    def setUpClass(cls):
+        import dsp_opt_gen
+        import dsp_pool
+        cls.path = os.path.join(HERE, "..", "src", "flavours", "V40-96ELN", "flavour_data.h")
+        imgs = {n: dsp_opt_gen.optimize(dsp_image.extract(cls.path, n), n)[0] for n in (1, 2)}
+        cls.imgs = imgs
+        cls.progs, cls.cores = dsp_pool.programs(cls.path, imgs)
+
+    def test_default_is_base(self):
+        for n, p in self.progs.items():
+            self.assertEqual(p.image(p.default_lengths()), self.imgs[n])
+        self.assertEqual([c for c, _, _ in self.progs[1].channels], [35, 36])
+        self.assertEqual(self.progs[2].default_lengths(), [60, 60, 38, 38])
+
+    def _run(self, p, lengths, frames=40):
+        coef, data = tas3108_sim.initial_memory(p.blocks, random.Random(1))
+        off = 0
+        for q, n in enumerate(lengths):   # pure gains, powers of two: exact in any order
+            for j in range(n):
+                c = p.slots[off + j][0]
+                coef[c] = 1 << (22 - q) if j == 0 else 1 << 23
+                coef.update({c + k: 0 for k in range(1, 5)})
+            off += n
+        r = random.Random(2)
+        state = {a: r.randrange(-(1 << 22), 1 << 22) for a in range(1022)}
+        core = tas3108_sim.Core(p.generate(lengths), coef, {**state, **data}, 1)
+        rng = random.Random(3)
+        return [core.frame([rng.randrange(-(1 << 23), 1 << 23) for _ in range(8)]) for _ in range(frames)]
+
+    def test_redistributed(self):
+        for n, lengths in ((1, [143, 1]), (1, [20, 124]), (2, [189, 3, 1, 3]), (2, [3, 3, 187, 3]), (2, [8, 128, 31, 29])):
+            p = self.progs[n]
+            words = p.generate(lengths)
+            self.assertEqual(tas3108_asm.check(words), [], lengths)
+            self.assertLessEqual(tas3108_asm.cycles(words), tas3108_asm.cycles(p.words))
+            self.assertEqual(self._run(p, lengths), self._run(p, p.default_lengths()), lengths)
+            img = p.image(lengths)
+            self.assertEqual(dsp_image.check(img)[2], [])
+
+    def test_limits(self):
+        p = self.progs[2]
+        with self.assertRaises(ValueError):
+            p.generate([60, 60, 38, 37])          # pool not used completely
+        with self.assertRaises(ValueError):
+            p.generate([193, 1, 1, 1])            # below the minimum of a channel with a merged store
+        self.assertEqual([c[2] for c in p.channels], [3, 3, 1, 3])

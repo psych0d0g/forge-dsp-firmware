@@ -42,8 +42,9 @@ class Segment:
     """x1, x2: input history; ys: (y1, y2) of every biquad; coefs: first coefficient (b0) of every
     biquad, followed by b1, b2, a1, a2. The output of the segment is y1 of its last biquad."""
 
-    def __init__(self, start, src, x1, x2, ys, coefs):
+    def __init__(self, start, src, x1, x2, ys, coefs, extra=None):
         self.start, self.src, self.x1, self.x2, self.ys, self.coefs = start, src, x1, x2, ys, coefs
+        self.extra = dict(extra or {})  # offset in the segment -> store field merged into that line
 
     n = property(lambda self: len(self.ys))
     dst = property(lambda self: self.ys[-1][0])
@@ -63,28 +64,51 @@ def _text(w):
     return dis.disasm(w)[0]
 
 
+FREE3 = (H0, H1, P1, P2)   # lines whose store field is free (the optimizer may merge a store there)
+MOP3 = 0x3FFF                # store field of an instruction word (MOP3 << 10 | address)
+
+
+def _match(pat, w, extra, off):
+    """match one line; a store the template does not have is accepted in a free store field and
+    recorded in extra[off]"""
+    t = _text(w)
+    m = pat.match(t) if hasattr(pat, "match") else (t == pat or None)
+    if m or not (pat in FREE3 or pat in (T0, T1)) or not (w & MOP3):
+        return m
+    t = _text(w & ~MOP3)
+    m = pat.match(t) if hasattr(pat, "match") else (t == pat or None)
+    if m:
+        extra[off] = w & MOP3
+    return m
+
+
 def segments(words):
     """all biquad segments of a program, in program order"""
-    t = [_text(w) for w in words]
     out, i = [], 0
     h = lambda r, k: int(r.group(k), 16)
-    while i + 8 < len(t):
-        h0, h1 = H0.match(t[i]), H1.match(t[i + 1])
-        m = [M.match(t[i + k]) for k in (2, 3, 4)]
+    while i + 8 < len(words):
+        extra = {}
+        h0, h1 = _match(H0, words[i], extra, 0), _match(H1, words[i + 1], extra, 1)
+        m = [_match(M, words[i + k], extra, k) for k in (2, 3, 4)]
         if not (h0 and h1 and all(m)):
             i += 1
             continue
         x2, x1, src, c = h(h0, 1), h(h1, 1), h(m[0], 1), h(m[0], 2)
         ys, coefs = [(h(m[1], 1), h(m[2], 1))], [c]
         j = i + 5
-        while j + 5 <= len(t) and all(PERIOD[k].match(t[j + k]) for k in range(5)):
-            p = [PERIOD[k].match(t[j + k]) for k in range(5)]
+        while j + 5 <= len(words):
+            e = {}
+            p = [_match(PERIOD[k], words[j + k], e, j - i + k) for k in range(5)]
+            if not all(p):
+                break
+            extra.update(e)
             coefs.append(h(p[1], 1))                    # b0 of this biquad is loaded in the second line
             ys.append((h(p[3], 1), h(p[4], 1)))
             j += 5
-        tail = T2.match(t[j + 2]) if j + 2 < len(t) else None
-        if t[j] == T0 and t[j + 1] == T1 and tail and h(tail, 1) == ys[-1][0]:
-            seg = Segment(i, src, x1, x2, ys, coefs)
+        ok = j + 2 < len(words) and _match(T0, words[j], extra, j - i) and _match(T1, words[j + 1], extra, j - i + 1)
+        tail = T2.match(_text(words[j + 2])) if ok else None
+        if tail and h(tail, 1) == ys[-1][0]:
+            seg = Segment(i, src, x1, x2, ys, coefs, extra)
             if emit_segment(seg) == words[i:i + 5 * seg.n + 3]:   # only what the template reproduces exactly
                 out.append(seg)
                 i = j + 3
@@ -116,7 +140,12 @@ def emit_segment(seg):
         ]
     lines += ["NOP | ADD(ACC,MR,NONE,ACC) | NOP | NOP | NOP", "NOP | ADD(ACC,MR,NONE,B) | NOP | NOP | NOP",
               f"NOP | CLRACC | NOP | NOP | ST(B,DATA,{D(seg.dst)})"]
-    return [asm.assemble_line(t, {}) for t in lines]
+    out = [asm.assemble_line(t, {}) for t in lines]
+    for off, bits in seg.extra.items():
+        if off >= len(out) or out[off] & MOP3:
+            raise ValueError(f"merged store at {off} does not fit a segment of {seg.n} biquads")
+        out[off] |= bits
+    return out
 
 
 def chains(words):

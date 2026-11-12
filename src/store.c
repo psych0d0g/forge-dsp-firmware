@@ -414,28 +414,89 @@ void store_save_bq(void)
 	}
 }
 
+static void fill_default_bq(void)
+{
+	uint32_t raw[6];
+	dsp_bq_default(raw);  /* store_reset_bq_cache */
+	/* buffer_bytes is also the I2C buffer: refill before every write */
+	for (uint8_t i = 1; i <= 5; i++)
+		for (uint8_t k = 0; k < 4; k++)
+			buffer_bytes[(i - 1) * 4 + 1 + k] = (uint8_t)(raw[i] >> (8 * k));
+}
+
+static void fill_default_bqtv(void)
+{
+	buffer_bytes[1] = BAS_DSP_BQTYPE_ALL_PASS;  /* store_reset_bqtv_cache */
+	for (uint8_t i = 2; i <= 8; i++)
+		buffer_bytes[i] = 0;
+	buffer_bytes[9] = 0;   /* still 0 from the biquad cache in the original */
+	buffer_bytes[10] = 0;
+}
+
 void store_erase_preset(void)
 {
 	store_reset_values();
 	store_save_values_all();
-	uint32_t raw[6];
-	dsp_bq_default(raw);  /* store_reset_bq_cache */
 	for (store_bq_nr = 1; store_bq_nr <= BAS_FLOW_MAX_DSP_BIQUADS; store_bq_nr++) {
-		/* buffer_bytes is also the I2C buffer: refill before every write */
-		for (uint8_t i = 1; i <= 5; i++)
-			for (uint8_t k = 0; k < 4; k++)
-				buffer_bytes[(i - 1) * 4 + 1 + k] = (uint8_t)(raw[i] >> (8 * k));
+		fill_default_bq();
 		store_save_bq();
 		watchdog_kick();
 	}
 	for (store_bq_nr = 1; store_bq_nr <= BAS_FLOW_MAX_DSP_BIQUADS; store_bq_nr++) {
-		buffer_bytes[1] = BAS_DSP_BQTYPE_ALL_PASS;  /* store_reset_bqtv_cache */
-		for (uint8_t i = 2; i <= 8; i++)
-			buffer_bytes[i] = 0;
-		buffer_bytes[9] = 0;   /* still 0 from the biquad cache in the original */
-		buffer_bytes[10] = 0;
+		fill_default_bqtv();
 		store_save_bqtv();
 		watchdog_kick();
 	}
 	event_number(erase_event, store_preset);
+}
+
+/* PORT (#47): place of the stored biquad nr of a preset (as store_load_bq/store_save_bq) -> bus */
+static uint8_t bq_place(uint16_t nr, uint8_t preset)
+{
+	uint8_t storage = BAS_LOOKUP_B(data_flow_dsp_bq_core, nr);
+	uint16_t w = (uint16_t)(nr - BAS_LOOKUP_W(data_flow_bq_storage_offset, storage));
+	i2c_addr = (uint16_t)(BAS_LOOKUP_W(data_store_addr_bq, preset) + w * BAS_DSP_REG_SIZE_BIQUAD_CHKSUM);
+	i2c_size = BAS_DSP_REG_SIZE_BIQUAD_CHKSUM;
+	switch (storage) {
+	case 1: i2c_device_addr = 0xA0; return 1;
+	case 2: i2c_device_addr = 0xA0; return 2;
+	default: i2c_device_addr = 0xA2; return 2;
+	}
+}
+
+static void bqtv_place(uint16_t nr, uint8_t preset)
+{
+	i2c_addr = (uint16_t)(BAS_LOOKUP_W(data_store_addr_bqtv, preset) + nr * BAS_STORAGE_BQTV_VALUES_FRAMESIZE);
+	i2c_size = BAS_STORAGE_BQTV_VALUES_FRAMESIZE;
+	i2c_device_addr = BAS_EEPROM_ADR_W;
+}
+
+void store_bq_move(uint16_t from, uint16_t to)
+{
+	for (uint8_t p = 0; p < BAS_MODUL_MAX_PRESET; p++) {
+		uint8_t bus = bq_place(from, p);
+		i2c_rbuffer_highreg(bus);
+		bq_place(to, p);
+		i2c_wbuffer_eeprom(bus);
+		bqtv_place(from, p);
+		i2c_rbuffer_highreg(BUS);
+		bqtv_place(to, p);
+		i2c_wbuffer_eeprom(BUS);
+		watchdog_kick();
+	}
+}
+
+void store_bq_clear(uint16_t nr)
+{
+	for (uint8_t p = 0; p < BAS_MODUL_MAX_PRESET; p++) {
+		fill_default_bq();
+		uint16_t crc = bas_crc16(&buffer_bytes[1], BAS_DSP_REG_SIZE_BIQUAD);
+		buffer_bytes[21] = crc & 0xFF;
+		buffer_bytes[22] = crc >> 8;
+		i2c_wbuffer_eeprom(bq_place(nr, p));
+		fill_default_bqtv();
+		bqtv_place(nr, p);
+		i2c_wbuffer_eeprom(BUS);
+		watchdog_kick();
+	}
 }

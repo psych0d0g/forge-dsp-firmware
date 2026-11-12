@@ -15,6 +15,7 @@
 #include "i2c.h"
 #include "registers.h"
 #include "tas3108.h"
+#include "dsp_pool.h"
 
 #define DSP_CORE_RETRIES 8     /* PORT (#45): 8 x 250 ms = 2 s more per core */
 #define DSP_CORE_RETRY_MS 250
@@ -24,7 +25,7 @@ uint16_t hardware_dsp;
 uint8_t dsp_state_error;  /* a core reported an error state (no program loaded) during this start */
 
 struct dsp_def {
-	uint8_t bus, eeprom_adr, core_adr, eeprom_rdy, core_rdy;
+	uint8_t core, bus, eeprom_adr, core_adr, eeprom_rdy, core_rdy;
 	const uint8_t *code;
 	uint16_t chksum_eram;
 };
@@ -45,31 +46,36 @@ struct dsp_def {
 
 static const struct dsp_def dsps[] = {
 #if BAS_MODUL_TAS3108_CORES > 0
-	{ 1, 0xA0, 0x68, BAS_AT24C512_1_RDY, BAS_TAS3108_1_RDY, DSP_1_CODE, ERAM_DSP_1_EEPROM_CHKSUM_ERAM },
+	{ 1, 1, 0xA0, 0x68, BAS_AT24C512_1_RDY, BAS_TAS3108_1_RDY, DSP_1_CODE, ERAM_DSP_1_EEPROM_CHKSUM_ERAM },
 #endif
 #if BAS_MODUL_TAS3108_CORES > 1
-	{ 2, 0xA0, 0x68, BAS_AT24C512_2_RDY, BAS_TAS3108_2_RDY, DSP_2_CODE, ERAM_DSP_2_EEPROM_CHKSUM_ERAM },
+	{ 2, 2, 0xA0, 0x68, BAS_AT24C512_2_RDY, BAS_TAS3108_2_RDY, DSP_2_CODE, ERAM_DSP_2_EEPROM_CHKSUM_ERAM },
 #endif
 #if BAS_MODUL_TAS3108_CORES > 2
-	{ 2, 0xA2, 0x6A, BAS_AT24C512_3_RDY, BAS_TAS3108_3_RDY, DSP_2_CODE, ERAM_DSP_3_EEPROM_CHKSUM_ERAM },
+	{ 3, 2, 0xA2, 0x6A, BAS_AT24C512_3_RDY, BAS_TAS3108_3_RDY, DSP_2_CODE, ERAM_DSP_3_EEPROM_CHKSUM_ERAM },
 #endif
 };
 
+/* PORT (#47): the image comes from src/dsp_pool.c, which builds the program from the pool
+ * lengths (the base image unchanged with the default lengths or without pools) */
 static uint16_t data_size(const struct dsp_def *d)
 {
-	return bas_data_word(d->code);  /* restore dsp_N_code : read dsp_N_eeprom_size */
+	struct dsp_img g;
+	dsp_img_open(&g, d->core, d->code);
+	return g.size;
 }
 
 /* PORT fix (#47): the original computes the checksum of the program only at a factory reset
  * and uses the stored value otherwise, so a firmware with another DSP program would not write it
- * to the DSP's EEPROM. The port always computes it (24 KB from flash, a few ms) and keeps the
- * stored value up to date. */
+ * to the DSP's EEPROM. The port always computes it (24 KB, a few ms) and keeps the stored value
+ * up to date. */
 static uint16_t data_get_chksum(const struct dsp_def *d)
 {
+	struct dsp_img g;
 	uint16_t sum = 0;
-	uint16_t n = data_size(d);
-	for (uint16_t i = 0; i < n; i++)
-		sum = (uint16_t)(sum + bas_data_byte(d->code + 2 + i));
+	dsp_img_open(&g, d->core, d->code);
+	for (uint16_t i = 0; i < g.size; i++)
+		sum = (uint16_t)(sum + dsp_img_next(&g));
 	if (eram_rw(d->chksum_eram) != sum)
 		eram_ww(d->chksum_eram, sum);
 	return sum;
@@ -132,9 +138,11 @@ static void eeprom_copy_data(const struct dsp_def *d)
 	twi_wbyte(d->bus, d->eeprom_adr);
 	twi_wbyte(d->bus, 0x00);
 	twi_wbyte(d->bus, 0x00);
+	struct dsp_img g;
+	dsp_img_open(&g, d->core, d->code);
 	uint8_t page = 0;
 	for (uint16_t count = 1; count <= size; count++) {
-		twi_wbyte(d->bus, bas_data_byte(d->code + 1 + count));
+		twi_wbyte(d->bus, dsp_img_next(&g));
 		page++;
 		if (page > BAS_DSP_EEPROM_PAGE_SIZE) {
 			eeprom_restart(d, count);  /* next byte goes to address count */

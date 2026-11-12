@@ -427,10 +427,27 @@ static void save_eeprom(void)
 	fclose(f);
 }
 
+/* internal EEPROM and the external ones that were asked for (#dspee_out, #at24out) */
+static void save_all(void)
+{
+	save_eeprom();
+	for (int i = 0; i < 3; i++)
+		if (dspee_out[i]) {
+			FILE *f = fopen(dspee_out[i], "wb");
+			fwrite(dspee[i], 1, 65536, f);
+			fclose(f);
+		}
+	if (at24_out) {
+		FILE *f = fopen(at24_out, "wb");
+		fwrite(at24, 1, sizeof at24, f);
+		fclose(f);
+	}
+}
+
 void mcu_reset_delayed(void)
 {
 	printf("\n@reset\n");
-	save_eeprom();
+	save_all();
 	exit(0);
 }
 
@@ -495,17 +512,6 @@ int main(int argc, char **argv)
 		if (cur >= 0) { printf("\n"); cur = -1; }
 		printf("--\n");
 	}
-	save_eeprom();
-	for (int i = 0; i < 3; i++)
-		if (dspee_out[i]) {
-			FILE *f = fopen(dspee_out[i], "wb");
-			fwrite(dspee[i], 1, 65536, f);
-			fclose(f);
-		}
-	if (at24_out) {
-		FILE *f = fopen(at24_out, "wb");
-		fwrite(at24, 1, sizeof at24, f);
-		fclose(f);
-	}
+	save_all();
 	return 0;
 }

@@ -23,6 +23,7 @@
 #include "biquad.h"
 #include "dsp.h"
 #include "ir.h"
+#include "dsp_pool.h"
 
 uint8_t modc_enable[MODC_N + 1], modc_type[MODC_N + 1];
 uint8_t modc_flags[4 * MODC_N + 1], modc_events[4 * MODC_N + 1], modc_sets[4 * MODC_N + 1];
@@ -763,7 +764,7 @@ void modc_loudness_invalidate(void)
 
 static void loudness_write(uint8_t ch, uint8_t last_offset, uint8_t type, double f, int16_t hundredths)
 {
-	uint8_t lim = BAS_LOOKUP_B(data_flow_ch_bq_limits, ch);
+	uint8_t lim = flow_bq_limit(ch);
 	if (ch < 1 || ch > BAS_FLOW_MAX_CHANNELS || lim < 2)
 		return;
 	uint32_t raw[6];
@@ -778,7 +779,7 @@ static void loudness_write(uint8_t ch, uint8_t last_offset, uint8_t type, double
 		dsp_bq_calcto5coeff();
 		dsp_bq_convert2raw(raw);
 	}
-	dsp_bq_virt_nr = (uint16_t)(BAS_LOOKUP_W(data_flow_ch_bq_offsets, ch) + lim - last_offset);
+	dsp_bq_virt_nr = (uint16_t)(flow_bq_offset(ch) + lim - last_offset);
 	dsp_calc_core();
 	dsp_calc_reg();
 	dsp_set_biquad(raw);

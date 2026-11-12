@@ -34,4 +34,7 @@ void store_copy_preset(void);      /* store_preset_copy_from -> store_preset_cop
 void store_reset_values(void);     /* defaults of the values frame */
 void store_save_bq(void);          /* buffer_bytes(1..20) + crc -> DSP EEPROM */
 void store_erase_preset(void);     /* store_preset: defaults, default biquads, all-pass types */
+/* PORT (#47): stored biquad (raw + crc and type/values) of one virtual number, in all presets */
+void store_bq_move(uint16_t from, uint16_t to);  /* same DSP core */
+void store_bq_clear(uint16_t nr);                /* default biquad, all-pass type */
 #endif

@@ -8,6 +8,7 @@ import math
 import os
 import pathlib
 import subprocess
+import sys
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -454,7 +455,15 @@ class Tas3108Test(unittest.TestCase):
     """DSP program EEPROMs: compare with the embedded program, rewrite only on mismatch."""
 
     def program(self, f, n):
-        code = table_bytes(f, "dsp_1_code" if n == 1 else "dsp_2_code")
+        """the program the build carries: the optimized one (FORGE_DSP_OPT, #47) where it exists"""
+        label = "dsp_1_code" if n == 1 else "dsp_2_code"
+        opt = pathlib.Path(HERE, "..", "src", "flavours", f, "dsp_opt.h")
+        if opt.exists():
+            import re
+            body = re.search(rf"BAS_DATA_TABLE\({label}_opt, \d+\) = \{{(.*?)\}};", opt.read_text(), re.S).group(1)
+            code = bytes(int(x, 16) for x in re.findall(r"0x([0-9A-F]{2})", body))
+        else:
+            code = table_bytes(f, label)
         size = int.from_bytes(code[:2], "little")
         return code[2:2 + size]
 
@@ -511,7 +520,7 @@ class Tas3108Test(unittest.TestCase):
         dsp[3] = b"\x00" * 65536  # damaged program EEPROM of core 3
         out, res = self.run_dsp(f, ee, dsp, ["#dsp_eeprom=3"], dump=(3,))
         prog = self.program(f, 3)
-        self.assertIn("@dsp_eeprom3: hw=0020 writes=56526", out)  # 32001 x 0xFF + program
+        self.assertIn(f"@dsp_eeprom3: hw=0020 writes={32001 + len(prog)}", out)  # 32001 x 0xFF + program
         self.assertEqual(res[3][:len(prog)], prog)
         self.assertEqual(set(res[3][len(prog):32001]), {0xFF})
         self.assertEqual(set(res[3][32001:]), {0x00})  # beyond dsp_eeprom_clear_count untouched
@@ -2535,3 +2544,94 @@ class PresetLoadTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PoolTest(unittest.TestCase):
+    """#47: dynamic biquad pools; the MCU generator writes the same images as tools/dsp_pool.py"""
+    F = "V40-96ELN"
+    ORDER = [35, 36, 5, 6, 7, 8, 1, 2, 3, 4]   # pool order of dsp_pool_chan
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(pathlib.Path(HERE, "..", "tools")))
+        import dsp_pool
+        t = Tas3108Test()
+        cls.imgs = {n: t.program(cls.F, n) for n in (1, 2)}
+        cls.progs, _ = dsp_pool.programs(str(pathlib.Path(HERE, "..", "src", "flavours", cls.F, "flavour_data.h")), cls.imgs)
+
+    def device(self, lengths):
+        ee = bytearray(image(self.F))
+        if lengths:
+            ee[0x0F20] = 0x47
+            ee[0x0F21:0x0F21 + len(lengths)] = bytes(lengths)
+        return bytes(ee)
+
+    def test_images_match_reference(self):
+        lengths = [100, 44, 8, 128, 31, 29, 189, 3, 1, 3]
+        out, res = Tas3108Test().run_dsp(self.F, self.device(lengths), {n: b"\xff" * 65536 for n in (1, 2, 3)},
+                                          ["#dsp_eeprom=1", "#dsp_eeprom=2", "#dsp_eeprom=3"], dump=(1, 2, 3))
+        want = {1: self.progs[1].image(lengths[0:2]), 2: self.progs[2].image(lengths[2:6]),
+                3: self.progs[2].image(lengths[6:10])}
+        for n in (1, 2, 3):
+            self.assertNotEqual(want[n], self.imgs[1 if n == 1 else 2])
+            self.assertEqual(res[n][:len(want[n])], want[n], f"core {n}")
+
+    def test_default_lengths_keep_the_program(self):
+        for lengths in (None, [72, 72, 60, 60, 38, 38, 60, 60, 38, 38], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]):  # blank, default, invalid
+            cores, ee, dsp = Tas3108Test().original_device(self.F)
+            ee = bytearray(ee)
+            ee[0x0F20:0x0F2B] = self.device(lengths)[0x0F20:0x0F2B]
+            out, _ = Tas3108Test().run_dsp(self.F, bytes(ee), dsp, [f"#dsp_eeprom={n}" for n in (1, 2, 3)])
+            for n in (1, 2, 3):
+                self.assertRegex(out, rf"@dsp_eeprom{n}: hw=\w+ writes=0\n", lengths)
+
+    def test_channel_limits_and_offsets(self):
+        lengths = [100, 44, 8, 128, 31, 29, 189, 3, 1, 3]
+        p, _ = run(self.F, BiquadCmdTest.PRE + ["1|get.1 biquad", "1|get.1 biquad.36", "1|set.1 biquad.36.45=[1]"],
+                   eeprom=self.device(lengths), want_eeprom=True)
+        lim = dict(zip(self.ORDER, lengths))
+        self.assertIn("biquad=[" + ",".join(str(lim.get(i, 0)) for i in range(1, 37)) + "]", p.stdout)
+        self.assertEqual(p.stdout.count("<.1 biquad.36."), 44)
+        self.assertIn("out of range", p.stdout.split("biquad.36.45")[-1][:80])
+
+
+class PoolCmdTest(unittest.TestCase):
+    """#47: system.biquads; the stored presets move with their channel"""
+    F = PoolTest.F
+
+    def test_get_and_set(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            files = ["#at24out=%s/at24.bin" % d] + [f"#dspee_out={n},{d}/dsp{n}.bin" for n in (1, 2, 3)]
+            # bands with values in preset 0: output 1 band 2, output 2 band 60, output 4 band 10 and 38
+            p, ee = run(self.F, files + BiquadCmdTest.PRE + [
+                "1|set.1 biquad.1.2=[1,1000,-35,7071,0,128]", "1|set.1 biquad.2.60=[1,2000,-40,7071,0,128]",
+                "1|set.1 biquad.4.10=[1,2500,-42,7071,0,128]", "1|set.1 biquad.4.38=[1,3000,-45,7071,0,128]",
+                "1|set.1 biquad.5.7=[1,3500,-30,7071,0,128]", "#mainloop",
+                "1|get.1 system.biquads", "1|set.1 system.biquads.3=[60,60,38,38]",
+                "1|set.1 system.biquads.3=[10,170,6,9]", "1|set.1 system.biquads.3=[60,60,38]",
+                "1|set.1 system.biquads.3=[10,170,6,10]"], want_eeprom=True)
+            out = p.stdout
+            self.assertIn("system.biquads=[[35,1,72,1],[36,1,72,1],[5,2,60,3],[6,2,60,3],[7,2,38,1],[8,2,38,3],"
+                          "[1,3,60,3],[2,3,60,3],[3,3,38,1],[4,3,38,3]]", out)
+            self.assertEqual(out.count("command out of range"), 2)      # sum 195, and 3 values for 4 channels
+            self.assertEqual(out.count("system.biquads.3 ok"), 2)       # unchanged lengths: ok without restart
+            self.assertTrue(out.rstrip().endswith("@reset"))             # the change restarts
+            self.assertEqual(ee[0x0F20], 0x47)
+            self.assertEqual(list(ee[0x0F21:0x0F2B]), [72, 72, 60, 60, 38, 38, 10, 170, 6, 10])
+            # the next start: limits, moved bands, the new DSP program of core 3 only
+            back = ["#at24=%s/at24.bin" % d] + [f"#dspee={n},{d}/dsp{n}.bin" for n in (1, 2, 3)]
+            p, _ = run(self.F, back + BiquadCmdTest.PRE[1:] + [
+                "1|get.1 biquad", "1|get.1 biquad.1.2", "1|get.1 biquad.2.60", "1|get.1 biquad.2.170",
+                "1|get.1 biquad.4.10", "1|get.1 biquad.1.11", "1|get.1 biquad.5.7", "1|get.1 system.biquads"],
+                eeprom=bytes(ee), want_eeprom=True)
+        out = p.stdout
+        self.assertIn("biquad=[10,170,6,10,60,60,38,38,", out)
+        self.assertIn("biquad.1.2=[1,1000,-35,7071,0,128]", out)        # kept
+        self.assertIn("biquad.2.60=[1,2000,-40,7071,0,128]", out)       # moved down by 50 virtual numbers
+        self.assertIn("biquad.2.170=[0,0,0,0,0,0]", out)                 # new band: default as after preset erase
+        self.assertIn("biquad.4.10=[1,2500,-42,7071,0,128]", out)       # moved up
+        self.assertNotIn("3000", out)                                   # band 38 of output 4 dropped
+        self.assertIn("biquad.5.7=[1,3500,-30,7071,0,128]", out)        # other core untouched
+        self.assertIn("!.1 biquad.1.11 command out of range", out)
+        self.assertIn("[1,3,10,3],[2,3,170,3],[3,3,6,1],[4,3,10,3]]", out)

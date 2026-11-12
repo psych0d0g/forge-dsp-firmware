@@ -19,6 +19,7 @@
 #include "bqramp.h"
 #include "dsp.h"
 #include "flavour.h"
+#include "dsp_pool.h"
 #include "flavour_data.h"
 #include "i2c.h"
 #include "store.h"
@@ -141,7 +142,7 @@ static void set_biquad_calc(const uint32_t raw[6])
 
 static void set_bq_ch(void)
 {
-	uint8_t limits = BAS_LOOKUP_B(data_flow_ch_bq_limits, REQ_B(5));
+	uint8_t limits = flow_bq_limit(REQ_B(5));
 	if (REQ_B(8) != cmd_req_number) {
 		cmd_error_unknown();
 		return;
@@ -150,7 +151,7 @@ static void set_bq_ch(void)
 		cmd_error_cmd_oor();
 		return;
 	}
-	store_bq_nr = (uint16_t)(BAS_LOOKUP_W(data_flow_ch_bq_offsets, REQ_B(5)) + REQ_B(7));
+	store_bq_nr = (uint16_t)(flow_bq_offset(REQ_B(5)) + REQ_B(7));
 	dsp_bq_virt_nr = store_bq_nr;
 	uint32_t raw[6] = {0};
 	switch (req_w(cmd_req_word_four)) {
@@ -244,7 +245,7 @@ void cmd_set_biquad(void)
 		cmd_error_cmd_oor();
 	} else if (REQ_B(6) != cmd_req_number) {
 		cmd_error_unknown();
-	} else if (REQ_B(5) > BAS_FLOW_MAX_CHANNELS || BAS_LOOKUP_B(data_flow_ch_bq_limits, REQ_B(5)) == 0) {
+	} else if (REQ_B(5) > BAS_FLOW_MAX_CHANNELS || flow_bq_limit(REQ_B(5)) == 0) {
 		cmd_error_cmd_oor();
 	} else {
 		/* PORT (#44): with clickless on, calc decides itself whether it has to mute */
@@ -275,8 +276,8 @@ static void get_bq_ch_data(void)
 
 static void get_bq_ch(uint8_t ch)
 {
-	uint8_t limits = BAS_LOOKUP_B(data_flow_ch_bq_limits, ch);
-	uint16_t base = BAS_LOOKUP_W(data_flow_ch_bq_offsets, ch);
+	uint8_t limits = flow_bq_limit(ch);
+	uint16_t base = flow_bq_offset(ch);
 	if (REQ_B(8) == cmd_req_number) {
 		if (REQ_B(7) < 1 || REQ_B(7) > limits) {
 			cmd_error_cmd_oor();
@@ -316,7 +317,7 @@ void cmd_get_biquad(void)
 			cmd_error_cmd_oor();
 			return;
 		}
-		if (i > BAS_FLOW_MAX_CHANNELS || BAS_LOOKUP_B(data_flow_ch_bq_limits, i) == 0)
+		if (i > BAS_FLOW_MAX_CHANNELS || flow_bq_limit(i) == 0)
 			cmd_error_cmd_oor();
 		else
 			get_bq_ch(i);
@@ -327,7 +328,7 @@ void cmd_get_biquad(void)
 		cmd_answer_header();
 		out_chr('[');
 		for (uint8_t i = 1; i <= BAS_FLOW_MAX_CHANNELS_USED; i++) {
-			out_u16(BAS_LOOKUP_B(data_flow_ch_bq_limits, i));
+			out_u16(flow_bq_limit(i));
 			if (i < BAS_FLOW_MAX_CHANNELS_USED)
 				out_chr(',');
 		}
@@ -341,7 +342,7 @@ void cmd_get_biquad(void)
 		}
 		REQ_B(6) = cmd_req_number;
 		for (uint8_t i = 1; i <= BAS_FLOW_MAX_CHANNELS; i++) {
-			if (BAS_LOOKUP_B(data_flow_ch_bq_limits, i) > 0) {
+			if (flow_bq_limit(i) > 0) {
 				REQ_B(5) = i;
 				get_bq_ch(i);
 			}

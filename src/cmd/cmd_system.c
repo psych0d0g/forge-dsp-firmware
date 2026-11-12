@@ -16,6 +16,7 @@
 #include "flavour_data.h"
 #include "hwcheck.h"
 #include "level.h"
+#include "dsp_pool.h"
 #include "i2c.h"
 #include "supply.h"
 #include "store.h"
@@ -27,6 +28,7 @@
 void watchdog_kick(void);
 #include "cmd.h"
 #include "flavour.h"
+#include "dsp_pool.h"
 #include "mcuid.h"
 #include "version.h"
 #include "eram.h"
@@ -462,6 +464,76 @@ static void cmd_get_system_vu(void)
 	out_list(v, 8);
 }
 
+/* PORT extension (#47): dynamic biquad pools.
+ *   get system.biquads    = [[channel, core, biquads, minimum], …] in pool order ([] without pools)
+ *   set system.biquads.K  = [biquads of the channels of core K in pool order]; the sum must equal
+ *                           the pool of the core. The stored presets move along (band b stays band b,
+ *                           new bands start as defaults), then the MCU restarts and writes the new
+ *                           DSP program. */
+static void cmd_get_system_biquads(void)
+{
+	if (req_w(cmd_req_word_three) != 0x0000) {
+		cmd_error_unknown();
+		return;
+	}
+	cmd_answer_header();
+	out_chr('[');
+	for (uint8_t k = 1; k <= dsp_pool_cores(); k++) {
+		uint8_t first, n = dsp_pool_channels(k, &first);
+		for (uint8_t i = 0; i < n; i++) {
+			uint8_t q = (uint8_t)(first + i);
+			if (q)
+				out_chr(',');
+			out_chr('[');
+			out_u16(dsp_pool_channel(q));
+			out_chr(',');
+			out_u16(k);
+			out_chr(',');
+			out_u16(dsp_pool_len(q));
+			out_chr(',');
+			out_u16(dsp_pool_min(q));
+			out_chr(']');
+		}
+	}
+	out_chr(']');
+	out_crlf();
+}
+
+static void cmd_set_system_biquads(void)
+{
+	uint8_t first, len[8];
+	if (REQ_B(8) != cmd_req_number) {
+		cmd_error_unknown();
+		return;
+	}
+	uint8_t k = REQ_B(7);
+	uint8_t n = dsp_pool_channels(k, &first);
+	if (n == 0 || cmd_reg_var_count != n) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	uint8_t same = 1;
+	for (uint8_t i = 0; i < n; i++) {
+		int16_t v = cmd_reg_var_integers[i + 1];
+		if (v < 1 || v > 255) {
+			cmd_error_cmd_oor();
+			return;
+		}
+		len[i] = (uint8_t)v;
+		same &= len[i] == dsp_pool_len((uint8_t)(first + i));
+	}
+	if (same) {
+		cmd_answer_ok();
+		return;
+	}
+	if (dsp_pool_set(k, len)) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	cmd_answer_ok();
+	mcu_reset_delayed();
+}
+
 static void cmd_get_system_supply(void)
 {
 	int16_t v[4];
@@ -532,6 +604,7 @@ void cmd_set_system(void)
 	case 0x7265: cmd_set_system_reinit(); break;
 	case 0x7374: cmd_set_system_startup(); break;  /* PORT extension (#40) */
 	case 0x7375: cmd_set_system_supply(); break;   /* PORT extension (#46) */
+	case 0x6269: cmd_set_system_biquads(); break;  /* PORT extension (#47) */
 	default: cmd_error_unknown();
 	}
 }
@@ -945,6 +1018,7 @@ void cmd_get_system(void)
 	case 0x7375: cmd_get_system_supply(); break;  /* PORT extension (#46) */
 	case 0x7675: cmd_get_system_vu(); break;      /* PORT extension (#52) */
 	case 0x6C69: cmd_get_system_limits(); break;  /* PORT extension (#54) */
+	case 0x6269: cmd_get_system_biquads(); break; /* PORT extension (#47) */
 	default: cmd_error_unknown();
 	}
 }
