@@ -228,6 +228,52 @@ static void phaseshift(void)
 	d = -d; V(A2) = d;
 }
 
+/* PORT extension (#48): first order all pass H = (c + z^-1) / (1 + c z^-1),
+ * c = (tan(w0/2) - 1) / (tan(w0/2) + 1) (bilinear with prewarp: -90 deg exactly at f).
+ * a1 = c is stored negated as for the other types. k = tan(w0/2). */
+static void allpass1_k(double k)
+{
+	double c = (k - 1.0) / (k + 1.0);
+	V(A0) = 1.0; V(A1) = -c; V(A2) = 0.0;
+	V(B0) = c; V(B1) = 1.0; V(B2) = 0.0;
+}
+
+static void allpass_1(void)
+{
+	allpass1_k(tan(dsp_math_double_pi / 2.0 * V(F) / BAS_FLOW_SAMPLE_RATE));
+}
+
+/* PORT extension (#48): all pass with a wanted phase lag of b degrees at f. The RBJ all pass
+ * is the bilinear transform of the analog one with prewarp at f0, so its phase at f is the
+ * analog phase at x = tan(pi f/fs) / tan(pi f0/fs):
+ *   1st order: phi = -2 atan(x)                          -> x = tan(phi/2)
+ *   2nd order: phi = -2 atan2(x/Q, 1 - x^2), theta = phi/2: sin(theta) x^2 + cos(theta)/Q x
+ *              - sin(theta) = 0, positive root.
+ * Below 180 deg first order (q unused), from 180 deg on second order with q. */
+static void phase_angle(void)
+{
+	double deg = V(BW), q = V(Q);
+	double kf = tan(dsp_math_double_pi / 2.0 * V(F) / BAS_FLOW_SAMPLE_RATE);
+	if (!(deg >= 1.0 && deg < 360.0) || !(kf > 0.0)) {
+		bypass();
+		return;
+	}
+	double th = deg / 2.0 * (dsp_math_double_pi / 360.0);
+	if (deg < 180.0) {
+		allpass1_k(kf / tan(th));
+		return;
+	}
+	if (!(q > 0.0))
+		q = 0.707;
+	double s = sin(th), c = cos(th);
+	double x = (-c / q + sqrt(c * c / (q * q) + 4.0 * s * s)) / (2.0 * s);
+	double w0 = 2.0 * atan(kf / x);
+	double alpha = sin(w0) / (2.0 * q), cw = cos(w0);
+	V(A0) = 1.0 + alpha; V(B2) = 1.0 + alpha;
+	V(A1) = 2.0 * cw; V(B1) = -2.0 * cw;
+	V(B0) = 1.0 - alpha; V(A2) = -(1.0 - alpha);
+}
+
 void dsp_bq_calc_type(uint8_t type)
 {
 	switch (type) {
@@ -251,6 +297,8 @@ void dsp_bq_calc_type(uint8_t type)
 	case BAS_DSP_BQTYPE_EQ_BANDWIDTH:         eq_bandwidth(); break;
 	case BAS_DSP_BQTYPE_RIAA:                 riaa(); break;
 	case BAS_DSP_BQTYPE_PHASESHIFT:           phaseshift(); break;
+	case DSP_BQTYPE_ALLPASS_1:                allpass_1(); break;    /* PORT (#48) */
+	case DSP_BQTYPE_PHASE_ANGLE:              phase_angle(); break;  /* PORT (#48) */
 	default:                                  bypass();
 	}
 }

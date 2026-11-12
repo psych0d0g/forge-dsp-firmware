@@ -155,6 +155,11 @@ uint8_t bqramp_start(uint16_t nr, const struct bq_params *stored, const struct b
 	struct bq_params from = r ? r->now : *stored;
 	struct segment s[2];
 	uint8_t nseg = 0;
+	if (from.type == to->type && to->type == DSP_BQTYPE_PHASE_ANGLE && (from.b < 180) != (to->b < 180)) {
+		if (r)  /* PORT (#48): first <-> second order is no continuous path */
+			r->nseg = 0;
+		return 0;
+	}
 	if (from.type == to->type) {
 		if (to->type == BAS_DSP_BQTYPE_ALL_PASS)
 			return r ? (r->nseg = 0, 1) : 1;  /* bypass stays bypass: nothing to write */

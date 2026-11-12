@@ -41,6 +41,10 @@ Die Forge hat außerdem USB-Audio (XMOS an X102); am DEV-Gerät meldete es sich 
   verschiebt Töne davon weg.
 - `response A.wav B.wav`: Pegel jedes Tons in B relativ zu A, also die Wirkung einer Einstellung unabhängig von der
   Messkette. Ein konstanter Versatz über alle Frequenzen ist ein Pegelunterschied der Aufnahmen, kein Filterfehler.
+- `phase A.wav B.wav --tones T`: Phase links minus rechts je Ton, B gegen A. Dazu dasselbe Signal auf beide Ausgänge
+  eines Paars legen und nur einen filtern; der Startzeitpunkt der Aufnahme spielt dann keine Rolle. Am Messplatz liegt
+  Ausgang 3 rechts, das Vorzeichen ist also umgekehrt. Unter 100 Hz streut die Messung um einige Grad (Brumm,
+  geringer Pegel).
 - `clicks`: Aussetzer (2-ms-Fenster 12 dB unter dem Pegel; eine Pegelabsenkung um 12 dB löst das ebenfalls aus) und
   Spitzen im Hochpass über 5 kHz, die das Maximum der Ruhephase vor dem ersten Befehl um mehr als 3 dB übersteigen.
   Die Messkette fängt sich gelegentlich Impulsstörungen ein, auch ohne Befehl: Einzelne Treffer nur mit
@@ -63,3 +67,5 @@ python3 $M clicks /tmp/r.wav --events 3,6
 - Audioweg der Port-Firmware identisch zum Original 1.11.6000 (−70,9 / −70,7 dBFS an derselben Buchse).
 - Clickless-EQ ohne Aussetzer und Knacken (#44), Lautstärke/Phase/Mute knackfrei, Mixer/Delay/Eingangswahl mit
   ca. 2 s Mute (#50), Loudness und dynamische Loudness wie spezifiziert (#51), EQ-Frequenzgang ±0,3 dB (#4).
+- Allpässe (#48): Typ 21 (1 kHz), Typ 20 (1 kHz, Q 0,707), Typ 22 (−45° bei 1 kHz; −270° bei 300 Hz, Q 1) über
+  100 Hz innerhalb ±1,5° der Theorie, Nullmessung ±1°.

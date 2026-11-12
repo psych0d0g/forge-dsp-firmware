@@ -46,6 +46,22 @@ class MeasureTest(unittest.TestCase):
         for i, (f, d) in enumerate(r):
             self.assertAlmostEqual(d, 6.02 if i == 3 else 0.0, delta=0.1, msg=f)
 
+    def test_phase(self):
+        rate = 96000
+        fr = self.fm.multitone_freqs(6)
+        t = np.arange(4 * rate) / rate
+        sh = [-30.0 * i for i in range(len(fr))]                     # left lags by 0, 30, 60 ... deg
+        ref = sum(np.sin(2 * np.pi * f * t) for f in fr) * 0.01
+        lag = sum(np.sin(2 * np.pi * f * t + np.radians(d)) for f, d in zip(fr, sh)) * 0.01
+        a = self.wav("a.wav", ref)                                   # both channels equal
+        p = os.path.join(self.dir.name, "b.wav")
+        import wave
+        d = (np.stack([lag, ref], 1) * (2 ** 31 - 1)).astype("<i4")
+        with wave.open(p, "wb") as w:
+            w.setnchannels(2); w.setsampwidth(4); w.setframerate(rate); w.writeframes(d.tobytes())
+        for (f, got), want in zip(self.fm.phase(a, p, fr), sh):
+            self.assertAlmostEqual(got, (want + 180) % 360 - 180, delta=0.5, msg=f)
+
     def test_clicks_and_dropouts(self):
         rate = 96000
         x = self.fm.tone(1000, -20, 10, rate)        # window after 6.5 s ends before the fade-out

@@ -4,6 +4,7 @@ Expected answers are derived from libs/cmd/v20 of the BASCOM firmware 1.11.6000.
 Build first:  make -C tests/native   (or set NATIVE_DIR)
 """
 import glob
+import math
 import os
 import pathlib
 import subprocess
@@ -815,6 +816,69 @@ class BiquadTest(unittest.TestCase):
         self.assertTrue(out[0][0].startswith("@bq:0F"), out)
 
 
+def bq_response(raw_hex, freq, fs=96000):
+    """complex response of "@bq:A2 A1 B2 B1 B0" (5.23, a1/a2 stored negated as the DSP adds them)"""
+    import cmath
+    v = []
+    for h in raw_hex.split():
+        x = int(h, 16) & 0x0FFFFFFF
+        if x & 0x08000000:
+            x -= 1 << 28
+        v.append(x / 8388608.0)
+    a2, a1, b2, b1, b0 = v
+    z1 = cmath.exp(-2j * math.pi * freq / fs)
+    return (b0 + b1 * z1 + b2 * z1 * z1) / (1 - a1 * z1 - a2 * z1 * z1)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class AllpassTest(unittest.TestCase):
+    """#48: all pass types 20 (2nd order, RBJ), 21 (1st order) and 22 (wanted phase lag at f),
+    checked against the frequency response, not against a copy of the formulas."""
+
+    def calc(self, *cases):
+        p = subprocess.run([os.path.join(NATIVE, "cmd-V41-96ELN-3")],
+                           input="\n".join(f"#bq_calc={','.join(map(str, c))}" for c in cases) + "\n",
+                           capture_output=True, text=True, timeout=30)
+        return [l[4:] for l in p.stdout.splitlines() if l.startswith("@bq:")]
+
+    def phase(self, raw, f):
+        import cmath
+        return math.degrees(cmath.phase(bq_response(raw, f)))
+
+    def flat(self, raw):
+        for f in (20, 100, 1000, 5000, 20000):
+            self.assertAlmostEqual(abs(bq_response(raw, f)), 1.0, delta=2e-4, msg=(raw, f))
+
+    def test_type20_rbj(self):
+        for f, q in ((80, 707), (1000, 2000), (8000, 500)):
+            raw, = self.calc((20, f, 0, q, 0, 128))
+            self.flat(raw)
+            self.assertAlmostEqual(abs(self.phase(raw, f)), 180.0, delta=0.5, msg=f)   # -180 at f0
+            self.assertLess(abs(self.phase(raw, f / 100)), 5.0)    # 0 deg far below f0
+
+    def test_type21_first_order(self):
+        for f in (40, 80, 1000, 10000):
+            raw, = self.calc((21, f, 0, 707, 0, 128))
+            self.flat(raw)
+            self.assertAlmostEqual(self.phase(raw, f), -90.0, delta=0.2, msg=f)
+            self.assertGreater(abs(self.phase(raw, 47900)), 170.0)   # towards -180 at fs/2
+            self.assertLess(abs(self.phase(raw, f / 100)), 2.0)
+
+    def test_type22_wanted_angle(self):
+        for f, deg, q in ((80, 45, 0), (80, 90, 0), (200, 170, 0), (80, 180, 707), (80, 270, 707),
+                          (1000, 300, 2000), (60, 359, 500), (5000, 1, 0)):
+            raw, = self.calc((22, f, 0, q, deg, 128))
+            self.flat(raw)
+            got = -self.phase(raw, f) % 360
+            self.assertAlmostEqual(got, deg, delta=0.5, msg=(f, deg, q, got))   # 5.23 rounding at low f
+
+    def test_type22_limits(self):
+        bypass = "00000000 00000000 00000000 00000000 00800000"
+        self.assertEqual(self.calc((22, 80, 0, 707, 0, 128), (22, 80, 0, 707, 360, 128)), [bypass, bypass])
+        raw21, raw22 = self.calc((21, 80, 0, 707, 0, 128), (22, 80, 0, 0, 90, 128))
+        self.assertEqual(raw21, raw22)            # 90 deg at f = first order with f0 = f
+
+
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class DspWriteTest(unittest.TestCase):
     def test_biquad_write_path(self):
@@ -1169,6 +1233,17 @@ class ClicklessTest(LinesMixin, unittest.TestCase):
             out, blocks = self.run_cmds([f"1|set.1 biquad.2.4.calc=[{t},100,0,707,0,128]"] + self.settle()
                                         + [f"1|set.1 biquad.2.4.calc=[{t},{f},{g},{q},0,128]"] + self.settle() + [b])
             self.assertEqual(blocks[-1], self.ref(t, f, g, q), target)
+
+    def test_phase_angle(self):
+        """#48: type 22 fades within one order; 1st <-> 2nd order (crossing 180 deg) mutes."""
+        out, _ = self.run_cmds(
+            ["1|set.1 biquad.1.4.calc=[22,80,0,707,45,128]"] + self.settle() + ["#mainloop"] * 200 + ["#mutechg",
+             "1|set.1 biquad.1.4.calc=[22,80,0,707,120,128]", "#mutechg"] + self.settle() + ["#mainloop"] * 200
+            + ["1|set.1 biquad.1.4.calc=[22,80,0,707,270,128]", "#mutechg"] + ["#mainloop"] * 200
+            + ["1|set.1 biquad.1.4.calc=[21,300,0,707,0,128]"] + self.settle() + ["#mainloop"] * 200 + ["#mutechg",
+             "1|set.1 biquad.1.4.calc=[21,80,0,707,0,128]", "#mutechg"])
+        mute = [l for l in out if l.startswith("@mutechg:")]
+        self.assertEqual(mute, ["@mutechg:0", "@mutechg:0", "@mutechg:255", "@mutechg:0", "@mutechg:0"])
 
     def test_fallbacks(self):
         b = self.block(1, 3)

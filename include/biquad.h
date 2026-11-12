@@ -9,6 +9,11 @@
 #include <stdint.h>
 _Static_assert(sizeof(double) == 8, "build with -mdouble=64 (BASCOM computes biquads in double)");
 
+/* PORT extension (#48): new biquad types after the original's 0..20 (17 band pass, #20) */
+#define DSP_BQTYPE_ALLPASS_1 21     /* first order all pass: -90 deg at f, 0..-180 deg; f only */
+#define DSP_BQTYPE_PHASE_ANGLE 22   /* phase lag of b degrees (1..359) at f: 1st order below 180,
+                                     * 2nd order with q from 180 on */
+
 extern double dsp_bq_cache_values[7];  /* 1-based */
 extern uint8_t dsp_bq_cache_type;
 

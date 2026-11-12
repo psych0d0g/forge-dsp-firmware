@@ -73,6 +73,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
 - **I2C-Puffer schreiben** zur Diagnose (`set.1 i2c.B.A.buffer=[r,b1,…]`), damit lässt sich z. B. der Speicher der DSPs per
   PEEK auslesen (#51).
 - **Biquad-Typ 17 BandPass**, im Original geplant, aber nie umgesetzt (#20).
+- **Allpässe für den Phasenabgleich** (#48): Typ 21 Allpass 1. Ordnung (−90° bei f) und Typ 22 „Phase-Shift mit
+  Wunschwinkel“ (z. B. −45° bei 80 Hz, die Firmware wählt Ordnung und Eckfrequenz). Am Gerät nachgemessen.
 - **microSD wieder aktiv** (im Original aus Lizenzgründen entfernt): In der Original-GUI gespeicherte `.cfg`-Dateien
   als `preset_1.cfg` … auf die Karte kopieren, der Forge übernimmt sie beim nächsten Start in die Presets (#24,
   FatFs statt AVR-DOS; auf dem Gerät noch nicht getestet).

@@ -95,6 +95,15 @@ def read_wav(path):
     return x[:, 0] / 2 ** 31, rate
 
 
+def read_wav2(path):
+    """both channels"""
+    import numpy as np
+    with wave.open(path) as w:
+        rate = w.getframerate()
+        x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i4").reshape(-1, w.getnchannels())
+    return x / 2 ** 31, rate
+
+
 def capture_cmd(card, out, seconds, gain, source=None):
     """arecord on the line-in. PipeWire restores its own gain (up to +50 dB) whenever it opens the
     device, so its source is suspended first (source: PipeWire node name) and the hardware gain set
@@ -186,6 +195,30 @@ def response(path_a, path_b, freqs):
     return [(f, line_level(fb, mb, f) - line_level(fa, ma, f)) for f in freqs]
 
 
+def phase_lr(path, freqs, skip=1.0):
+    """phase left minus right (degrees) at each tone: the same signal on two outputs, one with the
+    filter, so the start time of the recording does not matter"""
+    import numpy as np
+    x, rate = read_wav2(path)
+    x = x[int(skip * rate):]
+    w = np.hanning(len(x))
+    fl = np.fft.rfft((x[:, 0] - x[:, 0].mean()) * w)
+    fr = np.fft.rfft((x[:, 1] - x[:, 1].mean()) * w)
+    bins = np.fft.rfftfreq(len(x), 1 / rate)
+    out = []
+    for f in freqs:
+        i = int(np.argmin(abs(bins - f)))
+        i = i - 2 + int(np.argmax(abs(fl[i - 2:i + 3])))
+        out.append(float(np.degrees(np.angle(fl[i] / fr[i]))))
+    return out
+
+
+def phase(path_a, path_b, freqs):
+    """phase change of (left - right) from recording A to B, wrapped to -180..180"""
+    a, b = phase_lr(path_a, freqs), phase_lr(path_b, freqs)
+    return [(f, (pb - pa + 180) % 360 - 180) for f, pa, pb in zip(freqs, a, b)]
+
+
 def clicks(path, events, quiet=(0.3, 1.9), window=2.5):
     """-> dict: level, dropouts [(t, ms)], per event window: ms above threshold and max dB."""
     import numpy as np
@@ -260,6 +293,10 @@ def main(argv):
     p.add_argument("a")
     p.add_argument("b")
     p.add_argument("--tones", required=True)
+    p = sub.add_parser("phase")
+    p.add_argument("a")
+    p.add_argument("b")
+    p.add_argument("--tones", required=True)
     p = sub.add_parser("clicks")
     p.add_argument("wav")
     p.add_argument("--events", default="")
@@ -282,6 +319,10 @@ def main(argv):
         freqs = [float(x) for x in open(a.tones).read().split()]
         for f, d in response(a.a, a.b, freqs):
             print(f"{f:8.1f} Hz  {d:+6.2f} dB")
+    elif a.cmd == "phase":
+        freqs = [float(x) for x in open(a.tones).read().split()]
+        for f, d in phase(a.a, a.b, freqs):
+            print(f"{f:8.1f} Hz  {d:+7.1f} deg")
     elif a.cmd == "clicks":
         ev = [float(x) for x in a.events.split(",") if x]
         q = tuple(float(x) for x in a.quiet.split(","))
