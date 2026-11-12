@@ -1434,6 +1434,17 @@ class I2cCmdTest(LinesMixin, unittest.TestCase):
             self.assertIn("command out of range", out[i])                    # EEPROMs, bus 3
         self.assertIn("unknown command", out[9])
 
+    def test_set_buffer(self):
+        """PORT (#51): set i2c.B.A.buffer=[r,b1..bn], b1 first on the bus; EEPROMs refused."""
+        f = "V40-96ELN"
+        out = self.lines(f, ["#i2cdev=2,90,4=71", "1|set.1 i2c.2.144.buffer=[6,1,2,3]",
+                             "1|get.1 i2c.2.144.buffer=[6,3]", "1|set.1 i2c.1.160.buffer=[0,1]",
+                             "1|set.1 i2c.2.144.buffer=[6]"])
+        self.assertEqual(out[0], "@0: *.1 i2c.2.144.buffer ok\\r\\n")
+        self.assertEqual(out[1], "@0: <.1 i2c.2.144.buffer=030201\\r\\n")   # regs 6,7,8 = 1,2,3
+        self.assertIn("command out of range", out[2])
+        self.assertIn("command out of range", out[3])
+
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class ModcStoreTest(unittest.TestCase):

@@ -5,6 +5,8 @@
  *   get i2c.B.A.buffer=[r,n]     n bytes from register r (BASCOM buffer order)
  *   get i2c.B.A.dump=[r1,r2]     registers r1..r2 one per line
  *   get i2c.B.scan / i2c.B.state
+ *   PORT (#51): set i2c.B.A.buffer=[r,b1,..,bn]  write n (1..7) bytes to register r, b1 first on
+ *                the bus (multi-byte registers such as TAS3108 PEEK/POKE 0x06)
  * EEPROMs (0xA0..0xAF) are refused as in the original.
  * PORT: dump runs to r2 = 255 without wrapping (BASCOM byte loop would not end).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
@@ -32,8 +34,37 @@ static uint8_t three_numbers(void)
 
 static uint8_t is_eeprom(uint8_t a) { return a >= 0xA0 && a <= 0xAF; }
 
+static uint8_t device(void);
+
+/* PORT (#51): i2c_wbuffer sends buffer_bytes[size] .. [1], so b1 goes to the top */
+static void set_buffer(void)
+{
+	uint8_t n = cmd_reg_var_count;
+	if (REQ_B(6) != cmd_req_number || n < 2 || n > cmd_reg_var_bytes_split) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	if (!device())
+		return;
+	if (REQ_B(5) != 1 && REQ_B(5) != 2) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	uint8_t size = (uint8_t)(n - 1);
+	for (uint8_t i = 1; i <= size; i++)
+		buffer_bytes[size - i + 1] = (uint8_t)cmd_reg_var_integers[i + 1];
+	i2c_reg = (uint8_t)cmd_reg_var_integers[1];
+	i2c_size = size;
+	i2c_wbuffer(REQ_B(5));
+	cmd_answer_ok();
+}
+
 void cmd_set_i2c(void)
 {
+	if (req_w(cmd_req_word_four) == 0x6275) {  /* buffer */
+		set_buffer();
+		return;
+	}
 	if (!three_numbers()) {
 		cmd_error_unknown();
 		return;

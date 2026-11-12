@@ -64,6 +64,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
   folgt der Lautstärke in 0,2-dB-Schritten (feiner einstellbar bis 0,01 dB, #51), einstellbar im vorhandenen
   Loudness-Dialog der Original-GUI
   (M6, #6; [Konfiguration](docs/port-changes.md#loudness-m6-6)).
+- **I2C-Puffer schreiben** zur Diagnose (`set.1 i2c.B.A.buffer=[r,b1,…]`), damit lässt sich z. B. der Speicher der DSPs per
+  PEEK auslesen (#51).
 - **Biquad-Typ 17 BandPass**, im Original geplant, aber nie umgesetzt (#20).
 - **microSD wieder aktiv** (im Original aus Lizenzgründen entfernt): In der Original-GUI gespeicherte `.cfg`-Dateien
   als `preset_1.cfg` … auf die Karte kopieren, der Forge übernimmt sie beim nächsten Start in die Presets (#24,
