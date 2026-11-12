@@ -43,6 +43,7 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
   Am Gerät geprüft: Sicherung, Flashen und Start mit Kennung komplett ohne Taster.
 - **Abstimmung sichern und vergleichen** beim Update (`c45b3 export-tuning / compare-tuning / restore-tuning`,
   Tasks *Forge: export/compare tuning*), im `.cfg`-Format der Original-GUI (#30).
+- **DSP-Ladevorgang messen** (`get.1 system.hardware.dsp`): wie lange die TAS3108 beim Start ihr Programm laden, je I2C-Bus (#45).
 - **Bootloader auslesen** (nur lesend, `get.1 system.hardware.boot.N`, `tools/dump_bootsection.py`); das Abbild liegt unter
   [`bootloader/`](bootloader/).
 - **Eingangswahl** `mixer.in` (und `mixer.in.max`) für die aktive Mixer-Position, mit Ereignis an die GUI; die

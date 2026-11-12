@@ -1849,6 +1849,11 @@ class BootSectionTest(LinesMixin, unittest.TestCase):
         self.assertIn("command out of range", out[2])
         self.assertIn("command out of range", out[3])
 
+    def test_dsp_load(self):
+        """#45: wait for the TAS3108 program load per bus (host harness: no waits)."""
+        out = self.lines("V40-96ELN", ["1|get.1 system.hardware.dsp"])
+        self.assertIn("<.1 system.hardware.dsp=[0,0,0,0,0,0,0,0]", out[0])
+
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class MonoTest(LinesMixin, unittest.TestCase):

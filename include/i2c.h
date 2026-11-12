@@ -53,4 +53,12 @@ uint8_t twi_scl_out(uint8_t bus);                        /* i2cN_scl = PORTx.OUT
 uint8_t twi_master_status(uint8_t bus);                  /* TWIx_MASTER_STATUS */                         /* the 8 SCL pulses of i2cN_reset */
 void delay_ms(uint16_t ms);
 void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s);
+/* PORT diagnostics (get system.hardware.dsp): the last wait for the TAS3108 program load per bus */
+struct dspboot_diag {
+	uint16_t sda_low_ms;  /* ms after `pre` until SDA went low (load started) */
+	uint16_t edges;       /* SDA edges counted while waiting */
+	uint16_t quiet_ms;    /* ms waited for silence */
+	uint8_t timeout;      /* 1: SDA did not go low within 2 s (the original waits for the watchdog) */
+};
+extern struct dspboot_diag dspboot_diag[3];
 #endif

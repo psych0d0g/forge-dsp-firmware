@@ -119,18 +119,29 @@ static volatile uint16_t sda_count[3];
 ISR(PORTC_INT1_vect) { sda_count[1]++; }
 ISR(PORTE_INT1_vect) { sda_count[2]++; }
 
+struct dspboot_diag dspboot_diag[3];
+
 void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s)
 {
 	PORT_t *p = port(bus);
+	struct dspboot_diag *d = &dspboot_diag[bus];
 	p->INT1MASK = PIN0_bm;                                   /* portX_int1mask = 1 */
 	p->INTCTRL = (p->INTCTRL & ~PORT_INT1LVL_gm) | PORT_INT1LVL_LO_gc;
-	uint16_t w = (uint16_t)(sda_count[bus] - 1);
+	uint16_t c0 = sda_count[bus];
+	uint16_t w = (uint16_t)(c0 - 1);
 	delay_ms(pre);
-	for (uint16_t t = 0; (p->IN & PIN0_bm) && t < 2000; t++)
+	uint16_t t = 0;
+	for (; (p->IN & PIN0_bm) && t < 2000; t++)
 		delay_ms(1);
+	d->sda_low_ms = t;
+	d->timeout = t >= 2000;
+	uint16_t q = 0;
 	while (w != sda_count[bus]) {
 		w = sda_count[bus];
 		delay_ms(s);
+		q += s;
 	}
+	d->quiet_ms = q;
+	d->edges = (uint16_t)(sda_count[bus] - c0);
 	p->INTCTRL &= ~PORT_INT1LVL_gm;                          /* disable PORTx_INT1 */
 }

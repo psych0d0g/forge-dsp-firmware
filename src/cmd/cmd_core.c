@@ -468,7 +468,7 @@ static const struct name names_two[] = {
 static const struct name names_three[] = {
 	{0x002A, ".*"}, {0x616C, ".all"}, {0x626F, ".boot"}, {0x616E, ".analyze"}, {0x6174, ".attributes"},
 	{0x6365, ".celsius"}, {0x636D, ".cm"}, {0x636F, ".count"}, {0x6375, ".custom"},
-	{0x6461, ".data"}, {0x656E, ".enable"}, {0x6576, ".events"}, {0x6661, ".fahrenheit"},
+	{0x6461, ".data"}, {0x6473, ".dsp"} /* port: system.hardware.dsp */, {0x656E, ".enable"}, {0x6576, ".events"}, {0x6661, ".fahrenheit"},
 	{0x6669, ".firmware"}, {0x666C, ".flags"}, {0x6869, ".hide"}, {0x6B65, ".kelvin"},
 	{0x6D61, ".max"} /* port: mixer.in.max */, {0x6D65, ".memory"}, {0x6D73, ".ms"}, {0x6D6F, ".mode"}, {0x6E61, ".name"},
 	{0x6F75, ".out"}, {0x7061, ".panes"}, {0x7365, ".sets"}, {0x7374, ".state"},

@@ -16,6 +16,7 @@ uint8_t dspee[3][65536];
 struct ee ees[4] = { {1, 0xA8, at24, 0}, {1, 0xA0, dspee[0], 0}, {2, 0xA0, dspee[1], 0}, {2, 0xA2, dspee[2], 0} };
 static struct ee *cur_ee[3];
 static uint16_t eptr[3];
+struct dspboot_diag dspboot_diag[3];
 void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s) { (void)bus; (void)pre; (void)s; }
 static uint8_t cur_dev[3], state[3];  /* state: 0 idle, 1 addr hi, 2 addr lo, 3 data */
 

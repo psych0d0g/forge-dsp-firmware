@@ -622,8 +622,29 @@ static void cmd_get_system_temp(void)
 /* PORT extension (diagnostics for #22): get system.hardware.boot.N reads 64 bytes of the boot
  * section (0x40000 + (N-1)*64, N 1..128) read-only, as hex. Shows whether the lock bits (BLBB) allow
  * the application to read the bootloader (WLOCK) or not (RWLOCK: the MCU returns no data). */
+static void cmd_get_system_hardware_dsp(void)
+{
+	cmd_answer_header();
+	out_chr('[');
+	for (uint8_t b = 1; b <= 2; b++) {
+		const struct dspboot_diag *d = &dspboot_diag[b];
+		if (b > 1)
+			out_chr(',');
+		out_u16(d->sda_low_ms); out_chr(',');
+		out_u16(d->edges); out_chr(',');
+		out_u16(d->quiet_ms); out_chr(',');
+		out_u16(d->timeout);
+	}
+	out_chr(']');
+	out_crlf();
+}
+
 static void cmd_get_system_hardware(void)
 {
+	if (req_w(cmd_req_word_three) == 0x6473 && req_w(cmd_req_word_four) == 0x0000) {
+		cmd_get_system_hardware_dsp();  /* PORT diagnostics: DSP program load per bus */
+		return;
+	}
 	if (req_w(cmd_req_word_three) != 0x626F || REQ_B(10) != cmd_req_number) {
 		cmd_error_unknown();
 		return;
