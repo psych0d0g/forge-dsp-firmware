@@ -195,8 +195,19 @@ Mixer, Kern 2 mit fünf Ketten und drei Kanälen nur mit Pegel); `tas3108_flow.p
 ## 8051-Programm
 
 `tools/c51_dis.py IMAGE.bin` disassembliert den 8051-Teil, rekursiv ab den Vektoren und den Handlern (Tabellen
-bleiben Daten). Bekannt sind nur die Standard-SFRs des 8051. Die Register des TAS3108 (I2C, Delay, DSP-Schnittstelle)
-beschreibt ein TI-Handbuch, das uns nicht vorliegt; sie erscheinen als `SFR_xx`.
+bleiben Daten). SLEU067A Abschnitt 2 und Tabelle 1 beschreiben die Register zwischen 8051 und DSP bzw.
+Volume-Update-Block (0xA6–0xD7); das Werkzeug benennt sie. SLEU067A nennt sie „ESFR“ im XDATA-Raum, die
+Forge-Programme sprechen sie aber als direkte SFRs an (z. B. `MOV micro_addr_lo,R7`, `INC micro_addr_lo` mit
+Übertrag nach `micro_addr_hi`). Die übrigen Register (I2C, Delay-Speicher, GPIO) stehen im Microprocessor Reference
+Guide SLEU076, den TI nicht mehr veröffentlicht; sie erscheinen als `SFR_xx`.
+
+Belegt aus dem Code:
+
+- Koeffizient/Daten schreiben (Handler Art 1): DSP-Adresse nach `micro_addr_lo/hi` (Bit 10 wählt laut SLEU067A
+  Koeffizienten- oder Datenspeicher), Wert nach `data_to_dsp0..`, dann `SETB 0xC0.6`, warten bis Bit 0xC8.5
+  (in der Ausgabe `T2CON.5`) gelöscht ist. Bei mehreren Worten zählt der Handler `micro_addr` selbst hoch.
+- Lesen: `SETB 0xC0.7`, warten auf 0xC8.5, Wert aus `to_micro0..3` (Big Endian in den Antwortpuffer).
+- Den Volume-Update-Block (0xA6–0xAC) nutzt kein Forge-Programm; die Pegel glättet der DSP-Code selbst.
 
 Ablauf einer I2C-Anfrage (V40-96ELN, beide Programme): Der Code bei 0x1272 liest aus der Registertabelle
 (0x2C00 + 4 × Subadresse) die Zieladresse und die Art. Über die Art springt er in eine Handler-Tabelle bei 0x03ED
@@ -222,7 +233,8 @@ erreichbare Code ohne ungültige Opcodes dekodieren.
 
 ## Offen
 
-- 8051: Bedeutung der TAS3108-SFRs und damit der Arten 3, 4, 7, 8 und 0x62 im Einzelnen; Funktion 0x1FD0.
+- 8051: Register für I2C, Delay und GPIO (SLEU076, nicht öffentlich) und damit die Arten 3, 4, 7, 8 und 0x62 im
+  Einzelnen; Funktion 0x1FD0.
 - ALU2 0x4F belegen (Vermutung „Null → DLYI“, siehe Disassembler).
 - Die Analyse ist statisch (bedingte Sprünge werden nicht genommen); am Gerät gegenprüfen, z. B. Biquad setzen
   und den Ausgang messen.

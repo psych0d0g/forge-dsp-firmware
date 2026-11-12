@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Minimal 8051 disassembler for the microcontroller program in TAS3108 boot images (issue #43).
 
+The DSP and volume update registers of SLEU067A table 1 ("ESFR" 0xA6-0xD7) are named. The
+Forge programs access them as direct SFRs (e.g. the coefficient write handler loads the DSP
+address into 0xBB/0xBC and increments it with carry), so the names apply to direct addresses.
+The complete list (I2C, delay memory, GPIO) is in SLEU076, which TI no longer publishes.
+
 Recursive descent from the reset and interrupt vectors, the handlers of the subaddress kinds
 (handler table, see handler_table) and optional extra entry points, so tables are not decoded
 as code. Only the standard 8051 SFR names are known; the TAS3108 specific
@@ -24,6 +29,15 @@ SFR = {0x80: "P0", 0x81: "SP", 0x82: "DPL", 0x83: "DPH", 0x87: "PCON", 0x88: "TC
 BITS = {0xD7: "CY", 0xD6: "AC", 0xD5: "F0", 0xD4: "RS1", 0xD3: "RS0", 0xD2: "OV", 0xD0: "P",
         0xAF: "EA", 0x88: "IT0", 0x89: "IE0", 0x8A: "IT1", 0x8B: "IE1", 0x8C: "TR0", 0x8D: "TF0",
         0x8E: "TR1", 0x8F: "TF1"}
+ESFR = {0xA6: "vol_mode", 0xA7: "volume_index", 0xA9: "volume_data0", 0xAA: "volume_data1",
+        0xAB: "volume_data2", 0xAC: "volume_data3",
+        0xAD: "to_micro0", 0xAE: "to_micro1", 0xAF: "to_micro2", 0xB1: "to_micro3", 0xB2: "to_micro4",
+        0xD6: "to_micro5", 0xD7: "to_micro6",
+        0xB3: "data_to_dsp0", 0xB4: "data_to_dsp1", 0xB5: "data_to_dsp2", 0xB6: "data_to_dsp3",
+        0xB7: "data_to_dsp4", 0xB9: "data_to_dsp5", 0xBA: "data_to_dsp6",
+        0xBB: "micro_addr_lo", 0xBC: "micro_addr_hi", 0xBD: "mode0", 0xBE: "mode3", 0xBF: "mode4",
+        0xC1: "mode5"}
+SFR.update(ESFR)
 VECTORS = [0x00, 0x03, 0x0B, 0x13, 0x1B, 0x23, 0x2B, 0x33, 0x3B, 0x43, 0x4B, 0x53]
 
 
