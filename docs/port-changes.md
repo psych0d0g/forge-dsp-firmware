@@ -66,7 +66,8 @@ Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `get modc
 | Thema | Original | Port |
 |---|---|---|
 | **Werks-Reset** (leeres/fremdes EEPROM, Versionswechsel, `system.reinit`, `system.hardware.memory.eram`) | löscht immer alle Abstimmungen und Presets | nur mit `FORGE_FACTORY_RESET=1`; sonst Standardwerte nur im RAM, nichts wird gelöscht |
-| **Remote-Out** (Endstufen) | nach den Startverzögerungen an | nur mit `FORGE_AUDIO=1` |
+| **Remote-Out** (Endstufen) | nach den Startverzögerungen an | mit `FORGE_AUDIO=1`: in den Vollstart-Builds (`-bringup`, Release ab 2.0.0) wie im Original, in den sicheren Builds aus |
+| **Versionsnummer** | `system.firmware` = 1.11.6000 | `system.firmware` bleibt 1.11.6000 (Protokollstand für die GUI, Merker im EEPROM), eigene Version in `system.firmware.port` und im Bootloader (`FW_VERSION:02.00`); erstes Release 2.0.0, bewusst oberhalb der BASCOM-Firmware |
 | **Peripherie-Init** | immer | nur mit `FORGE_BRINGUP=1`; ohne: sichere Variante (Erkennung, Protokoll, kein Ton) |
 | Pin-Interrupts (Masse-Schalter, USB-DTR, Überlauf, Remote-In) | Interrupt je Flanke | in der Hauptschleife abgefragt (gleiche Werte; IR-Abtastung und Timer bleiben Interrupts) |
 | I2C | wartet unbegrenzt | Zeitüberschreitung nach ~10 ms, als Fehler gemeldet; `bitwait sda` beim DSP-Start höchstens 2 s, danach erneute Abfrage der Kerne und höchstens ein Neustart (#45) |
@@ -81,7 +82,7 @@ Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `get modc
 | Option | Standard | Wirkung |
 |---|---|---|
 | `FORGE_BRINGUP` | 0 | 1 = vollständige Peripherie-Init wie das Original (DAC, DSP, S/PDIF, Preset, MODC, IR, ADC) |
-| `FORGE_AUDIO` | 0 | 1 = Remote-Out (Endstufen) wie im Original einschalten |
+| `FORGE_AUDIO` | 0 (sicher), 1 (`-bringup`, seit 2.0.0) | 1 = Remote-Out (Endstufen) wie im Original einschalten |
 | `FORGE_FACTORY_RESET` | 0 | 1 = Werks-Reset wie im Original (braucht `FORGE_BRINGUP=1`) |
 
 ## Toolchain

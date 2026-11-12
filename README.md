@@ -28,10 +28,11 @@ Alle: ATxmega256A3U, interner 32-MHz-Takt.
 
 **Stand:** Der Funktionsumfang des Originals ist portiert: komplettes Textprotokoll, Register und EEPROM-Layout,
 Presets, Biquads, Mixer, Delays, MODC-Steuerblöcke, Events, ADC/Temperatur, IR-Empfänger und die Einschaltsequenz
-aller Bausteine. Nativ getestet für alle 7 Varianten (84 Tests); auf einem Forge 96ELN (V40) laufen sichere und
+aller Bausteine. Nativ getestet für alle 7 Varianten (128 Protokolltests); auf einem Forge 96ELN (V40) laufen sichere und
 Bring-up-Variante: Start auf der Abstimmung des Originals ohne Werks-Reset, alle Bausteine erkannt,
-Biquad-Koeffizienten bitgenau, Abschalten über Remote-In. Noch nicht freigegeben: Remote-Out (Endstufen) und der
-Abgleich mit der Original-GUI (#5). Fahrplan in den GitHub-Issues.
+Biquad-Koeffizienten bitgenau, Abschalten über Remote-In, Audioweg gemessen (#49). Erstes Release: **2.0.0**
+(bewusst oberhalb der letzten BASCOM-Firmware 1.11.6000). Remote-Out ist seit 2.0.0 wie im Original aktiv, mit
+angeschlossener Endstufe aber noch nicht geprüft. Fahrplan in den GitHub-Issues.
 
 ## Was die Port-Firmware zusätzlich kann
 
@@ -95,7 +96,7 @@ In `platformio.ini` unter `[common]`:
 | Option | Standard | Wirkung |
 |---|---|---|
 | `FORGE_BRINGUP` | 0 | 1 = vollständige Peripherie-Init wie das Original. 0 = sichere Variante: Erkennung und Protokoll, Peripherie im Reset, **kein Ton** |
-| `FORGE_AUDIO` | 0 | 1 = Remote-Out (Endstufen) wie im Original einschalten. Erst nach eigener Prüfung mit leiser Last |
+| `FORGE_AUDIO` | 0 (sicher), 1 (`-bringup`, seit 2.0.0) | 1 = Remote-Out (Endstufen) nach dem Laden des Presets wie im Original einschalten |
 | `FORGE_FACTORY_RESET` | 0 | 1 = Werks-Reset wie im Original (löscht Abstimmungen und Presets), braucht `FORGE_BRINGUP=1` |
 
 Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `lib/fatfs`: FatFs R0.16 von ChaN (BSD-1-Clause, `lib/fatfs/LICENSE.txt`). `tools/c45b3-host` und die Bootloader-Quellen in
@@ -150,5 +151,6 @@ c45b3 braucht nur pyserial, das liefert PlatformIO mit. CLI: `pio run -e V4x-96E
 - Der Bootloader-Bereich ist per Lockbits geschützt (BLBB = WLOCK, am Gerät bestätigt: lesbar, nicht beschreibbar). Das Tool schreibt nie dorthin und sendet die
   abschließende Leer-Frame der Windows-GUI nicht (sie würde die Seite hinter dem Image löschen).
 - Vor dem ersten eigenen Flashen: *Forge: backup*, Abstimmung über die Original-GUI sichern.
-- Die Endstufen (Remote-Out) bleiben aus, solange `FORGE_AUDIO=0` ist (Standard).
+- Remote-Out (Endstufen) schalten die Vollstart-Builds (`-bringup`, Release ab 2.0.0) wie das Original nach dem Laden des
+  Presets ein; die sicheren Builds lassen ihn aus.
 - Abstimmungen werden ohne `FORGE_FACTORY_RESET=1` nie gelöscht; Rückweg jederzeit über *Forge: flash release 1.11.6000*.
