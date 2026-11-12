@@ -8,6 +8,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "tools"))
 import dsp_image  # noqa: E402
+import tas3108_dis  # noqa: E402
 
 
 class DspImageTest(unittest.TestCase):
@@ -53,6 +54,26 @@ class DspImageTest(unittest.TestCase):
                 check(1, reg, 4, "input volume")
             for core, reg in zip(table("data_flow_dsp_output_vol_dsp")[1:], table("data_flow_dsp_output_vol_reg")[1:]):
                 check(core, reg, 4, "output volume")
+
+    def test_disassembler(self):
+        """All DSP programs decode with the SLEU067A tables; the only unknown field is ALU2 0x4F.
+        Every program starts with JMP to the SAP block (ST(DI,DATA,0..7), outputs DO1..DO8)."""
+        headers = sorted(glob.glob(os.path.join(HERE, "..", "src", "flavours", "*", "flavour_data.h")))
+        for h in headers:
+            for p in (1, 2):
+                blocks = dsp_image.parse(dsp_image.extract(h, p))[0]
+                prog = tas3108_dis.program(blocks)
+                lines, unknown = [], set()
+                for w in prog:
+                    text, u = tas3108_dis.disasm(w)
+                    lines.append(text)
+                    unknown.update(u)
+                self.assertLessEqual(unknown, {"ALU2=0x4f"}, (h, p))
+                self.assertEqual(lines[0], "JMP | NOP | NOP | NOP | PCADDR(0x00c)", (h, p))
+                block = "\n".join(lines[0x0C:0x16])
+                for n in range(8):
+                    self.assertIn(f"ST(DI,DATA,D_{n:03X})", block, (h, p))
+                    self.assertIn(f"CLP32,DO{n + 1})", block, (h, p))
 
 
 if __name__ == "__main__":

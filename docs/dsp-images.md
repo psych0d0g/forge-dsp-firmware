@@ -1,6 +1,7 @@
 # TAS3108-Programme (EEPROM-Boot-Images)
 
-Stand der Analyse zu #43. Werkzeug: `tools/dsp_image.py` (list, extract, check), Test: `tests/test_dsp_image.py`.
+Stand der Analyse zu #43. Werkzeuge: `tools/dsp_image.py` (list, extract, check, regs) und
+`tools/tas3108_dis.py` (Disassembler), Test: `tests/test_dsp_image.py`.
 
 ## Format
 
@@ -92,10 +93,42 @@ zeigt sie.
 Korrektur: Eine frühere Fassung dieses Dokuments leitete für Kern 1 0x16 + 5 × (Subadresse − 0x1F) aus den
 b0-Worten ab. Die Tabelle zeigt 0x011 als Start; der erste Biquad beginnt also bei 0x011, nicht bei 0x016.
 
+## Disassembler
+
+`tools/tas3108_dis.py IMAGE.bin [--regs]` gibt das DSP-Programm Befehl für Befehl in der Schreibweise von SLEU067A
+aus: `ALU1 | ALU2 | MOP1 | MOP2 | MOP3`. Mit `--regs` werden Koeffizientenadressen nach der Registertabelle benannt,
+z. B. `C_013<s1F.b2>`. Felder des 54-Bit-Worts: ALU1 b53–49, ALU2 b48–42, MOP1/AD1 b41–37/b36–27 (Daten laden),
+MOP2/AD2 b26–24/b23–14 (Koeffizient laden), MOP3/AD3 b13–10/b9–0 (Speichern, bei Sprüngen das Ziel, sonst mit
+MOP3 = 0 `DLYPTR`).
+
+Alle 14 Programme dekodieren vollständig bis auf einen Code (Test). Abweichungen von SLEU067A, aus den Programmen
+belegt:
+
+- ALU2 `CLRACC` ist 100 1101 (0x4D). Das Handbuch nennt 101 1101, das ist dort aber auch `ADD(BR,MR,CLP32,DO7)`.
+  Im Ein-/Ausgabeblock jedes Programms steht 0x4D genau dort, wo das Beispiel im Handbuch (Tabelle 5) `CLRACC` hat.
+- ALU1 `SHL(2)` ist 01011. Das Handbuch nennt 00111, den Code von `SHR(2)`; die Folge ist SHR(1–4) = 6–9,
+  SHL(1–4) = 10–13.
+- ALU2 0x4F (100 1111) steht nicht im Handbuch. Er kommt nur im Pegel-Block vor, immer zusammen mit `SHR(4)` direkt
+  nach `ADD(ACC,MR,NONE,B)`, 6× in Programm 1, 4× in Programm 2. Die Ausgabe zeigt ihn als `ALU2?0x4f`.
+
+Erste Befunde (V40-96ELN):
+
+- Jedes Programm beginnt mit `JMP 0x00C`. Bei 0x004 steht `STOP`, bei 0x008 `JMP 0x004`; dort endet jeder
+  Durchlauf und wartet auf das nächste Sample.
+- 0x00C–0x015: Ein-/Ausgabe wie Tabelle 5 des Handbuchs: `ST(DI,DATA,0..7)` liest die acht Eingangskanäle,
+  `ADD(ACC,LR,CLP32,DO1..8)` gibt die im vorigen Durchlauf berechneten Ausgänge aus (Daten 0x163–0x16A in Programm 1).
+- Delay: `DLYPTR(n)` mit `ADD(ACC,LR,NONE,DLYI)`, 14 Befehle später `ST(DLYO,DATA,…)`, wie im Handbuch gefordert.
+- Pegel (0x027–0x044): Der Eingangspegel (Kern 1, `C_35E<sD5>`, Vorgabe 0x17) wird um 6 Bit nach links
+  geschoben und läuft durch vier Glättungsstufen (Koeffizienten 0x002/0x004, Zustände D_16F–D_172). Das Ergebnis
+  schreibt der DSP selbst als Verstärkung nach `C_008` (`ST(B,COEF,…)`) und multipliziert damit das verzögerte
+  Eingangssignal (D_15D → D_14D). Wie der Wert 0x17 kodiert ist, ist noch offen.
+- Biquad: fünf Multiplikationen mit Akkumulation in der Reihenfolge b2, b1, b0, a1, a2 (Direktform I, Zustände im
+  Datenspeicher), z. B. ab 0x1D0 für `s1F`.
+
 ## Offen
 
 - Bedeutung der vom 8051-Code behandelten Arten (3–0x10, 0x62); dazu den 8051-Code disassemblieren.
-- Disassembler für das DSP-Programm (54-Bit-Befehle, SLEU067A Anhang A) und Signalfluss je Kern.
+- Signalfluss je Kern aus dem Disassembly: Reihenfolge der Biquads je Kanal, Mixer, Pegel-Kodierung (0x17), ALU2 0x4F.
 - Unterschiede zwischen den Fassungen (96ELN ↔ 96ELN-3 Programm 2: 20 Befehle mehr, ein Koeffizienten-Block mehr).
 - Der 8051-Teil (Firmware des Mikrocontrollers im TAS3108) ist 8051-Code und lässt sich mit üblichen Werkzeugen
   disassemblieren.
