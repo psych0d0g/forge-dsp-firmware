@@ -42,31 +42,59 @@ Der 8051-Teil ist in allen 96ELN-/CORED8-Varianten gleich lang. Beim 96LN hat de
 ## Koeffizienten
 
 - Die meisten Koeffizienten-Blöcke bestehen aus einem einzigen Wort `0x00800000` (1,0 im Format 5.23) im Abstand von
-  5 Adressen: b0 = 1 eines Biquads, die übrigen vier Koeffizienten bleiben 0. Die Biquads starten also als
-  Durchgang. Programm 1 enthält 143 davon, Programm 2 195.
-- Die Firmware kennt 144 Biquad-Register für Kern 1 und je 196 für Kern 2 und 3 (`data_flow_dsp_bq_reg`,
-  I2C-Subadressen 0x1F–0xB6 bzw. 0x1F–0xEF). Der jeweils fehlende Biquad steckt vermutlich in einem der Blöcke mit
-  mehreren Worten (z. B. 0x0179, 17 Worte, mit echten Filterkoeffizienten).
-- Weitere Blöcke mit mehreren Worten: Steuerworte ab 0x0000, Pegel und Mixer (`0x00000017`, `0x00200000` = 0,25,
-  `0x00800000` = 1,0).
+  5 Adressen: b0 = 1 eines Biquads, die übrigen vier Koeffizienten bleiben 0. Alle Biquads, die die MCU per I2C
+  erreicht (144 in Kern 1, 196 in Kern 2/3), starten so als Durchgang.
+- Weitere Blöcke mit mehreren Worten: Steuerworte ab 0x0000, ein fest eingestellter Filterblock in Programm 1
+  (0x0179–0x019D, nicht per I2C erreichbar), Pegel und Mixer (siehe unten).
 
-## Abbildung Biquad-Register → Koeffizienten (Kern 1, belegt)
+## Registertabelle (I2C-Subadresse → Speicher)
 
-Kern 1: **Koeffizientenadresse = 0x16 + 5 × (I2C-Subadresse − 0x1F)**, je 5 Worte (b0, b1, b2, a1, a2 in der
-Reihenfolge des I2C-Schreibens).
-Beleg: Die Register 0x1F–0x66 und 0x6F–0xB6 bilden zwei zusammenhängende Gruppen mit einer Lücke von 8 Registern
-(0x67–0x6E). Die b0-Worte = 1,0 liegen ab 0x16 im Abstand 5. Das letzte der ersten Gruppe (0x66 → 0x179) steckt im
-17-Wort-Block, danach fehlen genau 8 Positionen (0x17E–0x19C), und ab 0x1A1 (→ 0x6F) geht es weiter.
-Die 8 Plätze dazwischen sind keine Biquads mit Durchgangs-Vorgabe; der 17-Wort-Block enthält dort echte
-Filterkoeffizienten.
+Die 8051-Firmware im TAS3108 setzt I2C-Zugriffe über eine Tabelle um: Block 8051-Programm 0x2C00, 256 Einträge zu
+4 Byte, einer je Subadresse: `[Adresse High, Adresse Low, Länge in Byte, Art]`. Art 1 = DSP-Koeffizientenspeicher
+(Adresse in Worten, Länge / 4 Worte). Die anderen Arten behandelt der 8051-Code selbst (Adresse 0).
+Ausgabe: `dsp_image.py regs IMAGE.bin`. Der Test prüft für alle Fassungen, dass jedes Biquad- und Pegelregister
+der MCU-Firmware dort ein Koeffizienten-Eintrag passender Länge ist.
 
-Kern 2/3 (Programm 2): Die b0-Worte liegen ab 0x11 lückenlos bis 0x3CC (188 Stück), dann folgen 0x3D5, 0x3DA,
-0x3DF und 0x3E4. Die Register sind 0x1F–0xC7 (169) und 0xD5–0xEF (27). Diese Aufteilung passt nicht linear zu den
-Koeffizienten; die Abbildung steht vermutlich in einer Tabelle des 8051-Programms und ist noch offen.
+Der 8051-Code (Block 0x0000) ist in Programm 1 und 2 gleich; die Programme unterscheiden sich im 8051-Teil nur in
+dieser Tabelle und im Block 0x2B00.
+
+V40-96ELN (96ELN-3, CORED8 und V30-96ELN gleich, Abweichungen unten):
+
+| Subadresse | Programm 1 (Kern 1) | Programm 2 (Kern 2 und 3) | Verwendung in der MCU-Firmware |
+|---|---|---|---|
+| 0x00 | Art 5 | Art 5 | |
+| 0x02 | Art 6 | Art 6 | Status (`BAS_DSP_SUB_STATUS`) |
+| 0x06 / 0x07 | Art 3 / Art 4 (8 Byte) | gleich | |
+| 0x08 | Koeffizient 0x010 (Wert 0x0006E1BA) | Koeffizient 0x010 (0) | Version (`BAS_DSP_SUB_VERSION`) |
+| 0x0B / 0x0C / 0x0F | Art 7 / 8 / 0x0B | gleich | |
+| 0x1F–0x66 | Biquads 0x011 + 5 × (Subadresse − 0x1F) | Biquads 0x011 + 5 × (Subadresse − 0x1F) bis 0xC7 | `data_flow_dsp_bq_reg` |
+| 0x67–0x6E | frei | (in der Folge oben) | |
+| 0x6F–0xB6 | Biquads, gleiche Formel (0x1A1–0x308) | (in der Folge oben) | |
+| 0xC8–0xCF | Art 0x0C | Art 0x0C | |
+| 0xD0–0xD3 | Art 0x10 | Art 0x10 | Delay (`data_flow_pair_delay_*_reg`) |
+| 0xD4 | Art 0x0D | Art 0x0D | Delay übernehmen (`BAS_DSP_SUB_DELAY_ACK`) |
+| 0xD5–0xDA | Eingangspegel 0x35E–0x363, 1 Wort | Biquads 0x35E + 5 × (Subadresse − 0xD5) bis 0xEB | `data_flow_dsp_input_vol_reg` (Kern 1), `bq_reg` (Kern 2/3) |
+| 0xDB–0xF6 | Mixer 0x364 + 4 × (Subadresse − 0xDB), je 4 Worte | 0xEC–0xEF: Biquads 0x3D5 + 5 × (Subadresse − 0xEC) | `data_flow_mix_dsp_reg` (Kern 1) |
+| 0xF7 | Koeffizient 0x3D4 (Wert 1) | frei | |
+| 0xF8 | Koeffizienten 0x3D5–0x3D6 (0,01 / 0,99, ein Glättungspaar) | frei | |
+| 0xF9 | Art 0x62, Adresse 0x0420 | frei | |
+| 0xFA–0xFD | frei | Ausgangspegel 0x3D1–0x3D4, 1 Wort | `data_flow_dsp_output_vol_reg` |
+
+Die vier Ausgangspegel liegen in Programm 2 zwischen den Biquads (0x3D1–0x3D4); daher die Lücke in der Folge der
+b0-Worte (0x3CC → 0x3D5). Die Biquads von Kern 2/3 sind also zwei lineare Folgen: Subadresse 0x1F–0xC7 und 0xD5–0xEF,
+beide mit 5 Worten Abstand, die zweite ab 0x35E. Eingangs- und Ausgangspegel haben als Vorgabe `0x00000017`.
+Die Mixer-Zeilen 0xDB–0xEE stehen auf 0, 0xEF–0xF6 auf `[1,0, 0, 0, 0,25]`.
+
+Abweichungen: 96ELN-3 (V40/V41) Programm 2 hat zusätzlich 0xF0–0xF3 → 0x3E9–0x3EC (je 1 Wort). V30-96LN hat eine
+eigene Aufteilung (Kern 1: 0x1F–0x84, 0x8D–0xA6, 0xAB–0xC4; Kern 2 mit mehreren Teilfolgen), `dsp_image.py regs`
+zeigt sie.
+
+Korrektur: Eine frühere Fassung dieses Dokuments leitete für Kern 1 0x16 + 5 × (Subadresse − 0x1F) aus den
+b0-Worten ab. Die Tabelle zeigt 0x011 als Start; der erste Biquad beginnt also bei 0x011, nicht bei 0x016.
 
 ## Offen
 
-- Abbildung I2C-Subadresse → Koeffizientenadresse für Programm 2 (Register-Tabelle im 8051-Programm suchen).
+- Bedeutung der vom 8051-Code behandelten Arten (3–0x10, 0x62); dazu den 8051-Code disassemblieren.
 - Disassembler für das DSP-Programm (54-Bit-Befehle, SLEU067A Anhang A) und Signalfluss je Kern.
 - Unterschiede zwischen den Fassungen (96ELN ↔ 96ELN-3 Programm 2: 20 Befehle mehr, ein Koeffizienten-Block mehr).
 - Der 8051-Teil (Firmware des Mikrocontrollers im TAS3108) ist 8051-Code und lässt sich mit üblichen Werkzeugen

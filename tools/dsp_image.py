@@ -21,6 +21,7 @@ Usage:
     dsp_image.py list IMAGE.bin            blocks with address, words, checksum state
     dsp_image.py extract FLAVOUR_DATA.h N OUT.bin   image of dsp_N_code from a flavour
     dsp_image.py check IMAGE.bin           parse + rebuild bit identical (exit 1 otherwise)
+    dsp_image.py regs IMAGE.bin            I2C subaddress table of the 8051 firmware (0x2C00)
 License: MIT (tool); the images are CC BY-NC-SA 4.0 (Forge DSP firmware).
 """
 import re
@@ -108,6 +109,46 @@ def check(img):
     return blocks, rest, errors
 
 
+def c51(blocks):
+    """8051 program memory (block addresses are byte addresses) as flat bytes."""
+    mem = bytearray()
+    for b in blocks:
+        if b.mem == 0 and b.data:
+            end = b.addr + len(b.data)
+            if len(mem) < end:
+                mem.extend(bytes(end - len(mem)))
+            mem[b.addr:end] = b.data
+    return bytes(mem)
+
+
+REG_TABLE = 0x2C00
+
+
+def regmap(blocks):
+    """I2C subaddress table of the TAS3108 8051 firmware: 256 entries of 4 bytes at 0x2C00,
+    [address high, address low, length in bytes, kind]. Kind 1 = DSP coefficient memory
+    (address in words, length / 4 words); other kinds are handled by the 8051 code
+    (status, delay, ...), address 0. -> list of (subaddress, address, length, kind)."""
+    m = c51(blocks)
+    if len(m) < REG_TABLE + 1024:
+        raise ValueError("no subaddress table at 0x2C00")
+    return [(s, m[REG_TABLE + 4 * s] << 8 | m[REG_TABLE + 4 * s + 1], m[REG_TABLE + 4 * s + 2],
+             m[REG_TABLE + 4 * s + 3]) for s in range(256)]
+
+
+def regruns(regs):
+    """Group consecutive entries of the same kind and length (coefficients: contiguous addresses)."""
+    runs = []
+    for s, a, n, k in regs:
+        r = runs[-1] if runs else None
+        if r and k == r["kind"] and n == r["len"] and s == r["last"] + 1 and (
+                a == r["addr"] + (s - r["first"]) * n // 4 if k == 1 else a == r["addr"]):
+            r["last"] = s
+            continue
+        runs.append({"first": s, "last": s, "addr": a, "len": n, "kind": k})
+    return runs
+
+
 def extract(header_path, n):
     t = open(header_path).read()
     m = re.search(r"BAS_DATA_TABLE\(dsp_%d_code, \d+\) = \{(.*?)\};" % n, t, re.S)
@@ -141,6 +182,19 @@ def main(argv):
         for e in errors:
             print("ERROR", e)
         return 1 if errors else 0
+    if len(argv) == 2 and argv[0] == "regs":
+        blocks, _ = parse(open(argv[1], "rb").read())
+        for r in regruns(regmap(blocks)):
+            if r["kind"] == 0 and r["addr"] == 0:
+                continue  # unused subaddress
+            sub = f"0x{r['first']:02X}" + (f"-0x{r['last']:02X}" if r["last"] != r["first"] else "")
+            if r["kind"] == 1:
+                n = r["last"] - r["first"] + 1
+                end = r["addr"] + n * r["len"] // 4 - 1
+                print(f"{sub:11s} coef 0x{r['addr']:03X}-0x{end:03X}  {r['len'] // 4} words each")
+            else:
+                print(f"{sub:11s} kind 0x{r['kind']:02X}  address 0x{r['addr']:04X}  {r['len']} bytes")
+        return 0
     print(__doc__)
     return 2
 
