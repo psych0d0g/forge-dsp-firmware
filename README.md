@@ -44,7 +44,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
 - **Abstimmung sichern und vergleichen** beim Update (`c45b3 export-tuning / compare-tuning / restore-tuning`,
   Tasks *Forge: export/compare tuning*), im `.cfg`-Format der Original-GUI (#30).
 - **Versorgungsspannung überwachen** (`get.1 system.supply`): 3,3-V-Schiene intern, Bordspannung über einen GVOL-Eingang
-  mit Spannungsteiler, Ereignis bei Unterspannung und auf Wunsch Stummschalten ([docs/supply.md](docs/supply.md), #46).
+  mit Spannungsteiler, Ereignis bei Unterspannung und auf Wunsch Stummschalten, Abgleich der 3,3-V-Messung gegen ein
+  Multimeter (`set.1 system.supply.vcc=mV`) ([docs/supply.md](docs/supply.md), #46).
 - **DSP-Ladevorgang messen** (`get.1 system.hardware.dsp`): wie lange die TAS3108 beim Start ihr Programm laden, je I2C-Bus (#45).
 - **Bootloader auslesen** (nur lesend, `get.1 system.hardware.boot.N`, `tools/dump_bootsection.py`); das Abbild liegt unter
   [`bootloader/`](bootloader/).

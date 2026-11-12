@@ -301,7 +301,8 @@ static void cmd_get_system_startup(void)
  *   system.supply.source       0 off, 1 = GVOL1, 2 = GVOL2
  *   system.supply.cal          [raw1,mV1,raw2,mV2]
  *   system.supply.low          mV, 0 = off (event system.supply=low/ok)
- *   system.supply.mute         0/1: mute the outputs while low */
+ *   system.supply.mute         0/1: mute the outputs while low
+ *   set system.supply.vcc=mV   calibrate VCC to a multimeter value; get: gain in 1/10000 */
 static void out_list(const int16_t *v, uint8_t n)
 {
 	cmd_answer_header();
@@ -334,6 +335,7 @@ static void cmd_get_system_supply(void)
 	case 0x6361: supply_get_cal(v); out_list(v, 4); break;
 	case 0x6C6F: cmd_answer_header(); out_u16(supply_low_mv()); out_crlf(); break;
 	case 0x6D75: cmd_answer_header(); out_u16(supply_mute()); out_crlf(); break;
+	case 0x7663: cmd_answer_header(); out_u16(supply_vcc_gain()); out_crlf(); break;
 	default: cmd_error_unknown();
 	}
 }
@@ -361,6 +363,9 @@ static void cmd_set_system_supply(void)
 	case 0x6D75:
 		if (a != 0 && a != 1) { cmd_error_cmd_oor(); return; }
 		supply_set_mute((uint8_t)a);
+		break;
+	case 0x7663:
+		if (a < 2000 || a > 4000 || !supply_set_vcc_mv((uint16_t)a)) { cmd_error_cmd_oor(); return; }
 		break;
 	default: cmd_error_unknown(); return;
 	}

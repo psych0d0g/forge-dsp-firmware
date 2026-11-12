@@ -1959,6 +1959,18 @@ class SupplyTest(LinesMixin, unittest.TestCase):
         self.assertIn("system.supply.source=0", out[1])
         self.assertIn("system.supply.low=0", out[2])
 
+    def test_vcc_calibration(self):
+        """One-point VCC calibration: 3113 mV read, 3320 mV measured (DEV unit)."""
+        out = self.lines("V40-96ELN", ["#adc=1,1,1479", "#supply_loop", "1|get.1 system.supply",
+                                       "1|set.1 system.supply.vcc=3320", "1|get.1 system.supply.vcc",
+                                       "1|get.1 system.supply", "1|set.1 system.supply.vcc=5000"])
+        ans = [l for l in out if "@0:" in l]
+        self.assertIn("system.supply=[3113,-1]", ans[0])
+        self.assertIn("system.supply.vcc ok", ans[1])
+        self.assertIn("system.supply.vcc=10664", ans[2])               # 3320/3113
+        self.assertIn("system.supply=[3319,-1]", ans[3])
+        self.assertIn("command out of range", ans[4])                  # > 20 % off
+
     def test_calibrated_supply(self):
         out = self.lines("V40-96ELN", self.CAL + ["#adc=0,0,1240", "#adc_loop", "#supply_loop",
                                                   "1|get.1 system.supply", "1|get.1 system.supply.cal",

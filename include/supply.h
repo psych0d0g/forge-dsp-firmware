@@ -17,6 +17,8 @@ void supply_sample(void);           /* with events_adc_mainloop_32 */
 void supply_mainloop(void);         /* with events_adc_mainloop_16 */
 
 uint16_t supply_vcc_mv(void);
+uint16_t supply_vcc_gain(void);              /* 1/10000, 10000 = uncalibrated */
+uint8_t supply_set_vcc_mv(uint16_t mv);     /* calibrate to a measured VCC; 0: out of range */
 int16_t supply_ext_mv(void);        /* -1: no source configured or not calibrated */
 uint16_t supply_vcc_raw(void);
 uint16_t supply_gvol_raw(uint8_t n);  /* n = 1, 2 (averaged ADCA values) */

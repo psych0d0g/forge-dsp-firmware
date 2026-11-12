@@ -473,7 +473,7 @@ static const struct name names_three[] = {
 	{0x6D61, ".max"} /* port: mixer.in.max */, {0x6D65, ".memory"}, {0x6D73, ".ms"}, {0x6D6F, ".mode"}, {0x6E61, ".name"},
 	{0x6F75, ".out"}, {0x7061, ".panes"}, {0x7365, ".sets"}, {0x7374, ".state"},
 	{0x7479, ".type"}, {0x7570, ".update"}, {0x7661, ".value"}, {0x7665, ".version"},
-	/* port #46: system.supply.* */ {0x736F, ".source"}, {0x6361, ".cal"}, {0x7261, ".raw"}, {0x6C6F, ".low"}, {0x6D75, ".mute"},
+	/* port #46: system.supply.* */ {0x736F, ".source"}, {0x6361, ".cal"}, {0x7261, ".raw"}, {0x6C6F, ".low"}, {0x6D75, ".mute"}, {0x7663, ".vcc"},
 	{0, NULL}
 };
 

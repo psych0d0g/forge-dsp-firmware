@@ -3,7 +3,7 @@
  * VCC: ADCB CH1 = VCC/10 against the internal 1 V reference (unsigned mode, offset
  * BAS_EVENTS_ADC_DELTAV as for the temperature). External supply: the averaged ADCA value of
  * a GVOL input (events_adc_values[1/2]) through a divider, two-point calibration.
- * EEPROM 0x0F03..0x0F0E (identity uses 0x0F00/0x0F01, clickless 0x0F02).
+ * EEPROM 0x0F03..0x0F10 (identity uses 0x0F00/0x0F01, clickless 0x0F02).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "supply.h"
@@ -18,6 +18,7 @@
 #define EE_CAL    0x0F04  /* 4 words: raw1, mV1, raw2, mV2 */
 #define EE_LOW    0x0F0C  /* word: mV, 0/0xFFFF off */
 #define EE_MUTE   0x0F0E  /* byte: 1 on */
+#define EE_VCCCAL 0x0F0F  /* word: VCC gain in 1/10000, 0/0xFFFF = 1.0 (one-point calibration) */
 
 static uint16_t vcc_buf[BAS_EVENTS_ADC_MAX_COUNT];
 static uint8_t vcc_i, vcc_n;
@@ -41,11 +42,36 @@ void supply_sample(void)
 
 uint16_t supply_vcc_raw(void) { return vcc_avg; }
 
-uint16_t supply_vcc_mv(void)
+static uint16_t vcc_mv_uncal(void)
 {
 	if (vcc_avg <= BAS_EVENTS_ADC_DELTAV)
 		return 0;
 	return (uint16_t)((uint32_t)(vcc_avg - BAS_EVENTS_ADC_DELTAV) * 10000u / 4095u);
+}
+
+uint16_t supply_vcc_gain(void)
+{
+	uint16_t g = eram_rw(EE_VCCCAL);
+	return g == 0 || g == 0xFFFF ? 10000 : g;
+}
+
+/* PORT (#46): the internal reference differs per device (DEV unit: 3113 mV read, 3320 mV
+ * measured); one-point calibration against a multimeter value */
+uint8_t supply_set_vcc_mv(uint16_t mv)
+{
+	uint16_t raw = vcc_mv_uncal();
+	if (raw == 0)
+		return 0;
+	uint32_t g = (uint32_t)mv * 10000u / raw;
+	if (g < 8000 || g > 12000)  /* more than 20 % off: wrong value */
+		return 0;
+	eram_ww(EE_VCCCAL, (uint16_t)g);
+	return 1;
+}
+
+uint16_t supply_vcc_mv(void)
+{
+	return (uint16_t)((uint32_t)vcc_mv_uncal() * supply_vcc_gain() / 10000u);
 }
 
 uint16_t supply_gvol_raw(uint8_t n)

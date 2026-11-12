@@ -6,7 +6,9 @@ misst aber nicht).
 ## Was gemessen wird
 
 - **3,3-V-Schiene der MCU**, immer: Der ADC des XMEGA misst intern VCC/10 gegen die 1-V-Referenz (ADCB Kanal 1).
-  Ohne Abgleich je Gerät etwa ±2 % genau.
+  Die Referenz streut je Gerät deutlich: Das DEV-Gerät meldete ohne Abgleich 3113 mV, das Multimeter zeigte 3320 mV
+  (−6 %). Abgleich mit einem Messpunkt: `set.1 system.supply.vcc=<mV laut Multimeter>`, gemessen am Programmierstecker
+  X-PDI zwischen Pin 2 (3,3 V) und Pin 6 (GND), alternativ am EEPROM 24LC512 Pin 8/Pin 4. Danach auf ±10 mV genau.
 - **Bordspannung** (12–14 V), optional über einen der beiden GVOL-Eingänge (X-GND-INPUT, gedacht für ein Poti)
   und einen Spannungsteiler im Kabel. Ein Eingriff ins Gerät ist nicht nötig. Der gewählte Eingang steht dann nicht
   mehr für ein Poti (MODC) zur Verfügung.
@@ -30,8 +32,9 @@ der Batterie. Die Werte am Gerät nachmessen, die Kalibrierung gleicht Toleranze
 | `set.1 system.supply.cal=[raw1,mV1,raw2,mV2]` | Zwei Messpunkte, linear |
 | `set.1 system.supply.low=mV` | Schwelle für Unterspannung, 0 = aus |
 | `set.1 system.supply.mute=1` | Ausgänge stumm, solange die Spannung zu niedrig ist |
+| `set.1 system.supply.vcc=mV` | VCC auf einen Multimeterwert abgleichen (±20 %); `get` liefert den Faktor in 1/10000 |
 
-Alle Einstellungen liegen im EEPROM (0x0F03–0x0F0E).
+Alle Einstellungen liegen im EEPROM (0x0F03–0x0F10).
 
 Ereignisse: `#.1 system.supply=low` wird gesendet, wenn die Spannung 8 Auswertungen lang unter der Schwelle
 liegt, und `#.1 system.supply=ok`, sobald sie wieder 300 mV darüber liegt (Hysterese). Mit `supply.mute=1` werden
