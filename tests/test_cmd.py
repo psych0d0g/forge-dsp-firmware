@@ -2045,6 +2045,46 @@ class LevelTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class VuTest(LinesMixin, unittest.TestCase):
+    """#52: system.vu, RMS level of the mixer inputs for the level meter of the GUI."""
+
+    PRE = ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect"]
+
+    def vu(self, line):
+        return [int(x) for x in line.split("[")[1].split("]")[0].split(",")]
+
+    def test_scale_and_inputs(self):
+        for f in ("V40-96ELN", "V30-96LN"):
+            out = self.lines(f, self.PRE + ["1|get.1 system.vu",                    # arms the measurement
+                                            "#vu_feed=7,-20,200", "#vu_feed=8,-26,200", "#vu_feed=1,-60,200",
+                                            "1|get.1 system.vu", "1|get.1 system.vu.x"])
+            self.assertEqual(self.vu(out[0]), [0] * 8, f)
+            self.assertEqual(self.vu(out[1]), [135, 0, 0, 0, 0, 0, 215, 203], f)   # 255 + 2 dB
+            self.assertIn("unknown command", out[2])
+
+    def test_runs_only_while_asked(self):
+        f = "V40-96ELN"
+        loops = ["#level_loop"] * 4
+        out = self.lines(f, self.PRE + ["#i2clog=1"] + loops + ["#vu?", "1|get.1 system.vu", "#vu?"] + loops
+                         + ["#i2clog=0"] + ["#level_loop"] * 200 + ["#vu?"])
+        peeks = [l for l in out if l.startswith("@i2c1:") and "S 68 06 00 02" in l]
+        # nothing before the first request; then two inputs per call, each data address once per round
+        self.assertEqual(len(peeks), 8, peeks)
+        addr = [int(l.split("S 68 06 00 02 00 ")[1][:2], 16) for l in peeks]
+        self.assertEqual(addr, [4, 5, 2, 3, 0, 1, 7, 6])                          # G1..G8 = in5, in6, in3, in4, in1, in2, in8, in7
+        self.assertEqual([l for l in out if l.startswith("@vu:")], ["@vu:0", "@vu:1", "@vu:0"])   # off again after 3 s
+
+    def test_loudness_measurement_keeps_its_rate(self):
+        """The level meter adds PEEKs, it does not take any from the loudness block (#51)."""
+        f = "V40-96ELN"
+        cfg = "1|set.1 modc.9=[1,108,10D7280F,0,0,64,0,00000000]"                 # loudness measures in7
+        out = self.lines(f, LoudnessTest.PRE + [cfg, "#modc", "1|get.1 system.vu", "#i2clog=1"] + ["#level_loop"] * 8)
+        peeks = [int(l.split("S 68 06 00 02 00 ")[1][:2], 16) for l in out if l.startswith("@i2c1:") and "S 68 06 00 02" in l]
+        self.assertEqual(peeks.count(6), 8 + 2)                                    # 8 for loudness, 2 from the meter rounds
+        self.assertEqual(len(peeks), 8 * 3)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class BootEntryTest(unittest.TestCase):
     """system.boot writes the bootloader sequence 0xAA/0x55 to EEPROM 0/1 (entry without the key)."""
 

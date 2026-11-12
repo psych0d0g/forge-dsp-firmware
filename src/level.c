@@ -17,6 +17,8 @@ static double hist[LEVEL_MEDIAN];   /* dB of the last blocks above the gate */
 static uint8_t hist_n, hist_i;
 static double smooth_db;            /* smoothed level, dB */
 static uint8_t valid, value;        /* value: reported level with hysteresis */
+static double vu_pow[8];            /* level meter (#52): smoothed power per mixer input */
+static uint8_t vu_hold, vu_pair;
 
 void level_init(void)
 {
@@ -26,6 +28,9 @@ void level_init(void)
 	smooth_db = -120.0;
 	valid = 0;
 	value = 0;
+	vu_hold = vu_pair = 0;
+	for (uint8_t i = 0; i < 8; i++)
+		vu_pow[i] = 0.0;
 }
 
 void level_config(uint8_t m, uint8_t tau_tenths)
@@ -103,23 +108,70 @@ void level_feed(double sample)
 	block_done(10.0 * log10(p));
 }
 
+/* --- level meter (#52) -------------------------------------------------------------------------
+ * mixer input G (1..8) -> data memory address of its sample: G1..G8 = in5, in6, in3, in4, in1,
+ * in2, in8, in7 (docs/dsp-images.md), in N at D_(N-1) */
+static const uint8_t vu_addr[8] = {4, 5, 2, 3, 0, 1, 7, 6};
+
+uint8_t level_vu_active(void) { return vu_hold > 0; }
+
+void level_vu_feed(uint8_t g, double sample)
+{
+	if (g < 1 || g > 8)
+		return;
+	vu_pow[g - 1] += (sample * sample - vu_pow[g - 1]) * LEVEL_VU_ALPHA;
+}
+
+void level_vu_get(uint8_t out[8])
+{
+	if (!vu_hold)  /* was off: old values say nothing about now */
+		for (uint8_t i = 0; i < 8; i++)
+			vu_pow[i] = 0.0;
+	vu_hold = LEVEL_VU_HOLD;
+	for (uint8_t i = 0; i < 8; i++)
+		out[i] = vu_pow[i] > 1e-13 ? to_scale(10.0 * log10(vu_pow[i])) : 0;
+}
+
+static uint8_t peek_sample(uint8_t addr, double *x)
+{
+	uint8_t b[8];
+	if (!dsp_peek(1, 2, addr, b))
+		return 0;
+	int64_t v = 0;
+	for (int8_t i = 5; i >= 0; i--)
+		v = (v << 8) | b[i];
+	if (v & ((int64_t)1 << 47))
+		v -= (int64_t)1 << 48;
+	*x = (double)v / 549755813888.0;  /* 2^39 = full scale */
+	return 1;
+}
+
+static void vu_mainloop(void)
+{
+	if (!vu_hold)
+		return;
+	vu_hold--;
+	for (uint8_t k = 0; k < 2; k++) {
+		uint8_t g = (uint8_t)(2 * vu_pair + k + 1);
+		double x;
+		if (peek_sample(vu_addr[g - 1], &x))
+			level_vu_feed(g, x);
+	}
+	vu_pair = (uint8_t)((vu_pair + 1) % 4);
+}
+
 void level_mainloop(void)
 {
+	vu_mainloop();
 	if (!mask)
 		return;
 	for (uint8_t k = 0; k < 8; k++) {
 		uint8_t in = (uint8_t)((next_in + k) % 8);
 		if (mask & (1u << in)) {
 			next_in = (uint8_t)((in + 1) % 8);
-			uint8_t b[8];
-			if (!dsp_peek(1, 2, in, b))
-				return;
-			int64_t x = 0;
-			for (int8_t i = 5; i >= 0; i--)
-				x = (x << 8) | b[i];
-			if (x & ((int64_t)1 << 47))
-				x -= (int64_t)1 << 48;
-			level_feed((double)x / 549755813888.0);  /* 2^39 = full scale */
+			double x;
+			if (peek_sample(in, &x))
+				level_feed(x);
 			return;
 		}
 	}

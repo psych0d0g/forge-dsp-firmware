@@ -455,7 +455,7 @@ static const struct name names_one[] = {
 };
 
 static const struct name names_two[] = {
-	{0x002A, ".*"}, {0x6261, ".baud"}, {0x626C, ".block"}, {0x626F, ".boot"}, {0x7375, ".supply"} /* port #46 */,
+	{0x002A, ".*"}, {0x6261, ".baud"}, {0x626C, ".block"}, {0x626F, ".boot"}, {0x7375, ".supply"} /* port #46 */, {0x7675, ".vu"} /* port #52 */,
 	{0x636F, ".copy"}, {0x6366, ".cfg"}, {0x6368, ".channel"}, {0x6379, ".cycles"},
 	{0x6465, ".debug"}, {0x6563, ".echo"}, {0x656E, ".enable"}, {0x6665, ".feature"},
 	{0x6669, ".firmware"}, {0x6775, ".gui"}, {0x6861, ".hardware"}, {0x6972, ".ir"},

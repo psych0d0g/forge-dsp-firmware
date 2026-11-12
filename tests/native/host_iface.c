@@ -265,6 +265,14 @@ static void store_cmd(const char *l)
 		double a = pow(10.0, db / 20.0);
 		for (int i = 0; i < n; i++)
 			level_feed(i & 1 ? -a : a);
+	} else if (!strncmp(l, "#vu_feed=", 9)) {      /* PORT (#52): #vu_feed=<mixer input 1..8>,<dBFS RMS>,<n> */
+		int g = 0, n = 0; double db = 0;
+		sscanf(l + 9, "%d,%lf,%d", &g, &db, &n);
+		double a = pow(10.0, db / 20.0);
+		for (int i = 0; i < n; i++)
+			level_vu_feed((uint8_t)g, i & 1 ? -a : a);
+	} else if (!strcmp(l, "#vu?")) {
+		printf("@vu:%u\n", level_vu_active());
 	} else if (!strcmp(l, "#level?")) {
 		printf("@level:%u,%u\n", level_valid(), level_value());
 	} else if (!strcmp(l, "#mixramp")) {          /* PORT (#50): one mixer ramp pass */

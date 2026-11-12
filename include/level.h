@@ -29,4 +29,17 @@ void level_config(uint8_t mask, uint8_t tau_tenths);  /* mask bit n = in(n+1); 0
 void level_feed(double sample);            /* one sample, full scale 1.0 (tests, mainloop) */
 uint8_t level_valid(void);                 /* 1 once a level above the gate was seen */
 uint8_t level_value(void);                 /* gain scale, 255 = 0 dBFS RMS */
+
+/* Level meter for the GUI (port extension, issue #52): RMS level of every input, independent of
+ * the loudness measurement above. Runs only while it is asked for: level_vu_get() arms it for
+ * LEVEL_VU_HOLD calls of level_mainloop (3 s), then the extra PEEKs stop. One stereo pair (two
+ * PEEKs) per call, so each input is sampled LEVEL_RATE_HZ / 4 = 16 times a second; the power is
+ * smoothed with LEVEL_VU_SHIFT (1/8 per sample, about 0.5 s). */
+#define LEVEL_VU_HOLD (3 * LEVEL_RATE_HZ)
+#define LEVEL_VU_ALPHA 0.125
+/* out[0..7] = mixer inputs G1..G8 (1..6 analog as gain.in.N, 7/8 digital), gain scale:
+ * 255 = 0 dBFS RMS, 0.5 dB per step, 0 = no signal */
+void level_vu_get(uint8_t out[8]);
+void level_vu_feed(uint8_t g, double sample);  /* one sample for mixer input g = 1..8 (tests, mainloop) */
+uint8_t level_vu_active(void);
 #endif

@@ -14,6 +14,7 @@
 #include "events.h"
 #include "flavour_data.h"
 #include "hwcheck.h"
+#include "level.h"
 #include "i2c.h"
 #include "supply.h"
 #include "store.h"
@@ -315,6 +316,23 @@ static void out_list(const int16_t *v, uint8_t n)
 	}
 	out_chr(']');
 	out_crlf();
+}
+
+/* PORT extension (#52): get system.vu = RMS level of the mixer inputs G1..G8 for the level
+ * meter of the GUI (gain scale, 255 = 0 dBFS, 0 = no signal). Asking keeps the measurement
+ * running for 3 s (level.h). */
+static void cmd_get_system_vu(void)
+{
+	uint8_t u[8];
+	int16_t v[8];
+	if (req_w(cmd_req_word_three) != 0x0000) {
+		cmd_error_unknown();
+		return;
+	}
+	level_vu_get(u);
+	for (uint8_t i = 0; i < 8; i++)
+		v[i] = u[i];
+	out_list(v, 8);
 }
 
 static void cmd_get_system_supply(void)
@@ -773,6 +791,7 @@ void cmd_get_system(void)
 	case 0x706F: cmd_get_system_poti(); break;
 	case 0x7465: cmd_get_system_temp(); break;
 	case 0x7375: cmd_get_system_supply(); break;  /* PORT extension (#46) */
+	case 0x7675: cmd_get_system_vu(); break;      /* PORT extension (#52) */
 	default: cmd_error_unknown();
 	}
 }
