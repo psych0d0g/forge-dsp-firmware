@@ -90,6 +90,70 @@ def core_channels(path):
     return out
 
 
+SPARE_DATA = range(0x195, 0x1D6)   # data words that are RAM on every core (program 2 stores there)
+SPARE_SUB_MIN = 0x1F               # subaddresses below are 8051 functions, unused or not
+
+
+def _refs(words):
+    coef, data = set(), set()
+    for w in words:
+        t = dis.disasm(w)[0]
+        coef |= {int(a, 16) for a in re.findall(r"C_([0-9A-F]{3})", t)}
+        data |= {int(a, 16) for a in re.findall(r"D_([0-9A-F]{3})", t)}
+    return coef, data
+
+
+def add_spare(img, count):
+    """(#47 step 7) the image with up to count spare biquads in the subaddress table: five free
+    coefficient words each, a free subaddress (kind 0). The DSP program stays as it is; the
+    generator puts a spare biquad into a chain when a channel grows. -> (image, count added)"""
+    blocks, rest = dsp_image.parse(img)
+    words = dis.program(blocks)
+    coef, _ = _refs(words)
+    regs = dsp_image.regmap(blocks)
+    for sub, a, n, kind in regs:
+        if kind == 1:
+            coef |= set(range(a, a + n // 4))
+    for b in blocks:
+        if b.mem == 3:
+            coef |= set(range(b.addr, b.addr + len(b.words)))
+    runs, a = [], 0
+    while a + 5 <= 0x3FE:
+        if all(x not in coef for x in range(a, a + 5)):
+            runs.append(a)
+            a += 5
+        else:
+            a += 1
+    subs = [sub for sub, a, n, kind in regs if kind == 0 and SPARE_SUB_MIN <= sub < 0xFE]
+    data = len(_free_data(words))
+    count = min(count, len(runs), len(subs), data // 2)
+    out = []
+    for b in blocks:
+        if b.mem == 0 and b.addr <= dsp_image.REG_TABLE < b.addr + len(b.data):
+            d = bytearray(b.data)
+            for c, sub in zip(runs[:count], subs[:count]):
+                o = dsp_image.REG_TABLE - b.addr + 4 * sub
+                d[o:o + 4] = bytes([c >> 8, c & 0xFF, 20, 1])
+            b = dsp_image.Block(b.mem, b.addr, bytes(d), b.trailer_len)
+        out.append(b)
+    return dsp_image.build(out, rest), count
+
+
+def _free_data(words):
+    _, data = _refs(words)
+    return [a for a in SPARE_DATA if a not in data]
+
+
+def spare_slots(blocks, words, chain_coefs):
+    """spare biquads of an image (add_spare): biquad entries of the table that no chain uses, by
+    subaddress, each with two free data words -> [(coef, y1, y2, subaddress)]"""
+    free = _free_data(words)
+    sp = [(a, sub) for sub, a, n, kind in dsp_image.regmap(blocks) if kind == 1 and n == 20 and a not in chain_coefs]
+    if 2 * len(sp) > len(free):
+        raise SystemExit("not enough free data words for the spare biquads")
+    return [(a, free[2 * k], free[2 * k + 1], sub) for k, (a, sub) in enumerate(sp)]
+
+
 class Program:
     """pool tables of one DSP program (built from the base image)"""
 
@@ -123,6 +187,9 @@ class Program:
         for q in range(len(channels)):
             c = next(c for c, qq in order.items() if qq == q)
             self.slots += [(co, y1, y2) for s in chains[c] for co, (y1, y2) in zip(s.coefs, s.ys)]
+        # spare biquads (add_spare) at the end of the pool
+        self.spare = spare_slots(self.blocks, self.words, {c for c, _, _ in self.slots})
+        self.slots += [(c, y1, y2) for c, y1, y2, _ in self.spare]
         self.segs, starts = [], {}
         for c, ch in enumerate(chains):
             self.chains.append((order[c], len(ch), len(self.segs)))
@@ -187,7 +254,7 @@ class Program:
     def check_lengths(self, lengths):
         if len(lengths) != len(self.channels):
             raise ValueError("one length per channel")
-        if sum(lengths) != len(self.slots):
+        if sum(lengths) > len(self.slots):
             raise ValueError(f"the pool has {len(self.slots)} biquads, the lengths need {sum(lengths)}")
         for (ch, _, mn), n in zip(self.channels, lengths):
             if n < mn:

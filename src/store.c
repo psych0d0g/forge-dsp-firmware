@@ -10,6 +10,7 @@
 #include "factory.h"
 #include "biquad.h"
 #include "dsp.h"
+#include "dsp_pool.h"
 void watchdog_kick(void);
 
 uint8_t storage_non_biquadvalues[BAS_STORAGE_FRAMESIZE + 1];
@@ -209,7 +210,7 @@ void store_load_bqtype(void)
 
 void store_load_bq(void)
 {
-	uint8_t storage = BAS_LOOKUP_B(data_flow_dsp_bq_core, store_bq_nr);
+	uint8_t storage = flow_bq_core(store_bq_nr);
 	uint16_t w = (uint16_t)(store_bq_nr - BAS_LOOKUP_W(data_flow_bq_storage_offset, storage));
 	w = (uint16_t)(w * BAS_DSP_REG_SIZE_BIQUAD_CHKSUM);
 	i2c_addr = (uint16_t)(BAS_LOOKUP_W(data_store_addr_bq, store_preset) + w);
@@ -228,8 +229,10 @@ void store_load_bq(void)
 
 void store_restore_biquad_raw(void)
 {
-	for (store_bq_nr = 1; store_bq_nr <= BAS_FLOW_MAX_DSP_BIQUADS; store_bq_nr++) {
+	for (store_bq_nr = 1; store_bq_nr <= flow_bq_max(); store_bq_nr++) {
 		uint32_t raw[6];
+		if (!flow_bq_used(store_bq_nr))  /* PORT (#47): a spare biquad no channel owns is not in the program */
+			continue;
 		dsp_bq_virt_nr = store_bq_nr;
 		store_load_bqtype();
 		if (buffer_byte > 0) {
@@ -403,7 +406,7 @@ void store_save_bq(void)
 	uint16_t crc = bas_crc16(&buffer_bytes[1], BAS_DSP_REG_SIZE_BIQUAD);
 	buffer_bytes[21] = crc & 0xFF;  /* buffer_words(11) */
 	buffer_bytes[22] = crc >> 8;
-	uint8_t storage = BAS_LOOKUP_B(data_flow_dsp_bq_core, store_bq_nr);
+	uint8_t storage = flow_bq_core(store_bq_nr);
 	uint16_t w = (uint16_t)(store_bq_nr - BAS_LOOKUP_W(data_flow_bq_storage_offset, storage));
 	i2c_addr = (uint16_t)(BAS_LOOKUP_W(data_store_addr_bq, store_preset) + w * BAS_DSP_REG_SIZE_BIQUAD_CHKSUM);
 	i2c_size = BAS_DSP_REG_SIZE_BIQUAD_CHKSUM;
@@ -437,12 +440,12 @@ void store_erase_preset(void)
 {
 	store_reset_values();
 	store_save_values_all();
-	for (store_bq_nr = 1; store_bq_nr <= BAS_FLOW_MAX_DSP_BIQUADS; store_bq_nr++) {
+	for (store_bq_nr = 1; store_bq_nr <= flow_bq_max(); store_bq_nr++) {
 		fill_default_bq();
 		store_save_bq();
 		watchdog_kick();
 	}
-	for (store_bq_nr = 1; store_bq_nr <= BAS_FLOW_MAX_DSP_BIQUADS; store_bq_nr++) {
+	for (store_bq_nr = 1; store_bq_nr <= flow_bq_max(); store_bq_nr++) {
 		fill_default_bqtv();
 		store_save_bqtv();
 		watchdog_kick();
@@ -453,7 +456,7 @@ void store_erase_preset(void)
 /* PORT (#47): place of the stored biquad nr of a preset (as store_load_bq/store_save_bq) -> bus */
 static uint8_t bq_place(uint16_t nr, uint8_t preset)
 {
-	uint8_t storage = BAS_LOOKUP_B(data_flow_dsp_bq_core, nr);
+	uint8_t storage = flow_bq_core(nr);
 	uint16_t w = (uint16_t)(nr - BAS_LOOKUP_W(data_flow_bq_storage_offset, storage));
 	i2c_addr = (uint16_t)(BAS_LOOKUP_W(data_store_addr_bq, preset) + w * BAS_DSP_REG_SIZE_BIQUAD_CHKSUM);
 	i2c_size = BAS_DSP_REG_SIZE_BIQUAD_CHKSUM;

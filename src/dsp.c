@@ -13,6 +13,7 @@
 #include "i2c.h"
 #include "registers.h"
 #include "tas3108.h"
+#include "dsp_pool.h"
 
 uint8_t dsp_core, dsp_reg;
 uint16_t dsp_bq_virt_nr;
@@ -56,8 +57,8 @@ static uint32_t get32(uint8_t at)
 	return v;
 }
 
-void dsp_calc_core(void) { dsp_core = BAS_LOOKUP_B(data_flow_dsp_bq_core, dsp_bq_virt_nr); }
-void dsp_calc_reg(void) { dsp_reg = BAS_LOOKUP_B(data_flow_dsp_bq_reg, dsp_bq_virt_nr); }
+void dsp_calc_core(void) { dsp_core = flow_bq_core(dsp_bq_virt_nr); }  /* PORT (#47): with the spares */
+void dsp_calc_reg(void) { dsp_reg = flow_bq_reg(dsp_bq_virt_nr); }
 
 /* i2cN_wbuffer_verify: read back (twice at most), count differences */
 static void wbuffer_verify(const struct core *c, uint8_t size, const uint8_t *expect)

@@ -29,6 +29,15 @@
 #define POOL_EE_LEN_ADDR   0x0F21  /* DSP_POOL_CHANNELS bytes */
 #define POOL_EE_MAGIC      0x47
 
+#ifdef DSP_POOL
+/* the stored values of the spare biquads must fit the preset areas of the original */
+_Static_assert((BAS_FLOW_MAX_DSP_BIQUADS + DSP_POOL_EXTRA + 1) * BAS_STORAGE_BQTV_VALUES_FRAMESIZE <= BAS_LIMIT_STORE_ADDR_BQTV,
+               "bqtv area too small for the spare biquads");
+/* 393: data_flow_bq_storage_offset of core 1 in all pool flavours */
+_Static_assert((BAS_FLOW_MAX_DSP_BIQUADS + DSP_POOL_EXTRA + 1 - 393) * BAS_DSP_REG_SIZE_BIQUAD_CHKSUM <= BAS_LIMIT_STORE_ADDR_BQ,
+               "biquad area of core 1 too small for the spare biquads");
+#endif
+
 /* table layout (tools/dsp_pool.py, Program.c_table) */
 enum { H_PROG_OFF, H_PROG_LEN, H_PIECES, H_CHAINS, H_SEGS, H_SLOTS, H_PATCHES, H_CHANNELS,
        O_PIECES, O_CHAINS, O_SEGS, O_SLOTS, O_PATCHES, O_CHANNELS, O_TPL };
@@ -79,7 +88,7 @@ uint8_t dsp_pool_check(const uint8_t *len)
 				return 1;
 			sum = (uint16_t)(sum + len[q]);
 		}
-		if (sum != dsp_pool_size(k))
+		if (sum > dsp_pool_size(k))  /* (#47 step 7) the spare biquads may stay unused */
 			return 1;
 	}
 	return 0;
@@ -138,6 +147,29 @@ uint16_t flow_bq_offset(uint8_t ch)
 	for (uint8_t i = q0; i < (uint8_t)q; i++)
 		o = (uint16_t)(o + dsp_pool_len(i));
 	return o;
+}
+
+/* virtual biquad numbers: the original 1 … BAS_FLOW_MAX_DSP_BIQUADS, then the spares of core 1 */
+uint16_t flow_bq_max(void) { return (uint16_t)(BAS_FLOW_MAX_DSP_BIQUADS + DSP_POOL_EXTRA); }
+uint8_t flow_bq_core(uint16_t v)
+{
+	return v <= BAS_FLOW_MAX_DSP_BIQUADS ? BAS_LOOKUP_B(data_flow_dsp_bq_core, v) : 1;
+}
+uint8_t flow_bq_reg(uint16_t v)
+{
+	if (v <= BAS_FLOW_MAX_DSP_BIQUADS)
+		return BAS_LOOKUP_B(data_flow_dsp_bq_reg, v);
+	v = (uint16_t)(v - BAS_FLOW_MAX_DSP_BIQUADS - 1);
+	return v < DSP_POOL_EXTRA ? dsp_pool_extra_reg[v] : 0;
+}
+uint8_t flow_bq_used(uint16_t v)
+{
+	for (uint8_t q = 0; q < DSP_POOL_CHANNELS; q++) {
+		uint16_t o = flow_bq_offset(dsp_pool_chan[q]);
+		if (v > o && v <= o + dsp_pool_len(q))
+			return 1;
+	}
+	return 0;
 }
 
 /* New lengths for the channels of one core: the stored biquads move with their channel (band b
@@ -329,6 +361,10 @@ static void gen_reset(struct dsp_img *g)
 }
 #else
 uint8_t flow_bq_limit(uint8_t ch) { return BAS_LOOKUP_B(data_flow_ch_bq_limits, ch); }
+uint16_t flow_bq_max(void) { return BAS_FLOW_MAX_DSP_BIQUADS; }
+uint8_t flow_bq_core(uint16_t v) { return BAS_LOOKUP_B(data_flow_dsp_bq_core, v); }
+uint8_t flow_bq_reg(uint16_t v) { return BAS_LOOKUP_B(data_flow_dsp_bq_reg, v); }
+uint8_t flow_bq_used(uint16_t v) { (void)v; return 1; }
 uint16_t flow_bq_offset(uint8_t ch) { return BAS_LOOKUP_W(data_flow_ch_bq_offsets, ch); }
 uint8_t dsp_pool_cores(void) { return 0; }
 uint8_t dsp_pool_channels(uint8_t core, uint8_t *first) { (void)core; *first = 0; return 0; }

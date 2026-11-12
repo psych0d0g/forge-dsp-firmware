@@ -2609,12 +2609,12 @@ class PoolCmdTest(unittest.TestCase):
                 "1|set.1 biquad.4.10=[1,2500,-42,7071,0,128]", "1|set.1 biquad.4.38=[1,3000,-45,7071,0,128]",
                 "1|set.1 biquad.5.7=[1,3500,-30,7071,0,128]", "#mainloop",
                 "1|get.1 system.biquads", "1|set.1 system.biquads.3=[60,60,38,38]",
-                "1|set.1 system.biquads.3=[10,170,6,9]", "1|set.1 system.biquads.3=[60,60,38]",
+                "1|set.1 system.biquads.3=[10,170,6,11]", "1|set.1 system.biquads.3=[60,60,38]",
                 "1|set.1 system.biquads.3=[10,170,6,10]"], want_eeprom=True)
             out = p.stdout
-            self.assertIn("system.biquads=[[35,1,72,1],[36,1,72,1],[5,2,60,3],[6,2,60,3],[7,2,38,1],[8,2,38,3],"
-                          "[1,3,60,3],[2,3,60,3],[3,3,38,1],[4,3,38,3]]", out)
-            self.assertEqual(out.count("command out of range"), 2)      # sum 195, and 3 values for 4 channels
+            self.assertIn("system.biquads=[[35,1,72,1,172],[36,1,72,1,172],[5,2,60,3,196],[6,2,60,3,196],[7,2,38,1,196],"
+                          "[8,2,38,3,196],[1,3,60,3,196],[2,3,60,3,196],[3,3,38,1,196],[4,3,38,3,196]]", out)
+            self.assertEqual(out.count("command out of range"), 2)      # sum 197, and 3 values for 4 channels
             self.assertEqual(out.count("system.biquads.3 ok"), 2)       # unchanged lengths: ok without restart
             self.assertTrue(out.rstrip().endswith("@reset"))             # the change restarts
             self.assertEqual(ee[0x0F20], 0x47)
@@ -2634,4 +2634,24 @@ class PoolCmdTest(unittest.TestCase):
         self.assertNotIn("3000", out)                                   # band 38 of output 4 dropped
         self.assertIn("biquad.5.7=[1,3500,-30,7071,0,128]", out)        # other core untouched
         self.assertIn("!.1 biquad.1.11 command out of range", out)
-        self.assertIn("[1,3,10,3],[2,3,170,3],[3,3,6,1],[4,3,10,3]]", out)
+        self.assertIn("[1,3,10,3,196],[2,3,170,3,196],[3,3,6,1,196],[4,3,10,3,196]]", out)
+
+
+class PoolSpareTest(unittest.TestCase):
+    """#47 step 7: 28 spare biquads in core 1 (virtual numbers 537 …)"""
+    F = PoolTest.F
+
+    def test_spares(self):
+        lengths = [100, 72, 60, 60, 38, 38, 60, 60, 38, 38]
+        ee = PoolTest().device(lengths)
+        out, res = Tas3108Test().run_dsp(self.F, ee, {n: b"\xff" * 65536 for n in (1, 2, 3)}, ["#dsp_eeprom=1"], dump=(1,))
+        PoolTest.setUpClass()
+        want = PoolTest.progs[1].image(lengths[0:2])
+        self.assertEqual(res[1][:len(want)], want)
+        p, _ = run(self.F, BiquadCmdTest.PRE + ["1|get.1 biquad", "1|set.1 biquad.35.100.calc=[1,1000,-35,7071,0,128]",
+                                                "1|get.1 biquad.35.100", "1|set.1 system.biquads.1=[100,73]"],
+                   eeprom=ee, want_eeprom=True)
+        self.assertIn(",100,72]", p.stdout)
+        self.assertIn("biquad.35.100=[1,1000,-35,7071,0,128]", p.stdout)
+        self.assertIn("system.biquads.1 command out of range", p.stdout)      # 173 > 172
+        self.assertNotIn("system.errors", p.stdout)

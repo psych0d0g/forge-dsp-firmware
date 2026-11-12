@@ -352,6 +352,7 @@ class PoolTest(unittest.TestCase):
         import dsp_pool
         cls.path = os.path.join(HERE, "..", "src", "flavours", "V40-96ELN", "flavour_data.h")
         imgs = {n: dsp_opt_gen.optimize(dsp_image.extract(cls.path, n), n)[0] for n in (1, 2)}
+        imgs[1] = dsp_opt_gen.spare_biquads(cls.path, imgs[1])[0]          # step 7: 28 spare biquads
         cls.imgs = imgs
         cls.progs, cls.cores = dsp_pool.programs(cls.path, imgs)
 
@@ -377,11 +378,12 @@ class PoolTest(unittest.TestCase):
         return [core.frame([rng.randrange(-(1 << 23), 1 << 23) for _ in range(8)]) for _ in range(frames)]
 
     def test_redistributed(self):
-        for n, lengths in ((1, [143, 1]), (1, [20, 124]), (2, [189, 3, 1, 3]), (2, [3, 3, 187, 3]), (2, [8, 128, 31, 29])):
+        for n, lengths in ((1, [143, 1]), (1, [20, 124]), (1, [150, 22]), (1, [1, 171]), (1, [30, 40]), (2, [189, 3, 1, 3]), (2, [3, 3, 187, 3]), (2, [8, 128, 31, 29])):
             p = self.progs[n]
             words = p.generate(lengths)
             self.assertEqual(tas3108_asm.check(words), [], lengths)
-            self.assertLessEqual(tas3108_asm.cycles(words), tas3108_asm.cycles(p.words))
+            more = max(0, sum(lengths) - sum(p.default_lengths()))              # spare biquads in use
+            self.assertLessEqual(tas3108_asm.cycles(words), tas3108_asm.cycles(p.words) + 5 * more)
             self.assertEqual(self._run(p, lengths), self._run(p, p.default_lengths()), lengths)
             img = p.image(lengths)
             self.assertEqual(dsp_image.check(img)[2], [])
@@ -389,7 +391,9 @@ class PoolTest(unittest.TestCase):
     def test_limits(self):
         p = self.progs[2]
         with self.assertRaises(ValueError):
-            p.generate([60, 60, 38, 37])          # pool not used completely
+            p.generate([60, 60, 38, 39])          # more than the pool
         with self.assertRaises(ValueError):
             p.generate([193, 1, 1, 1])            # below the minimum of a channel with a merged store
         self.assertEqual([c[2] for c in p.channels], [3, 3, 1, 3])
+        self.assertEqual(len(self.progs[1].slots), 172)
+        self.assertEqual(self.progs[1].generate([72, 72]), self.progs[1].words)  # spares unused: same program

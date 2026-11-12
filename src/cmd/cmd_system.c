@@ -465,9 +465,10 @@ static void cmd_get_system_vu(void)
 }
 
 /* PORT extension (#47): dynamic biquad pools.
- *   get system.biquads    = [[channel, core, biquads, minimum], …] in pool order ([] without pools)
- *   set system.biquads.K  = [biquads of the channels of core K in pool order]; the sum must equal
- *                           the pool of the core. The stored presets move along (band b stays band b,
+ *   get system.biquads    = [[channel, core, biquads, minimum, pool of the core], …] in pool order
+ *                           ([] without pools)
+ *   set system.biquads.K  = [biquads of the channels of core K in pool order]; the sum must not
+ *                           exceed the pool of the core (core 1 has spare biquads, step 7). The stored presets move along (band b stays band b,
  *                           new bands start as defaults), then the MCU restarts and writes the new
  *                           DSP program. */
 static void cmd_get_system_biquads(void)
@@ -492,6 +493,8 @@ static void cmd_get_system_biquads(void)
 			out_u16(dsp_pool_len(q));
 			out_chr(',');
 			out_u16(dsp_pool_min(q));
+			out_chr(',');
+			out_u16(dsp_pool_size(k));
 			out_chr(']');
 		}
 	}

@@ -41,6 +41,24 @@ def optimize(img, n):
     return out, asm.cycles(words), asm.cycles(new)
 
 
+def spare_biquads(path, img):
+    """(#47 step 7) as many spare biquads for core 1 as the free cycles allow: every split of the
+    pool between the two sums must pass the hardware rules. Only core 1: it owns the last virtual
+    biquad numbers, so the spares get the numbers after them (cores 2/3 would have room for 5)."""
+    cores = dsp_pool.core_channels(path)
+    reg = dsp_pool.table(path, "data_flow_dsp_bq_reg")
+    for count in range(40, -1, -1):
+        ext, got = dsp_pool.add_spare(img, count)
+        if got < count:
+            continue
+        p = dsp_pool.Program(ext, cores[1], reg)
+        size, k = len(p.slots), len(p.channels)
+        splits = [[1] * (k - 1) + [size - k + 1], [size - k + 1] + [1] * (k - 1), [size // k] * (k - 1) + [size - (k - 1) * (size // k)]]
+        if all(not asm.check(p.generate(l)) for l in splits):
+            return ext, count
+    raise SystemExit("no spare biquads fit")
+
+
 def table(name, img, what="optimized program", size_word=True):
     data = (bytes([len(img) & 0xFF, len(img) >> 8]) if size_word else b"") + img
     lines = [f"/* {name}: {what}, {len(img)} bytes (tools/dsp_opt_gen.py) */",
@@ -58,6 +76,9 @@ def header(flavour):
     report, imgs = [], {}
     for n in (1, 2):
         out, before, after = optimize(dsp_image.extract(path, n), n)
+        if n == 1:
+            out, spare = spare_biquads(path, out)
+            report.append(f"program 1: {spare} spare biquads")
         imgs[n] = out
         parts.append(table(f"dsp_{n}_code_opt", out))
         report.append(f"program {n}: {before} -> {after} cycles")
@@ -75,7 +96,15 @@ def header(flavour):
                  f"/* channels of the pools in pool order, core 1 first; core k owns [first[k-1], first[k]) */\n"
                  f"static const uint8_t dsp_pool_chan[DSP_POOL_CHANNELS] = {{{', '.join(map(str, chans))}}};\n"
                  f"static const uint8_t dsp_pool_core_first[DSP_POOL_CORES + 1] = {{{', '.join(map(str, first))}}};")
-    report.append("pools " + ", ".join(f"core {k}: {sum(n for _, _, n in cores[k])}" for k in sorted(cores)))
+    extra = [sub for _, _, _, sub in progs[1].spare]
+    if progs[2].spare:
+        raise SystemExit("spare biquads only for core 1")
+    if cores[1][-1][1] + cores[1][-1][2] != max(o + n for k in cores for _, o, n in cores[k]):
+        raise SystemExit("core 1 does not own the last virtual biquad numbers")
+    parts.append(f"/* spare biquads of core 1 (#47): virtual numbers BAS_FLOW_MAX_DSP_BIQUADS + 1 …, their subaddresses */\n"
+                 f"#define DSP_POOL_EXTRA {len(extra)}\n"
+                 f"static const uint8_t dsp_pool_extra_reg[DSP_POOL_EXTRA] = {{{', '.join(f'0x{x:02X}' for x in extra)}}};")
+    report.append("pools " + ", ".join(f"core {k}: {len(progs[1 if k == 1 else 2].slots)}" for k in sorted(cores)))
     parts.append("#endif")
     return "\n".join(parts) + "\n", report
 
