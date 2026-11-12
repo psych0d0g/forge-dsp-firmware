@@ -14,6 +14,7 @@
 #include "events.h"
 #include "flavour_data.h"
 #include "i2c.h"
+#include "supply.h"
 #include "store.h"
 #include "tas3108.h"
 #include "factory.h"
@@ -294,6 +295,78 @@ static void cmd_get_system_startup(void)
 	}
 }
 
+/* PORT extension (#46): supply voltage monitoring, see include/supply.h.
+ *   get system.supply          [VCC mV, supply mV or -1]
+ *   get system.supply.raw      [VCC raw, GVOL1, GVOL2]
+ *   system.supply.source       0 off, 1 = GVOL1, 2 = GVOL2
+ *   system.supply.cal          [raw1,mV1,raw2,mV2]
+ *   system.supply.low          mV, 0 = off (event system.supply=low/ok)
+ *   system.supply.mute         0/1: mute the outputs while low */
+static void out_list(const int16_t *v, uint8_t n)
+{
+	cmd_answer_header();
+	out_chr('[');
+	for (uint8_t i = 0; i < n; i++) {
+		if (i)
+			out_chr(',');
+		out_i16(v[i]);
+	}
+	out_chr(']');
+	out_crlf();
+}
+
+static void cmd_get_system_supply(void)
+{
+	int16_t v[4];
+	switch (req_w(cmd_req_word_three)) {
+	case 0x0000:
+		v[0] = (int16_t)supply_vcc_mv();
+		v[1] = supply_ext_mv();
+		out_list(v, 2);
+		break;
+	case 0x7261:
+		v[0] = (int16_t)supply_vcc_raw();
+		v[1] = (int16_t)supply_gvol_raw(1);
+		v[2] = (int16_t)supply_gvol_raw(2);
+		out_list(v, 3);
+		break;
+	case 0x736F: cmd_answer_header(); out_u16(supply_source()); out_crlf(); break;
+	case 0x6361: supply_get_cal(v); out_list(v, 4); break;
+	case 0x6C6F: cmd_answer_header(); out_u16(supply_low_mv()); out_crlf(); break;
+	case 0x6D75: cmd_answer_header(); out_u16(supply_mute()); out_crlf(); break;
+	default: cmd_error_unknown();
+	}
+}
+
+static void cmd_set_system_supply(void)
+{
+	int16_t a = cmd_reg_var_integers[1];
+	switch (req_w(cmd_req_word_three)) {
+	case 0x736F:
+		if (a < 0 || a > 2) { cmd_error_cmd_oor(); return; }
+		supply_set_source((uint8_t)a);
+		break;
+	case 0x6361: {
+		int16_t c[4];
+		if (cmd_reg_var_count != 4) { cmd_error_cmd_oor(); return; }
+		for (uint8_t i = 0; i < 4; i++)
+			c[i] = cmd_reg_var_integers[i + 1];
+		if (!supply_set_cal(c)) { cmd_error_cmd_oor(); return; }
+		break;
+	}
+	case 0x6C6F:
+		if (a < 0) { cmd_error_cmd_oor(); return; }
+		supply_set_low_mv((uint16_t)a);
+		break;
+	case 0x6D75:
+		if (a != 0 && a != 1) { cmd_error_cmd_oor(); return; }
+		supply_set_mute((uint8_t)a);
+		break;
+	default: cmd_error_unknown(); return;
+	}
+	cmd_answer_ok();
+}
+
 void cmd_set_system(void)
 {
 	api_set_out_mute_change();
@@ -307,6 +380,7 @@ void cmd_set_system(void)
 	case 0x6861: cmd_set_system_hardware(); break;
 	case 0x7265: cmd_set_system_reinit(); break;
 	case 0x7374: cmd_set_system_startup(); break;  /* PORT extension (#40) */
+	case 0x7375: cmd_set_system_supply(); break;   /* PORT extension (#46) */
 	default: cmd_error_unknown();
 	}
 }
@@ -689,6 +763,7 @@ void cmd_get_system(void)
 	case 0x6775: cmd_get_system_gui(); break;
 	case 0x706F: cmd_get_system_poti(); break;
 	case 0x7465: cmd_get_system_temp(); break;
+	case 0x7375: cmd_get_system_supply(); break;  /* PORT extension (#46) */
 	default: cmd_error_unknown();
 	}
 }

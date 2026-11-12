@@ -455,7 +455,7 @@ static const struct name names_one[] = {
 };
 
 static const struct name names_two[] = {
-	{0x002A, ".*"}, {0x6261, ".baud"}, {0x626C, ".block"}, {0x626F, ".boot"},
+	{0x002A, ".*"}, {0x6261, ".baud"}, {0x626C, ".block"}, {0x626F, ".boot"}, {0x7375, ".supply"} /* port #46 */,
 	{0x636F, ".copy"}, {0x6366, ".cfg"}, {0x6368, ".channel"}, {0x6379, ".cycles"},
 	{0x6465, ".debug"}, {0x6563, ".echo"}, {0x656E, ".enable"}, {0x6665, ".feature"},
 	{0x6669, ".firmware"}, {0x6775, ".gui"}, {0x6861, ".hardware"}, {0x6972, ".ir"},
@@ -473,6 +473,7 @@ static const struct name names_three[] = {
 	{0x6D61, ".max"} /* port: mixer.in.max */, {0x6D65, ".memory"}, {0x6D73, ".ms"}, {0x6D6F, ".mode"}, {0x6E61, ".name"},
 	{0x6F75, ".out"}, {0x7061, ".panes"}, {0x7365, ".sets"}, {0x7374, ".state"},
 	{0x7479, ".type"}, {0x7570, ".update"}, {0x7661, ".value"}, {0x7665, ".version"},
+	/* port #46: system.supply.* */ {0x736F, ".source"}, {0x6361, ".cal"}, {0x7261, ".raw"}, {0x6C6F, ".low"}, {0x6D75, ".mute"},
 	{0, NULL}
 };
 

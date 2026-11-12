@@ -1856,6 +1856,47 @@ class BootSectionTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class SupplyTest(LinesMixin, unittest.TestCase):
+    """#46: supply voltage monitoring (VCC internal, supply over a GVOL input with calibration)."""
+
+    CAL = ["#adc_init", "1|set.1 system.supply.source=1", "1|set.1 system.supply.cal=[1000,10000,1400,14000]"]
+
+    def test_vcc_and_unconfigured(self):
+        out = self.lines("V40-96ELN", ["#adc=1,1,1556", "#supply_loop", "1|get.1 system.supply",
+                                       "1|get.1 system.supply.source", "1|get.1 system.supply.low"])
+        self.assertIn("system.supply=[3301,-1]", out[0])
+        self.assertIn("system.supply.source=0", out[1])
+        self.assertIn("system.supply.low=0", out[2])
+
+    def test_calibrated_supply(self):
+        out = self.lines("V40-96ELN", self.CAL + ["#adc=0,0,1240", "#adc_loop", "#supply_loop",
+                                                  "1|get.1 system.supply", "1|get.1 system.supply.cal",
+                                                  "1|get.1 system.supply.raw"])
+        ans = [l for l in out if "<.1" in l]
+        self.assertRegex(ans[0], r"system\.supply=\[\d+,12400\]")
+        self.assertIn("system.supply.cal=[1000,10000,1400,14000]", ans[1])
+        self.assertIn(",1240,", ans[2])
+
+    def test_invalid_values(self):
+        out = self.lines("V40-96ELN", ["1|set.1 system.supply.source=3", "1|set.1 system.supply.cal=[5,1,5,2]",
+                                       "1|set.1 system.supply.mute=2", "1|set.1 system.supply.cal=[1,2,3]"])
+        for l in out:
+            self.assertIn("command out of range", l)
+
+    def test_low_event_and_mute(self):
+        pre = self.CAL + ["1|set.1 system.supply.low=11000", "1|set.1 system.supply.mute=1"]
+        low = ["#adc=0,0,1050", "#adc_loop"] + ["#supply_loop"] * 8   # 10.5 V
+        mid = ["#adc=0,0,1120", "#adc_loop"] + ["#supply_loop"] * 8   # 11.2 V: inside the hysteresis
+        ok = ["#adc=0,0,1140", "#adc_loop"] + ["#supply_loop"] * 8    # 11.4 V
+        out = self.lines("V40-96ELN", pre + ["#adc=0,0,1240", "#adc_loop"] + ["#supply_loop"] * 8 + low
+                         + ["#mutechg"] + mid + ok)
+        ev = [l for l in out if l.startswith("@0:") and "#.1 system.supply=" in l]  # USB port
+        self.assertEqual(len(ev), 2, out)
+        self.assertIn("system.supply=low", ev[0])
+        self.assertIn("system.supply=ok", ev[1])
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class MonoTest(LinesMixin, unittest.TestCase):
     """#14: MODC type 0x6A mono per output pair, on the input mixer rows (C 3..10 = outputs 1..8)."""
 

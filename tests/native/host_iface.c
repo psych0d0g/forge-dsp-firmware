@@ -4,6 +4,7 @@
  *   input:  "<ch>|<line>"  (ch 1..4, line without CR/LF; CR LF is appended)
  *   output: one section per written buart: "@<buart>:" followed by the bytes, C-escaped
  */
+#include "supply.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -247,6 +248,10 @@ static void store_cmd(const char *l)
 		events_adc_init();
 		printf("@adc_limits:%u,%u,%u,%u,%u\n", events_adc_McuMaxTempOOR, events_adc_McuMaxTemp85C,
 		       events_adc_McuMaxTemp90C, events_adc_McuMaxTemp95C, events_adc_McuMaxTemp100C);
+	} else if (!strcmp(l, "#supply_loop")) {     /* PORT (#46): 8 samples + 1 evaluation */
+		for (int i = 0; i < 8; i++)
+			supply_sample();
+		supply_mainloop();
 	} else if (!strcmp(l, "#adc_loop")) {        /* 8 samples and the averages */
 		for (int i = 0; i < 8; i++)
 			events_adc_mainloop_32();

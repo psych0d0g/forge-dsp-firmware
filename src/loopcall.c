@@ -2,6 +2,7 @@
  * Port of libs/loopcall/functions.bas.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
+#include "supply.h"
 #include "bqramp.h"
 #include "loopcall.h"
 #include "api.h"
@@ -29,10 +30,12 @@ void loopcall(uint16_t bits)
 	}
 	if (B(timer_tce0_div_32)) {
 		events_adc_mainloop_32();
+		supply_sample();     /* PORT (#46) */
 		ctrl_modc_mainloop();
 	}
 	if (B(timer_tce0_div_16)) {
 		events_adc_mainloop_16();
+		supply_mainloop();   /* PORT (#46) */
 		sys_init_mainloop();
 		events_overflow_mainloop();
 	}
