@@ -1,6 +1,6 @@
 # TAS3108-Programme (EEPROM-Boot-Images)
 
-Stand der Analyse zu #43. Werkzeuge: `tools/dsp_image.py` (list, extract, check, regs) und
+Stand der Analyse zu #43. Zusammenfassung von Funktionsumfang, Auslastung und Spielraum: `docs/dsp-features.md`. Werkzeuge: `tools/dsp_image.py` (list, extract, check, regs) und
 `tools/tas3108_dis.py` (Disassembler), `tools/tas3108_flow.py` (Signalfluss), `tools/c51_dis.py` (8051),
 Test: `tests/test_dsp_image.py`.
 
@@ -150,7 +150,8 @@ V40-96ELN (V40/V41-CORED8 und V30-96ELN identisch), **Kern 1**:
 4. Die beiden Summen laufen durch je eine Kette aus 72 Biquads: `s1F`–`s66` und `s6F`–`sB6`.
 5. Ausgang n = Mischung n und die beiden Ketten, gewichtet mit der Mixer-Zeile `sEF`+n−1 (4 Worte, Vorgabe
    `[1,0, 0, 0, 0,25]`). Die Ausgänge gehen erst im nächsten Sample hinaus (ein Sample Latenz je Kern).
-6. Daneben ein Pegeldetektor: Summe der linken und der rechten Eingänge, Betrag, Glättung mit `sF8` (0,01/0,99),
+6. Daneben ein Spitzenwert-Pegelmesser: Maximum der vier linken bzw. rechten Eingänge (`COMP` + bedingtes Laden),
+   zwei feste Biquads (Block 0x179–0x19D) als Bewertungsfilter, Betrag, Glättung mit `sF8` (0,01/0,99), `LOG2`;
    Ergebnis in D_021/D_022, vermutlich für die VU-Anzeige. Er nutzt den Koeffizienten 0x010 (`s08`); das ist das
    Register, das die MCU als „Version“ liest (`BAS_DSP_SUB_VERSION`, Kern 1: 0x0006E1BA, Kern 2/3: 0).
 
