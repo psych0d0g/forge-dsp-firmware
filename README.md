@@ -103,6 +103,7 @@ In `platformio.ini` unter `[common]`:
 | `FORGE_BRINGUP` | 0 | 1 = vollständige Peripherie-Init wie das Original. 0 = sichere Variante: Erkennung und Protokoll, Peripherie im Reset, **kein Ton** |
 | `FORGE_AUDIO` | 0 (sicher), 1 (`-bringup`, seit 2.0.0) | 1 = Remote-Out (Endstufen) nach dem Laden des Presets wie im Original einschalten |
 | `FORGE_FACTORY_RESET` | 0 | 1 = Werks-Reset wie im Original (löscht Abstimmungen und Presets), braucht `FORGE_BRINGUP=1` |
+| `FORGE_DSP_OPT` | 0 (sicher), 1 (`-bringup`) | 1 = optimierte DSP-Programme: gleiche Signalverarbeitung, rund 130 bzw. 40 Takte je Sample weniger (Platz für mehr Filter, #47). V30-96LN behält sein Originalprogramm |
 
 Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `lib/fatfs`: FatFs R0.16 von ChaN (BSD-1-Clause, `lib/fatfs/LICENSE.txt`). `tools/c45b3-host` und die Bootloader-Quellen in
 `tools/c45b3-host/tests/ctarget/upstream` stehen unter MIT (chip45boot3, Erik Lins).

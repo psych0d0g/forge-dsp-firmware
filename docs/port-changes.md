@@ -90,7 +90,7 @@ Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `get modc
 | `FORGE_BRINGUP` | 0 | 1 = vollständige Peripherie-Init wie das Original (DAC, DSP, S/PDIF, Preset, MODC, IR, ADC) |
 | `FORGE_AUDIO` | 0 (sicher), 1 (`-bringup`, seit 2.0.0) | 1 = Remote-Out (Endstufen) wie im Original einschalten |
 | `FORGE_FACTORY_RESET` | 0 | 1 = Werks-Reset wie im Original (braucht `FORGE_BRINGUP=1`) |
-| `FORGE_DSP_OPT` | 0 | 1 = optimierte DSP-Programme (Wartetakte nach DLYPTR gefüllt, Kern 1 1387 → 1255 und Kern 2/3 1247 → 1205 Takte, im Simulator bitgleich, `tools/dsp_opt_gen.py`); 96ELN, 96ELN-3, CORE D8. Am Gerät gemessen gleichwertig (#47) |
+| `FORGE_DSP_OPT` | 0 (sicher), 1 (`-bringup`, Standard) | 1 = optimierte DSP-Programme (Wartetakte nach DLYPTR gefüllt, Kern 1 1387 → 1255 und Kern 2/3 1247 → 1205 Takte, im Simulator bitgleich, `tools/dsp_opt_gen.py`); 96ELN, 96ELN-3, CORE D8. Am Gerät gemessen gleichwertig (#47) |
 
 ## Toolchain
 
