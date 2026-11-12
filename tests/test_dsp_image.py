@@ -3,6 +3,7 @@ import glob
 import os
 import re
 import sys
+import random
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -283,3 +284,60 @@ class OptHeaderTest(unittest.TestCase):
                 words = dis.program(di.parse(img)[0])
                 self.assertEqual(asm.check(words), [], (f, n))
                 self.assertLess(asm.cycles(words), asm.cycles(dis.program(di.parse(di.extract(os.path.join(base, "flavour_data.h"), n))[0])), (f, n))
+
+
+class ChainTest(unittest.TestCase):
+    """#47 step 2: biquad chains found, re-emitted exactly, redistributed within a core."""
+
+    @staticmethod
+    def program(f, n):
+        blocks, rest = dsp_image.parse(dsp_image.extract(os.path.join(HERE, "..", "src", "flavours", f, "flavour_data.h"), n))
+        return blocks, rest, tas3108_dis.program(blocks)
+
+    def test_chains_and_identity(self):
+        import tas3108_chains as tc
+        for f, n, want in (("V40-96ELN", 1, [72, 72]), ("V40-96ELN", 2, [38, 38, 60, 60]),
+                           ("V40-96ELN-3", 2, [38, 60, 60, 38]), ("V30-96ELN", 2, [38, 38, 60, 60])):
+            blocks, _, words = self.program(f, n)
+            self.assertEqual([sum(s.n for s in c) for c in tc.chains(words)], want, (f, n))
+            new, moved = tc.relayout(words, want)
+            self.assertEqual(new, words, (f, n))                                   # same lengths: bit-identical
+            self.assertEqual(moved, [])
+            regs = tc.registers(words, blocks)
+            self.assertEqual(sum(map(len, regs)), sum(want))
+            self.assertEqual(len({r for ch in regs for r in ch}), sum(want))       # every biquad its own subaddress
+
+    def _run(self, words, coef, data, frames=120):
+        r = random.Random(2)
+        state = {a: r.randrange(-(1 << 22), 1 << 22) for a in range(1022)}
+        core = tas3108_sim.Core(words, coef, {**state, **data}, 1)
+        rng = random.Random(3)
+        return [core.frame([rng.randrange(-(1 << 23), 1 << 23) for _ in range(8)]) for _ in range(frames)]
+
+    def test_redistribution(self):
+        import tas3108_chains as tc
+        import tas3108_opt as opt
+        blocks, rest, words = self.program("V40-96ELN", 2)
+        new, moved = tc.relayout(words, [30, 46, 50, 70])
+        self.assertEqual([sum(s.n for s in c) for c in tc.chains(new)], [30, 46, 50, 70])
+        self.assertEqual(len(moved), 18)
+        self.assertEqual(tas3108_asm.check(new), [])
+        coef, data = tas3108_sim.initial_memory(blocks, random.Random(1))
+        # 1. moved biquads as bypass: the new program computes exactly what the old one does
+        byp = dict(coef)
+        for s in moved:
+            byp.update({s.coef: 1 << 23, **{s.coef + k: 0 for k in range(1, 5)}})
+        self.assertEqual(self._run(words, byp, data), self._run(new, byp, data))
+        # 2. moved biquads with gain 0.5: only the outputs of the chains that took or gave them change
+        half = dict(byp)
+        for s in moved:
+            half[s.coef] = 1 << 22
+        a, b = self._run(new, byp, data), self._run(new, half, data)
+        changed = {i for fa, fb in zip(a, b) for i in range(8) if fa[i] != fb[i]}
+        self.assertEqual(changed, {1, 3})                                           # DO2 and DO4: chains 2 and 4 grew
+        # 3. the optimizer still applies and stays bit-identical
+        regs = dsp_image.regmap(dsp_image.parse(dsp_image.build(tas3108_asm.replace_program(blocks, new), rest))[0])
+        fast = opt.fill_waits_forward(new, regs)
+        self.assertEqual(tas3108_asm.check(fast), [])
+        self.assertLess(tas3108_asm.cycles(fast), tas3108_asm.cycles(new))
+        self.assertEqual(self._run(new, coef, data, 60), self._run(fast, coef, data, 60))
