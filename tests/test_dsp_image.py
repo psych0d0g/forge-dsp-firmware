@@ -103,6 +103,47 @@ class DspImageTest(unittest.TestCase):
         self.assertIn(("D_1BE", "dly16", "FA"), rows)
         self.assertIn(("DO1", "~D_1BE", ""), rows)
 
+    def test_mixer_commands(self):
+        """mixer.C.G of the MCU firmware (data_flow_mix_cmd2array -> storage index b, written in
+        4-word registers from data_flow_mix_dsp_reg) addresses one mixer output per channel C and
+        one signal per gain G in the DSP program of core 1. i2c_wbuffer sends the buffer
+        backwards, so word w of a register lands at coefficient word 3 - w."""
+        headers = sorted(glob.glob(os.path.join(HERE, "..", "src", "flavours", "*", "flavour_data.h")))
+        for h in headers:
+            t = open(h).read()
+
+            def table(name):
+                m = re.search(r"BAS_DATA_TABLE\(%s, \d+\) = \{(.*?)\};" % name, t, re.S)
+                return [int(x, 16) for x in re.findall(r"0x([0-9A-Fa-f]{2})", m.group(1))]
+
+            blocks = dsp_image.parse(dsp_image.extract(h, 1))[0]
+            regs = dsp_image.regmap(blocks)
+            mixregs = table("data_flow_mix_dsp_reg")[1:]
+            f = tas3108_flow.Flow(blocks)
+            use = {}  # coefficient address -> (output word, signal)
+            for a in f.wires:
+                for sig, c in f.terms(a):
+                    use.setdefault(c, set()).add((a, sig))
+            c2a = table("data_flow_mix_cmd2array")
+            per_c, per_g = {}, {}
+            for i, b in enumerate(c2a[1:]):
+                if b in (0, 0xFF):
+                    continue
+                c, g = i // 10 + 1, i % 10 + 1
+                w = b - 1
+                coef = regs[mixregs[w // 4]][1] + 3 - w % 4
+                self.assertIn(coef, use, (h, c, g))
+                self.assertEqual(len(use[coef]), 1, (h, c, g))
+                out, sig = next(iter(use[coef]))
+                if g <= 8:
+                    per_c.setdefault(c, set()).add(out)
+                    per_g.setdefault(g, set()).add(sig)
+            for c, outs in per_c.items():
+                self.assertEqual(len(outs), 1, (h, c, outs))
+            for g, sigs in per_g.items():
+                self.assertEqual(len(sigs), 1, (h, g, sigs))
+            self.assertGreaterEqual(len(per_c), 8, h)
+
 
 if __name__ == "__main__":
     unittest.main()

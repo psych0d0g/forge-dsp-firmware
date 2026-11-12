@@ -26,6 +26,7 @@ not taken, ALU2 0x4F (undocumented) is ignored.
 Usage:
     tas3108_flow.py IMAGE.bin          block graph, one line per wire and output
     tas3108_flow.py IMAGE.bin --dot    the same as Graphviz dot
+    tas3108_flow.py IMAGE.bin --terms  with the product terms signal x coefficient of every word
 License: MIT
 """
 import os
@@ -92,6 +93,11 @@ class Flow:
             a1, a2, m1, d1, m2, d2, m3, d3 = dis.fields(self.prog[pc])
             old, new = self.r, dict(self.r)
             new["MR"] = old["MD"] | old["MC"]
+            # product terms: signal operand x coefficient address (c tags only come from MC loads)
+            caddrs = [x for x in old["MC"] if x.startswith("c")]
+            if caddrs:
+                sigs = [x for x in old["MD"] if x[0] in "D~id"]
+                new["MR"] = new["MR"] | {f"t{m}*{c[1:]}" for m in sigs for c in caddrs}
             if a1 == 0x0F:
                 new["ACC"] = E
             elif a1 in (0x01, 0x02, 0x10, 0x16) or 0x06 <= a1 <= 0x0D:
@@ -120,7 +126,7 @@ class Flow:
                     new[reg] = (new[reg] | v) if cond else v
             if (m2 or d2) and m2 in dis.MOP2:
                 name = dis.MOP2[m2]
-                v = self.coef.get(d2, E) | ({self.sub[d2]} if d2 in self.sub else E)
+                v = self.coef.get(d2, E) | ({self.sub[d2]} if d2 in self.sub else E) | {f"c{d2:03X}"}
                 reg = _dst(name)
                 new[reg] = (new[reg] | v) if name.startswith(("LDC", "LNC")) else v
             if a1 in dis.BRANCH:
@@ -155,7 +161,7 @@ class Flow:
 
     def lines(self):
         def fmt(v, prev=False):
-            sig = sorted(x for x in v if not x.startswith("s") and (prev or not x.startswith("~")))
+            sig = sorted(x for x in v if x[0] not in "sct" and (prev or not x.startswith("~")))
             subs = sorted(x[1:] for x in v if x.startswith("s"))
             return ", ".join(sig) or "-", " ".join(_ranges(subs))
         res = []
@@ -176,6 +182,15 @@ class Flow:
             sig, subs = fmt(v, prev=True)
             res.append((f"DO{n}", sig, subs))
         return res
+
+    def terms(self, addr):
+        """Product terms (signal, coefficient address) of the value stored to D_addr."""
+        out = []
+        for x in self.wires.get(addr, E):
+            if x.startswith("t"):
+                sig, c = x[1:].split("*")
+                out.append((sig, int(c, 16)))
+        return sorted(out, key=lambda t: (t[1], t[0]))
 
 
 def _ranges(subs):
@@ -209,6 +224,14 @@ def main(argv):
         return 0
     for node, sig, subs in rows:
         print(f"{node:7s} <- {sig}" + (f"   [{subs}]" if subs else ""))
+        if "--terms" in argv and node.startswith("D_"):
+            names = {}
+            for sa, a, n, kind in dsp_image.regmap(blocks):
+                if kind == 1:
+                    for k in range(n // 4):
+                        names[a + k] = f"s{sa:02X}" + (f".{k}" if n > 4 else "")
+            for sig, c in f.terms(int(node[2:], 16)):
+                print(f"          {sig} * C_{c:03X}" + (f"<{names[c]}>" if c in names else ""))
     return 0
 
 

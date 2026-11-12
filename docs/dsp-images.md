@@ -147,6 +147,27 @@ V40-96ELN (V40/V41-CORED8 und V30-96ELN identisch), **Kern 1**:
    Ergebnis in D_021/D_022, vermutlich für die VU-Anzeige. Er nutzt den Koeffizienten 0x010 (`s08`); das ist das
    Register, das die MCU als „Version“ liest (`BAS_DSP_SUB_VERSION`, Kern 1: 0x0006E1BA, Kern 2/3: 0).
 
+**Mixer von Kern 1 und Befehl `mixer.C.G`.** Die MCU sendet einen I2C-Puffer rückwärts (`i2c_wbuffer`:
+`buffer_bytes[size]` bis `[1]`). Aus Wort 1..n (Little Endian) im Puffer werden so Wort n..1 (Big Endian) im DSP.
+Bei Biquads legt die MCU `raw[1..5]` = a2, a1, b2, b1, b0 an (`BAS_DSP_BQ_CACHE_*`). Im Koeffizientenspeicher stehen
+dann b0, b1, b2, a1, a2, genau wie der Biquad-Kern sie liest; a1/a2 sind negiert, weil der DSP sie addiert. Für
+den Mixer gilt dasselbe je 4-Wort-Register: Speicherindex b (`data_flow_mix_cmd2array`) → Wort w = b − 1 →
+Register `data_flow_mix_dsp_reg[w / 4]`, Koeffizient 3 − (w mod 4). Damit ergibt sich (Test für alle Fassungen):
+
+| `mixer.C` | Ziel im DSP | | `mixer.C.G` | Quelle |
+|---|---|---|---|---|
+| 1 | Summe vor Kette 1 (`s1F`–`s66`) | | G1, G2 | in5, in6 (SDIN3) |
+| 2 | Summe vor Kette 2 (`s6F`–`sB6`) | | G3, G4 | in3, in4 (SDIN2) |
+| 3, 4 | Ausgang DO7, DO8 | | G5, G6 | in1, in2 (SDIN1) |
+| 5, 6 | Ausgang DO5, DO6 | | G7, G8 | in8, in7 (SDIN4, vertauscht) |
+| 7, 8 | Ausgang DO3, DO4 | | G9 | Kette 1 in den Ausgang (nur C3–C10) |
+| 9, 10 | Ausgang DO1, DO2 | | G10 | Kette 2 in den Ausgang (C1: 0xFF = Eingangswahl) |
+
+Der Anteil der eigenen Mischung am Ausgang (Wort 0 der Zeilen `sEF`–`sF6`) ist fest 1,0
+(`data_flow_mix_passthrough`, `data_flow_mix_can_change` = 0). Das vierte Wort dieser Zeilen (Vorgabe 0,25) liest
+das DSP-Programm nicht. Die Eingänge des Mixers sind die verzögerten und (außer in7/in8) im Pegel gestellten
+Signale.
+
 **Kern 2 und 3** (Programm 2), vier Kanäle, DO5–DO8 bleiben still:
 
 | Eingang | Biquads | Anzahl | Delay | Ausgangspegel | Ausgang |
@@ -167,8 +188,7 @@ Mixer, Kern 2 mit fünf Ketten und drei Kanälen nur mit Pegel); `tas3108_flow.p
 ## Offen
 
 - Bedeutung der vom 8051-Code behandelten Arten (3–0x10, 0x62); dazu den 8051-Code disassemblieren.
-- Belegung der Mixer-Zeilen im Einzelnen (welches Wort welcher Eingang ist), Kodierung des Pegelwerts (0x17),
-  ALU2 0x4F.
+- Kodierung des Pegelwerts (0x17), ALU2 0x4F.
 - Die Analyse ist statisch (bedingte Sprünge werden nicht genommen); am Gerät gegenprüfen, z. B. Biquad setzen
   und den Ausgang messen.
 - Der 8051-Teil (Firmware des Mikrocontrollers im TAS3108) ist 8051-Code und lässt sich mit üblichen Werkzeugen
