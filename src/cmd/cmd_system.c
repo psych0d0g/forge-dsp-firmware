@@ -11,6 +11,7 @@
 #include <string.h>
 #include "api.h"
 #include "bas_data.h"
+#include "biquad.h"
 #include "events.h"
 #include "flavour_data.h"
 #include "hwcheck.h"
@@ -345,6 +346,103 @@ static void out_list(const int16_t *v, uint8_t n)
 	}
 	out_chr(']');
 	out_crlf();
+}
+
+/* PORT extension (#54): get system.limits = the limits a GUI needs, read from the tables of this
+ * build instead of being built into the GUI:
+ *   system.limits         = ["biquad","types","out","in","names"]
+ *   system.limits.biquad  = [f min, f max, gain min, gain max, q min, q max, b min, b max]
+ *                           (Hz, 0.1 dB, 1/1000, Hz; data_ranges_biquad_*, as biquad.CH.N clamps)
+ *   system.limits.types   = biquad types this build computes
+ *   system.limits.out     = [samples per DSP, DSP of output 1, …]   (delay memory, issue #53)
+ *   system.limits.in      = [samples per DSP, DSP of input 1, …]    ([] without input delays)
+ *   system.limits.names   = [characters of an output name, of an input name]
+ * The header is written here: the words are not in the header tables. */
+static void limits_header(const char *word)
+{
+	out_str(" <.");
+	out_u16(REQ_B(cmd_req_receiver));
+	out_str(" system.limits");
+	out_str(word);
+	out_chr('=');
+}
+
+static void out_u16_list(const uint16_t *v, uint8_t n)
+{
+	out_chr('[');
+	for (uint8_t i = 0; i < n; i++) {
+		if (i)
+			out_chr(',');
+		out_u16(v[i]);
+	}
+	out_chr(']');
+	out_crlf();
+}
+
+static void cmd_get_system_limits(void)
+{
+	int16_t v[10];
+	switch (req_w(cmd_req_word_three)) {
+	case 0x0000:
+		limits_header("");
+		out_str("[\"biquad\",\"types\",\"out\",\"in\",\"names\"]");
+		out_crlf();
+		break;
+	case 0x6269:  /* biquad: values 2..5 of the range tables (f, gain, q, b) */
+		for (uint8_t c = 2; c <= 5; c++) {
+			v[2 * (c - 2)] = (int16_t)BAS_LOOKUP_W(data_ranges_biquad_min_I, c);
+			v[2 * (c - 2) + 1] = (int16_t)BAS_LOOKUP_W(data_ranges_biquad_max_I, c);
+		}
+		limits_header(".biquad");
+		out_chr('[');
+		for (uint8_t i = 0; i < 8; i++) {
+			if (i)
+				out_chr(',');
+			out_i16(v[i]);
+		}
+		out_chr(']');
+		out_crlf();
+		break;
+	case 0x7479: {  /* types: the original 0..20 (17 band pass by the port) and the port's 21, 22 */
+		uint16_t t[DSP_BQTYPE_PHASE_ANGLE + 1];
+		for (uint8_t i = 0; i <= DSP_BQTYPE_PHASE_ANGLE; i++)
+			t[i] = i;
+		limits_header(".types");
+		out_u16_list(t, DSP_BQTYPE_PHASE_ANGLE + 1);
+		break;
+	}
+	case 0x6F75: {  /* out */
+		uint16_t t[BAS_FLOW_MAX_OUT_CHANNEL + 1];
+		t[0] = BAS_FLOW_MAX_SAMPLES;
+		for (uint8_t i = 1; i <= BAS_FLOW_MAX_OUT_CHANNEL; i++)
+			t[i] = BAS_LOOKUP_B(data_flow_pair_delay_dsp, i);
+		limits_header(".out");
+		out_u16_list(t, BAS_FLOW_MAX_OUT_CHANNEL + 1);
+		break;
+	}
+	case 0x696E: {  /* in */
+		limits_header(".in");
+#if BAS_FEATURE_INPUT_DELAY > 0
+		uint16_t t[BAS_STORE_DELAY_IN_COUNT + 1];
+		t[0] = BAS_FLOW_MAX_SAMPLES;
+		for (uint8_t i = 1; i <= BAS_STORE_DELAY_IN_COUNT; i++)
+			t[i] = BAS_LOOKUP_B(data_flow_pair_delay_in_dsp, i);
+		out_u16_list(t, BAS_STORE_DELAY_IN_COUNT + 1);
+#else
+		out_str("[]");
+		out_crlf();
+#endif
+		break;
+	}
+	case 0x6E61: {  /* names */
+		uint16_t t[2] = {ERAM_CHANNEL_NAMES_SIZE - 1, INPUT_NAME_SIZE - 1};
+		limits_header(".names");
+		out_u16_list(t, 2);
+		break;
+	}
+	default:
+		cmd_error_unknown();
+	}
 }
 
 /* PORT extension (#52): get system.vu = RMS level of the mixer inputs G1..G8 for the level
@@ -846,6 +944,7 @@ void cmd_get_system(void)
 	case 0x7465: cmd_get_system_temp(); break;
 	case 0x7375: cmd_get_system_supply(); break;  /* PORT extension (#46) */
 	case 0x7675: cmd_get_system_vu(); break;      /* PORT extension (#52) */
+	case 0x6C69: cmd_get_system_limits(); break;  /* PORT extension (#54) */
 	default: cmd_error_unknown();
 	}
 }

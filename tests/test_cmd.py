@@ -2088,6 +2088,41 @@ class LevelTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class LimitsTest(LinesMixin, unittest.TestCase):
+    """#54: system.limits, the limits of this build for a GUI."""
+
+    def vals(self, line):
+        return [int(x) for x in line.split("[")[1].split("]")[0].split(",") if x]
+
+    def test_limits(self):
+        for f in FLAVOURS:
+            out = self.lines(f, ["1|get.1 system.limits", "1|get.1 system.limits.biquad", "1|get.1 system.limits.types",
+                                 "1|get.1 system.limits.out", "1|get.1 system.limits.in", "1|get.1 system.limits.names",
+                                 "1|get.1 system.limits.xx"])
+            self.assertEqual(out[0], '@0: <.1 system.limits=["biquad","types","out","in","names"]\\r\\n', f)
+            mn, mx = table_words(f, "data_ranges_biquad_min_I"), table_words(f, "data_ranges_biquad_max_I")
+            s16 = lambda w: w - 0x10000 if w & 0x8000 else w
+            want = [v for c in range(2, 6) for v in (s16(mn[c]), s16(mx[c]))]
+            self.assertTrue(out[1].startswith("@0: <.1 system.limits.biquad=["), f)
+            self.assertEqual(self.vals(out[1]), want, f)
+            self.assertEqual(self.vals(out[2]), list(range(23)), f)
+            nout, samples = consts(f, "FLOW_MAX_OUT_CHANNEL", "FLOW_MAX_SAMPLES")
+            dd = table_bytes(f, "data_flow_pair_delay_dsp")
+            self.assertEqual(self.vals(out[3]), [samples] + [dd[i] for i in range(1, nout + 1)], f)
+            has_in, = consts(f, "FEATURE_INPUT_DELAY")
+            if has_in:
+                n_in, = consts(f, "STORE_DELAY_IN_COUNT")
+                di = table_bytes(f, "data_flow_pair_delay_in_dsp")
+                self.assertEqual(self.vals(out[4]), [samples] + [di[i] for i in range(1, n_in + 1)], f)
+            else:
+                self.assertEqual(out[4], "@0: <.1 system.limits.in=[]\\r\\n", f)
+            self.assertEqual(self.vals(out[5]), [16, 16], f)
+            self.assertIn("unknown command", out[6], f)
+        # 96ELN: biquad ranges as the BASCOM tables (-12..+6 dB, Q 0.001..10, 10..22000 Hz)
+        self.assertEqual(self.vals(self.lines("V40-96ELN", ["1|get.1 system.limits.biquad"])[0]), [10, 22000, -120, 60, 1, 10000, 0, 22000])
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class InputNameTest(unittest.TestCase):
     """#55: names of the inputs in the device, system.channel.in.N, outside the original layout."""
 

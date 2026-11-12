@@ -51,6 +51,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
 - **Pegelanzeige** (`get.1 system.vu`): Effektivpegel aller acht Eingänge für ein VU-Meter in der GUI, gemessen nur
   solange jemand fragt (#52).
 - **Namen der Eingänge** im Gerät (`set.1 system.channel.in.N="…"`), wie es sie für die Ausgänge schon gab (#55).
+- **Grenzen lesbar** (`get.1 system.limits.*`): Wertebereiche, Filtertypen und Laufzeit-Speicher je DSP, damit eine GUI
+  nichts fest einbauen muss (#54).
 - **Robuster Start**: Ein DSP-Kern, der beim Start noch lädt, wird bis zu 2 s nachgefragt; fehlt er dann noch, startet die
   Forge genau einmal neu statt stumm zu bleiben (#45).
 - **Bootloader auslesen** (nur lesend, `get.1 system.hardware.boot.N`, `tools/dump_bootsection.py`); das Abbild liegt unter
