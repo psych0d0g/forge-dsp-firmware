@@ -510,6 +510,32 @@ class Tas3108Test(unittest.TestCase):
         # tas3108_2_rdy + errorcount_offset_dsp = 3, errorcount_sw_dsp = 34
         self.assertIn("system.errors=[[3,1],[34,1]]", out)
 
+    def test_core_late(self):
+        """#45: a core still loading (NACK) is probed again, up to 8 times."""
+        f = "V41-96ELN-3"
+        out, _ = self.run_dsp(f, image(f), {}, ["#i2cdev=1,68", "#i2cdev=2,68", "#i2cdev=2,6A",
+                                                "#i2cnack=2,68,3", "#i2cnack=2,6A,9",
+                                                "#dsp_core=1", "#dsp_core=2", "#dsp_core=3",
+                                                "1|get.1 system.errors", "1|get.1 system.hardware.dsp"])
+        self.assertIn("@dsp_core: hw=0005", out)       # core 2 after 3 retries, core 3 never (9 > 8)
+        self.assertIn("system.errors=[[5,1]]", out)    # only core 3 counted as missing
+        self.assertIn("system.hardware.dsp=[0,0,0,0,0,0,0,0,0,11,0]", out)
+
+    def test_restart_once(self):
+        """#45: cores missing at the end of systeminit -> one software reset, then go on."""
+        f = "V41-96ELN-3"
+        out, _ = self.run_dsp(f, image(f), {}, ["#i2cdev=1,68", "#dsp_detect", "#dsp_restart", "#dsp_restart",
+                                                "#dsp_restart", "1|get.1 system.hardware.dsp"])
+        r = [l for l in out.splitlines() if l.startswith("@dsp_restart") or l == "@soft_reset"]
+        self.assertEqual(r, ["@soft_reset", "@dsp_restart: hw=0001 flag=1 restarted=0",
+                             "@dsp_restart: hw=0001 flag=255 restarted=1",     # second start: no loop
+                             "@soft_reset", "@dsp_restart: hw=0001 flag=1 restarted=0"])
+        out, _ = self.run_dsp(f, image(f), {}, ["#i2cdev=1,68", "#i2cdev=2,68", "#i2cdev=2,6A", "#dsp_eeprom=1",
+                                                "#dsp_eeprom=2", "#dsp_eeprom=3", "#dsp_detect",
+                                                "#dsp_restart", "1|get.1 system.hardware.dsp"])
+        self.assertIn("@dsp_restart: hw=003F flag=255 restarted=0", out)    # all found: no reset
+        self.assertNotIn("@soft_reset", out)
+
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class DacTest(unittest.TestCase):
@@ -1969,7 +1995,7 @@ class BootSectionTest(LinesMixin, unittest.TestCase):
     def test_dsp_load(self):
         """#45: wait for the TAS3108 program load per bus (host harness: no waits)."""
         out = self.lines("V40-96ELN", ["1|get.1 system.hardware.dsp"])
-        self.assertIn("<.1 system.hardware.dsp=[0,0,0,0,0,0,0,0]", out[0])
+        self.assertIn("<.1 system.hardware.dsp=[0,0,0,0,0,0,0,0,0,0,0]", out[0])
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")

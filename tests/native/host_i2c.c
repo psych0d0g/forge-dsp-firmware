@@ -21,11 +21,18 @@ void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s) { (void)bus; (voi
 static uint8_t cur_dev[3], state[3];  /* state: 0 idle, 1 addr hi, 2 addr lo, 3 data */
 
 /* simple register devices ("#i2cdev=<bus>,<addr hex>"): first written byte = register pointer */
-struct regdev { uint8_t bus, addr, ptr, off, regs[256], used, readonly, block; uint8_t blocks[256][32]; };
+struct regdev { uint8_t bus, addr, ptr, off, regs[256], used, readonly, block, nack; uint8_t blocks[256][32]; };
 static struct regdev devs[16];
 static struct regdev *cur_rd[3];
 
+static struct regdev *find(uint8_t bus, uint8_t addr);
 void host_i2c_readonly(uint8_t bus, uint8_t addr);
+void host_i2c_nack(uint8_t bus, uint8_t addr, uint8_t n)
+{
+	struct regdev *d = find(bus, addr);
+	if (d)
+		d->nack = n;
+}
 void host_i2c_add(uint8_t bus, uint8_t addr)
 {
 	for (int i = 0; i < 16; i++)
@@ -83,6 +90,10 @@ void twi_wbyte(uint8_t bus, uint8_t b)
 		for (int i = 0; i < 4; i++)
 			if (ees[i].bus == bus && ees[i].addr == (b & 0xFE))
 				cur_ee[bus] = &ees[i];
+		if (cur_rd[bus] && cur_rd[bus]->nack) {  /* "#i2cnack": still busy (TAS3108 loading) */
+			cur_rd[bus]->nack--;
+			cur_rd[bus] = NULL;
+		}
 		if (!cur_rd[bus] && !cur_ee[bus])
 			i2c_err = 1;  /* NACK: nobody at this address */
 		return;

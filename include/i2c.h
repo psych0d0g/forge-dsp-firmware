@@ -59,6 +59,7 @@ struct dspboot_diag {
 	uint16_t edges;       /* SDA edges counted while waiting */
 	uint16_t quiet_ms;    /* ms waited for silence */
 	uint8_t timeout;      /* 1: SDA did not go low within 2 s (the original waits for the watchdog) */
+	uint8_t retries;      /* PORT (#45): extra probes until the cores on this bus answered */
 };
 extern struct dspboot_diag dspboot_diag[3];
 #endif

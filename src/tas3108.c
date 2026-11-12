@@ -16,6 +16,10 @@
 #include "registers.h"
 #include "tas3108.h"
 
+#define DSP_CORE_RETRIES 8     /* PORT (#45): 8 x 250 ms = 2 s more per core */
+#define DSP_CORE_RETRY_MS 250
+void watchdog_kick(void);
+
 uint16_t hardware_dsp;
 
 struct dsp_def {
@@ -156,13 +160,25 @@ void dsp_core_init(uint8_t n)
 		return;
 	const struct dsp_def *d = &dsps[n - 1];
 	if (channel_open & (1u << (4 + d->bus))) {
-		twi_start(d->bus);
-		twi_wbyte(d->bus, d->core_adr);
-		if (i2c_err == 0)
-			hardware_dsp |= 1u << d->core_rdy;
-		else
-			errorcount((uint8_t)(d->core_rdy + BAS_ERRORCOUNT_OFFSET_DSP));
-		twi_stop(d->bus);
+		/* PORT fix (#45): a core that is still loading its program does not answer yet; probe
+		 * again every DSP_CORE_RETRY_MS up to DSP_CORE_RETRIES times before it counts as missing */
+		for (uint8_t i = 0;; i++) {
+			twi_start(d->bus);
+			twi_wbyte(d->bus, d->core_adr);
+			uint8_t ok = i2c_err == 0;
+			twi_stop(d->bus);
+			if (ok) {
+				hardware_dsp |= 1u << d->core_rdy;
+				break;
+			}
+			if (i >= DSP_CORE_RETRIES) {
+				errorcount((uint8_t)(d->core_rdy + BAS_ERRORCOUNT_OFFSET_DSP));
+				break;
+			}
+			dspboot_diag[d->bus].retries++;
+			watchdog_kick();
+			delay_ms(DSP_CORE_RETRY_MS);
+		}
 	}
 	if (!(hardware_dsp & (1u << d->core_rdy)))
 		return;

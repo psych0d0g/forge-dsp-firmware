@@ -82,6 +82,7 @@ int main(void)
 	/* peripheral part of systeminit.bas (generated): clock, store, expanders and their
 	 * power-up bits, DAC (muted), DSP program EEPROMs, peripheral resets, DSP cores, SPDIF */
 	flavour_systeminit_peripherals();
+	hw_check_dsp_restart();  /* PORT (#45): cores missing -> restart once */
 	/* libs/api/init.bas, then the preset load of modc_load_preset (MODC itself follows) */
 	api_init();
 	api_init_mute();

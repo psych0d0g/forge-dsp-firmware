@@ -71,6 +71,7 @@ void adc_hw_init(void) {}
 uint16_t adc_hw_get(uint8_t adc, uint8_t ch) { return host_adc[adc & 1][ch & 1]; }
 uint16_t adc_hw_tempsense(void) { return host_tempsense; }
 void power_shutdown(uint8_t a, uint8_t b) { printf("@shutdown:%u,%u\n", a, b); }
+void mcu_reset(void) { printf("@soft_reset\n"); }
 static struct { char name[40]; int v; } pins[32];
 int host_pin_read(const char *name)
 {
@@ -112,6 +113,14 @@ static void store_cmd(const char *l)
 		fclose(f);
 	} else if (!strncmp(l, "#at24out=", 9)) {
 		at24_out = strdup(l + 9);
+	} else if (!strncmp(l, "#i2cnack=", 9)) {  /* #i2cnack=<bus>,<addr hex>,<n>: NACK the next n addressings */
+		unsigned bus, addr, n;
+		void host_i2c_nack(uint8_t bus, uint8_t addr, uint8_t n);
+		sscanf(l + 9, "%u,%x,%u", &bus, &addr, &n);
+		host_i2c_nack((uint8_t)bus, (uint8_t)addr, (uint8_t)n);
+	} else if (!strcmp(l, "#dsp_restart")) {     /* #45: end of systeminit, one restart if cores are missing */
+		hw_check_dsp_restart();
+		printf("@dsp_restart: hw=%04X flag=%u restarted=%u\n", hardware_dsp, eram_hw_read(0x0F11), hw_dsp_restarted);
 	} else if (!strncmp(l, "#i2cdev=", 8)) {  /* #i2cdev=<bus>,<addr hex>[,<reg>=<val>...] */
 		unsigned bus, addr;
 		sscanf(l + 8, "%u,%x", &bus, &addr);

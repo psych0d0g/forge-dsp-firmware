@@ -13,6 +13,7 @@
 #include "bas_data.h"
 #include "events.h"
 #include "flavour_data.h"
+#include "hwcheck.h"
 #include "i2c.h"
 #include "supply.h"
 #include "store.h"
@@ -712,8 +713,11 @@ static void cmd_get_system_hardware_dsp(void)
 		out_u16(d->sda_low_ms); out_chr(',');
 		out_u16(d->edges); out_chr(',');
 		out_u16(d->quiet_ms); out_chr(',');
-		out_u16(d->timeout);
+		out_u16(d->timeout); out_chr(',');
+		out_u16(d->retries);  /* PORT (#45) */
 	}
+	out_chr(',');
+	out_u16(hw_dsp_restarted);  /* PORT (#45): 1 = this start followed a restart for missing cores */
 	out_chr(']');
 	out_crlf();
 }
