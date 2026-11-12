@@ -226,3 +226,30 @@ void dsp_get_vum(void)
 	i2c_size = BAS_DSP_REG_SIZE_VUM;
 	i2c_rbuffer(c->bus);
 }
+
+/* PORT (#51): TAS3108 PEEK (SLES152B 7.4): register 0x06 = [unused, memory, addr high, addr low]
+ * (normal bit order, checked on the device), then 0x07 returns 8 bytes, LSB first in
+ * buffer_bytes(1). mem: 1 = coefficients, 2 = data. -> 0 if the core is not present. */
+uint8_t dsp_peek(uint8_t core, uint8_t mem, uint16_t addr, uint8_t out[8])
+{
+	if (core < 1 || core > BAS_MODUL_TAS3108_CORES)
+		return 0;
+	const struct core *c = &cores[core];
+	if (!(hardware_dsp & (1u << c->rdy)))
+		return 0;
+	buffer_bytes[4] = 0;  /* sent backwards: [4] first */
+	buffer_bytes[3] = mem;
+	buffer_bytes[2] = (uint8_t)(addr >> 8);
+	buffer_bytes[1] = (uint8_t)addr;
+	i2c_device_addr = c->adr;
+	i2c_reg = 0x06;
+	i2c_size = 4;
+	i2c_wbuffer(c->bus);
+	i2c_device_addr = c->adr;
+	i2c_reg = 0x07;
+	i2c_size = 8;
+	i2c_rbuffer(c->bus);
+	for (uint8_t i = 0; i < 8; i++)
+		out[i] = buffer_bytes[i + 1];
+	return 1;
+}

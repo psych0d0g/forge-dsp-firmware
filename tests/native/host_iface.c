@@ -1,3 +1,4 @@
+#include <math.h>
 /*
  * Host harness for the protocol code (src/cmd): feeds lines from stdin into the four
  * channels and prints what is written per buart channel.
@@ -91,6 +92,7 @@ const uint8_t *host_i2c_blockdata(uint8_t bus, uint8_t addr, uint8_t reg);
 #include "api.h"
 #include "hwcheck.h"
 #include "bqramp.h"
+#include "level.h"
 
 uint8_t iface_buart_channel[iface_ch_max + 1] = { 0, 0, 2, 1, 3 };
 volatile uint8_t iface_todo[iface_ch_max + 1];
@@ -248,6 +250,16 @@ static void store_cmd(const char *l)
 		events_adc_init();
 		printf("@adc_limits:%u,%u,%u,%u,%u\n", events_adc_McuMaxTempOOR, events_adc_McuMaxTemp85C,
 		       events_adc_McuMaxTemp90C, events_adc_McuMaxTemp95C, events_adc_McuMaxTemp100C);
+	} else if (!strncmp(l, "#level_feed=", 12)) {   /* PORT (#51): #level_feed=<dBFS RMS>,<n samples> */
+		double db = 0; int n = 0;
+		sscanf(l + 12, "%lf,%d", &db, &n);
+		double a = pow(10.0, db / 20.0);
+		for (int i = 0; i < n; i++)
+			level_feed(i & 1 ? -a : a);
+	} else if (!strcmp(l, "#level?")) {
+		printf("@level:%u,%u\n", level_valid(), level_value());
+	} else if (!strcmp(l, "#level_loop")) {         /* one level_mainloop call (PEEK) */
+		level_mainloop();
 	} else if (!strcmp(l, "#supply_loop")) {     /* PORT (#46): 8 samples + 1 evaluation */
 		for (int i = 0; i < 8; i++)
 			supply_sample();

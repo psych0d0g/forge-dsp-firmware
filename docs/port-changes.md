@@ -109,9 +109,19 @@ MODC-Block vom Typ 108 (0x6C). Die Felder folgen dem Loudness-Dialog, den die Or
 | Event 1 | „Loudness Input“: Lautstärke 0–255 in der Skala von `gain.*` (0,5 dB je Schritt, 223 = 0 dB), z. B. ein Lautstärke- oder IR-Block | `gain.spdif.1` |
 | Flags 2 (Port, in der GUI ausgeblendet) | Referenz: ab diesem Wert keine Anhebung | 223 (0 dB) |
 | Event 2 (Port, #51) | Schrittweite je Durchlauf (32 Hz) in 0,01 dB. Kleinere Schritte führen langsamer nach (0,05 dB: 1,6 dB/s) | 20 (0,2 dB) |
+| Event 3 (Port, #51) | **Dynamische Loudness:** Bitmaske der Eingänge von Kern 1 (Bit 0 = in1 … Bit 7 = in8; Digitaleingang = 0xC0), deren gemessener Effektivpegel die Lautstärke ersetzt. Skala wie `gain.*`: 255 = 0 dBFS effektiv, 0,5 dB je Schritt; die Referenz (Flags 2) gilt dann als Pegel (z. B. 215 = −20 dBFS). Erfasst auch Dämpfung an der Quelle (PC, Android) und leise gemischte Musik | 0 = Lautstärke wie bisher |
+| Event 4 (Port, #51) | Zeitkonstante der Pegelmessung in 0,1 s | 30 (3 s) |
 | Ausgang (Event 96+N) | aktuelle Bass-Anhebung in 0,5-dB-Schritten | |
 
-Höchstens 12 dB Anhebung. Gains zwischen den 0,1-dB-Stufen der Tabelle `data_power_gain` rechnet die Firmware direkt aus (`10^(g/40)`); ganze 0,1-dB-Stufen kommen weiter aus der Tabelle, bitgleich zum Original. Beispiel: `set.1 modc.9=[1,108,01DF280F,70,0,0,0,5000A00F]` = Ausgänge 1/2, folgt Event 70, Bass
+Höchstens 12 dB Anhebung.
+
+Pegelmessung (Event 3, `src/level.c`): Die MCU liest 64-mal je Sekunde reihum ein Eingangssample der gewählten Eingänge
+per TAS3108-PEEK (Datenspeicher D_000–D_007, vom DSP in jedem Sample geschrieben). Die Lesezeitpunkte sind zum
+Audiotakt asynchron, also Zufallsstichproben; ihr mittleres Quadrat ist die Signalleistung. Gemittelt wird exponentiell
+mit der Zeitkonstante aus Event 4. Liegt der Pegel 0,1 s lang unter −60 dBFS (Pause), bleibt der Messwert stehen, damit
+die Anhebung beim Wiedereinsetzen nicht zu hoch ist. Gemessen am Gerät (Referenz 215, Bass 0,40): Ton mit −23/−33/−43 dBFS
+effektiv → Bass +1,0/+5,0/+9,0 dB (Soll 1,2/5,2/9,2, Ereignis in 0,5-dB-Stufen), in der Pause gehalten. Eingeschwungen
+nach etwa 15 s (Zeitkonstante plus 0,2-dB-Rampe). Gains zwischen den 0,1-dB-Stufen der Tabelle `data_power_gain` rechnet die Firmware direkt aus (`10^(g/40)`); ganze 0,1-dB-Stufen kommen weiter aus der Tabelle, bitgleich zum Original. Beispiel: `set.1 modc.9=[1,108,01DF280F,70,0,0,0,5000A00F]` = Ausgänge 1/2, folgt Event 70, Bass
 80 Hz × 0,40, Höhen 4 kHz × 0,15; 20 dB unter der Referenz ergibt Bass +8 dB und Höhen +3 dB.
 
 Auslegung: Die GUI nennt die Flags 3/4 „Gain“ (Anzeige x,xx dB). Als feste Anhebung wären 0,01–2,5 dB zu wenig, deshalb

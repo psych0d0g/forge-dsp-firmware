@@ -6,6 +6,7 @@
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "modc.h"
+#include "level.h"
 #include "api.h"
 #include "bas_data.h"
 #include "board.h"
@@ -119,7 +120,7 @@ void ctrl_modc_init(void)
 			CHG = 0xFF;
 			/* PORT: gain_quad enables the PORTF pin interrupt here; the port polls */
 			for (uint8_t k = 1; k <= 4; k++)
-				if (EVENT(k) > 0)
+				if (EVENT(k) > 0 && (modc_type[M] != MODC_TYPE_LOUDNESS || k == 1))
 					bind(EVENT(k), (uint8_t)(M - 1), 1);
 		} else {
 			CHG = 0x00;
@@ -153,7 +154,7 @@ static void modc_rebind_events(void)
 		events_bind_modc[e] &= ~(1UL << mbit);
 	if (modc_enable[M] > 0 && modc_type[M] > 0)
 		for (uint8_t k = 1; k <= 4; k++)
-			if (EVENT(k) > 0)
+			if (EVENT(k) > 0 && (modc_type[M] != MODC_TYPE_LOUDNESS || k == 1))  /* PORT: loudness 2..4 are parameters */
 				bind(EVENT(k), mbit, 1);
 }
 
@@ -722,6 +723,9 @@ uint8_t modc_type_version(uint8_t t)
  *   PORT: flags 2      reference (no boost at or above), 0 = 223
  *   PORT: event 2      step per MODC pass (32 Hz) in 0.01 dB, 0 = 20 (0.2 dB); smaller steps
  *                      make smaller transients while the shelves track (#51), but track slower
+ *   PORT: event 3      input mask (bit n = core-1 input n+1): the measured RMS level of these
+ *                      inputs is the volume (255 = 0 dBFS RMS, 0.5 dB/step), see level.h;
+ *                      0 = event 1 / gain.spdif as before. Event 4: time constant in 0.1 s
  * The boost is capped at 12 dB (data_power_gain), writes only the DSP (no EEPROM, no mute).
  * Output (event 96+N): bass boost in 0.5 dB steps. */
 static int16_t ld_cur[2][MODC_N + 1];   /* hundredths of dB: [0] bass, [1] treble; -1 = rewrite */
@@ -799,6 +803,11 @@ static void modc_loudness(void)
 	uint8_t mask = FLAG(1) & 0x1F;
 	uint8_t vol = EVENT(1) ? EV(EVENT(1)) : api_get_spdif_vol(1);
 	uint8_t ref = FLAG(2) ? FLAG(2) : 223;
+	/* PORT (#51): event 3 = mask of core-1 inputs whose measured RMS level replaces the volume
+	 * (dynamic loudness), event 4 = time constant in 0.1 s (0 = 3 s) */
+	level_config(modc_enable[M] > 0 ? EVENT(3) : 0, EVENT(4));
+	if (EVENT(3) && modc_enable[M] > 0)
+		vol = level_valid() ? level_value() : ref;
 	uint8_t slope[2] = {FLAG(3) ? FLAG(3) : 40, FLAG(4) ? FLAG(4) : 15};
 	uint16_t fb = (uint16_t)(SET(1) | SET(2) << 8), ft = (uint16_t)(SET(3) | SET(4) << 8);
 	double freq[2] = {fb >= 10 && fb <= 20000 ? fb : 100.0, ft >= 10 && ft <= 40000 ? ft : 10000.0};

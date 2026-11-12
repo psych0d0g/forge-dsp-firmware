@@ -5,6 +5,7 @@
  * Safe state: peripherals stay in reset, remote out (amplifiers) stays off.
  * License: CC BY-NC-SA 4.0
  */
+#include "level.h"
 #include "supply.h"
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -100,6 +101,7 @@ int main(void)
 	events_poll_pins();
 	events_adc_init();
 	supply_init();        /* PORT (#46): supply voltage monitoring */
+	level_init();         /* PORT (#51): input level for the loudness block */
 	if (PIN_READ(PIN_OPTION_SPDIF_4CH) == 0x00)
 		events_spdif_init();
 	ctrl_modc_init();     /* blocks from the EEPROM; requests the preset load */

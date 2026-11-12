@@ -1856,6 +1856,48 @@ class LoudnessTest(LinesMixin, unittest.TestCase):
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class LevelTest(LinesMixin, unittest.TestCase):
+    """#51: measured input level (PEEK) as volume source of the loudness block."""
+
+    PRE = LoudnessTest.PRE
+
+    def level(self, out):
+        v = [l for l in out if l.startswith("@level:")][-1][7:].split(",")
+        return int(v[0]), int(v[1])
+
+    def test_scale_and_gate(self):
+        f = "V40-96ELN"
+        out = self.lines(f, ["#level_feed=-20,3000", "#level?", "#level_feed=-80,3000", "#level?",
+                             "#level_feed=-30,3000", "#level?"])
+        lv = [l for l in out if l.startswith("@level:")]
+        self.assertEqual(lv[0], "@level:1,215")                    # -20 dBFS RMS = 255 - 40
+        v = int(lv[1].split(",")[1])
+        self.assertLessEqual(abs(v - 215), 2, lv[1])               # pause (-80 dBFS): held
+        v = int(lv[2].split(",")[1])
+        self.assertLessEqual(abs(v - 195), 2, lv[2])               # -30 dBFS: 195
+
+    def test_loudness_follows_level(self):
+        f = "V40-96ELN"
+        reads = LoudnessTest.blocks(self, f, 35, None)
+        cfg = "1|set.1 modc.9=[1,108,10D7280F,0,0,192,0,00000000]"   # path 35/36, ref 215, in7+in8
+        out = self.lines(f, self.PRE + [cfg, "#modc"] + reads                  # no level yet: no boost
+                         + ["#level_feed=-30,3000"] + ["#modc"] * 25 + reads)  # -10 dB below ref, ramp done
+        b = [l[7:] for l in out if l.startswith("@block:")]
+        flat = LoudnessTest.ref(self, f, 0, 0, 0)
+        self.assertEqual(b[0:2], [flat, flat])
+        self.assertEqual(b[2], LoudnessTest.ref(self, f, 14, 100, 40))       # 0.40 x 10 dB
+        self.assertEqual(b[3], LoudnessTest.ref(self, f, 15, 10000, 15))
+
+    def test_peek_on_the_bus(self):
+        f = "V40-96ELN"
+        cfg = "1|set.1 modc.9=[1,108,10D7280F,0,0,64,0,00000000]"    # in7 only
+        out = self.lines(f, self.PRE + [cfg, "#modc", "#i2clog=1", "#level_loop", "#i2clog=0"])
+        bus1 = " ".join(l for l in out if l.startswith("@i2c1:"))
+        self.assertIn("S 68 06 00 02 00 06 P", bus1)               # PEEK data memory D_006 (in7)
+        self.assertIn("S 68 07 Sr 69", bus1)                       # then read 8 bytes of 0x07
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class BootEntryTest(unittest.TestCase):
     """system.boot writes the bootloader sequence 0xAA/0x55 to EEPROM 0/1 (entry without the key)."""
 

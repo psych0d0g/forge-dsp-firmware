@@ -62,7 +62,8 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
 - **IR-Fernbedienung, Taste 2** schaltet den Eingang weiter (#27).
 - **Loudness** (gehörrichtige Lautstärke) als neuer MODC-Block: hebt Bass und Höhen an, je leiser gehört wird,
   folgt der Lautstärke in 0,2-dB-Schritten (feiner einstellbar bis 0,01 dB, #51), einstellbar im vorhandenen
-  Loudness-Dialog der Original-GUI
+  Loudness-Dialog der Original-GUI. Optional **dynamisch**: Die Forge misst den Pegel des Eingangssignals selbst und
+  reagiert so auch auf Dämpfung an der Quelle (PC, Android) und leise gemischte Musik (#51)
   (M6, #6; [Konfiguration](docs/port-changes.md#loudness-m6-6)).
 - **I2C-Puffer schreiben** zur Diagnose (`set.1 i2c.B.A.buffer=[r,b1,…]`), damit lässt sich z. B. der Speicher der DSPs per
   PEEK auslesen (#51).

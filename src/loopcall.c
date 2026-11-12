@@ -2,6 +2,7 @@
  * Port of libs/loopcall/functions.bas.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
+#include "level.h"
 #include "supply.h"
 #include "bqramp.h"
 #include "loopcall.h"
@@ -28,6 +29,8 @@ void loopcall(uint16_t bits)
 		cmd_check4buffer();
 		irreceiver_mainloop();
 	}
+	if (B(timer_tce0_div_64))
+		level_mainloop();    /* PORT (#51): input level for the loudness block */
 	if (B(timer_tce0_div_32)) {
 		events_adc_mainloop_32();
 		supply_sample();     /* PORT (#46) */
