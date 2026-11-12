@@ -48,6 +48,10 @@ jobs:
           python3 -m unittest -v tests.test_cmd
       - name: DSP boot images (#43)
         run: python3 -m unittest -v tests.test_dsp_image
+      - name: Measurement analysis (#49)
+        run: |
+          python3 -m pip install --quiet numpy scipy
+          python3 -m unittest -v tests.test_measure
       - name: c45b3 tests (model + native chip45boot3 target)
         working-directory: tools/c45b3-host
         run: |
