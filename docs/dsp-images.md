@@ -1,7 +1,7 @@
 # TAS3108-Programme (EEPROM-Boot-Images)
 
 Stand der Analyse zu #43. Werkzeuge: `tools/dsp_image.py` (list, extract, check, regs) und
-`tools/tas3108_dis.py` (Disassembler), Test: `tests/test_dsp_image.py`.
+`tools/tas3108_dis.py` (Disassembler), `tools/tas3108_flow.py` (Signalfluss), Test: `tests/test_dsp_image.py`.
 
 ## Format
 
@@ -125,10 +125,51 @@ Erste Befunde (V40-96ELN):
 - Biquad: fünf Multiplikationen mit Akkumulation in der Reihenfolge b2, b1, b0, a1, a2 (Direktform I, Zustände im
   Datenspeicher), z. B. ab 0x1D0 für `s1F`.
 
+## Signalfluss
+
+`tools/tas3108_flow.py IMAGE.bin [--dot]` führt ein Programm für ein Sample symbolisch aus. Jedes Register und
+Datenwort trägt die Menge seiner Quellen: Eingänge (`in1`–`in8` = SDIN1L–SDIN4R), Delay-Leitungen (`dlyN`),
+Datenwörter, die vorher im selben Sample geschrieben wurden, und die Subadressen der Koeffizienten, mit denen
+multipliziert wurde. Ausgabe je Datenwort: `D_01D <- D_00C [1F-28]` heißt, D_01D entsteht aus D_00C über die
+Subadressen 0x1F–0x28. Werte aus dem vorigen Sample (Biquad-Zustände, `~D_xxx`) blendet das Werkzeug aus, damit die
+Rückkopplung den Aufbau nicht verdeckt. Der Test prüft für alle Fassungen, dass die Analyse jedes Biquad-, Pegel-
+und Phasenregister der MCU-Firmware erreicht.
+
+V40-96ELN (V40/V41-CORED8 und V30-96ELN identisch), **Kern 1**:
+
+1. Die acht Eingänge laufen je durch eine Delay-Leitung (16–23, Reihenfolge in5, in6, in3, in4, in1, in2, in8, in7).
+2. Danach Eingangspegel `sD5`–`sDA` für in5, in6, in3, in4, in1, in2; in7 und in8 haben keinen Pegel.
+3. Mixer (`sDB`–`sEE`): aus den acht Signalen entstehen acht Mischungen (D_155–D_15C) und zwei weitere Summen.
+4. Die beiden Summen laufen durch je eine Kette aus 72 Biquads: `s1F`–`s66` und `s6F`–`sB6`.
+5. Ausgang n = Mischung n und die beiden Ketten, gewichtet mit der Mixer-Zeile `sEF`+n−1 (4 Worte, Vorgabe
+   `[1,0, 0, 0, 0,25]`). Die Ausgänge gehen erst im nächsten Sample hinaus (ein Sample Latenz je Kern).
+6. Daneben ein Pegeldetektor: Summe der linken und der rechten Eingänge, Betrag, Glättung mit `sF8` (0,01/0,99),
+   Ergebnis in D_021/D_022, vermutlich für die VU-Anzeige. Er nutzt den Koeffizienten 0x010 (`s08`); das ist das
+   Register, das die MCU als „Version“ liest (`BAS_DSP_SUB_VERSION`, Kern 1: 0x0006E1BA, Kern 2/3: 0).
+
+**Kern 2 und 3** (Programm 2), vier Kanäle, DO5–DO8 bleiben still:
+
+| Eingang | Biquads | Anzahl | Delay | Ausgangspegel | Ausgang |
+|---|---|---|---|---|---|
+| in1 | `s1F`–`s44` | 38 | 16 | `sFA` | DO1 |
+| in2 | `s45`–`s6A` | 38 | 17 | `sFB` | DO2 |
+| in3 | `s6B`–`sA6` | 60 | 18 | `sFC` | DO3 |
+| in4 | `sA7`–`sC7`, `sD5`–`sEF` | 60 | 19 | `sFD` | DO4 |
+
+Nach `data_flow_dsp_output_vol_*` sind die Ausgangskanäle 1/2 (Kern 3) und 5/6 (Kern 2) die Ketten mit 60 Biquads
+(`sFC`/`sFD`), die Kanäle 3/4 und 7/8 die mit 38.
+
+96ELN-3 (V40/V41): Programm 2 hat zwischen Delay und Ausgangspegel je Kanal eine weitere Verstärkung
+`sF0`–`sF3`. Das ist die Phasenumkehr (`data_flow_dsp_output_inv_reg`, nur in diesen Fassungen); daher die
+20 Befehle und der Koeffizienten-Block mehr. V30-96LN ist anders aufgeteilt (Kern 1 mit eigenen Ketten nach dem
+Mixer, Kern 2 mit fünf Ketten und drei Kanälen nur mit Pegel); `tas3108_flow.py` zeigt die Einzelheiten.
+
 ## Offen
 
 - Bedeutung der vom 8051-Code behandelten Arten (3–0x10, 0x62); dazu den 8051-Code disassemblieren.
-- Signalfluss je Kern aus dem Disassembly: Reihenfolge der Biquads je Kanal, Mixer, Pegel-Kodierung (0x17), ALU2 0x4F.
-- Unterschiede zwischen den Fassungen (96ELN ↔ 96ELN-3 Programm 2: 20 Befehle mehr, ein Koeffizienten-Block mehr).
+- Belegung der Mixer-Zeilen im Einzelnen (welches Wort welcher Eingang ist), Kodierung des Pegelwerts (0x17),
+  ALU2 0x4F.
+- Die Analyse ist statisch (bedingte Sprünge werden nicht genommen); am Gerät gegenprüfen, z. B. Biquad setzen
+  und den Ausgang messen.
 - Der 8051-Teil (Firmware des Mikrocontrollers im TAS3108) ist 8051-Code und lässt sich mit üblichen Werkzeugen
   disassemblieren.

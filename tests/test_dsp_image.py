@@ -9,6 +9,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "tools"))
 import dsp_image  # noqa: E402
 import tas3108_dis  # noqa: E402
+import tas3108_flow  # noqa: E402
 
 
 class DspImageTest(unittest.TestCase):
@@ -74,6 +75,33 @@ class DspImageTest(unittest.TestCase):
                 for n in range(8):
                     self.assertIn(f"ST(DI,DATA,D_{n:03X})", block, (h, p))
                     self.assertIn(f"CLP32,DO{n + 1})", block, (h, p))
+
+    def test_flow(self):
+        """The signal flow analysis reaches every biquad, volume and inversion register the MCU
+        firmware writes. V40-96ELN program 2: four chains in1..in4 -> delay -> output volume."""
+        headers = sorted(glob.glob(os.path.join(HERE, "..", "src", "flavours", "*", "flavour_data.h")))
+        for h in headers:
+            t = open(h).read()
+
+            def table(name):
+                m = re.search(r"BAS_DATA_TABLE\(%s, \d+\) = \{(.*?)\};" % name, t, re.S)
+                return [int(x, 16) for x in re.findall(r"0x([0-9A-Fa-f]{2})", m.group(1))][1:] if m else []
+
+            want = {1: set(), 2: set()}
+            for core, reg in zip(table("data_flow_dsp_bq_core"), table("data_flow_dsp_bq_reg")):
+                want[1 if core == 1 else 2].add(f"s{reg:02X}")
+            want[1] |= {f"s{r:02X}" for r in table("data_flow_dsp_input_vol_reg")}
+            for kind in ("output_vol", "output_inv"):
+                for core, reg in zip(table(f"data_flow_dsp_{kind}_dsp"), table(f"data_flow_dsp_{kind}_reg")):
+                    want[1 if core == 1 else 2].add(f"s{reg:02X}")
+            for p in (1, 2):
+                f = tas3108_flow.Flow(dsp_image.parse(dsp_image.extract(h, p))[0])
+                self.assertEqual(want[p] - f.subaddresses(), set(), (h, p))
+        h = os.path.join(HERE, "..", "src", "flavours", "V40-96ELN", "flavour_data.h")
+        rows = tas3108_flow.Flow(dsp_image.parse(dsp_image.extract(h, 2))[0]).lines()
+        self.assertIn(("D_01C", "in1", "1F-28"), rows)
+        self.assertIn(("D_1BE", "dly16", "FA"), rows)
+        self.assertIn(("DO1", "~D_1BE", ""), rows)
 
 
 if __name__ == "__main__":
