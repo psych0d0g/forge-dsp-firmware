@@ -110,6 +110,9 @@ belegt:
   SHL(1–4) = 10–13.
 - ALU2 0x4F (100 1111) steht nicht im Handbuch. Er kommt nur im Pegel-Block vor, immer zusammen mit `SHR(4)` direkt
   nach `ADD(ACC,MR,NONE,B)`, 6× in Programm 1, 4× in Programm 2. Die Ausgabe zeigt ihn als `ALU2?0x4f`.
+  Vermutung: Die ADD-Codes tragen das Ziel in den unteren 3 Bit (001 MD, 010 B, 011 L, 100 MC, 101 ACC,
+  111 DLYI); `CLRACC` = 100 1101 ist dann „Null → ACC“ und 0x4F = 100 1111 „Null → DLYI“. An diesen Stellen
+  folgt kein Zugriff auf die Delay-Leitung, der Datenpfad bleibt also unberührt.
 
 Erste Befunde (V40-96ELN):
 
@@ -118,10 +121,13 @@ Erste Befunde (V40-96ELN):
 - 0x00C–0x015: Ein-/Ausgabe wie Tabelle 5 des Handbuchs: `ST(DI,DATA,0..7)` liest die acht Eingangskanäle,
   `ADD(ACC,LR,CLP32,DO1..8)` gibt die im vorigen Durchlauf berechneten Ausgänge aus (Daten 0x163–0x16A in Programm 1).
 - Delay: `DLYPTR(n)` mit `ADD(ACC,LR,NONE,DLYI)`, 14 Befehle später `ST(DLYO,DATA,…)`, wie im Handbuch gefordert.
-- Pegel (0x027–0x044): Der Eingangspegel (Kern 1, `C_35E<sD5>`, Vorgabe 0x17) wird um 6 Bit nach links
-  geschoben und läuft durch vier Glättungsstufen (Koeffizienten 0x002/0x004, Zustände D_16F–D_172). Das Ergebnis
-  schreibt der DSP selbst als Verstärkung nach `C_008` (`ST(B,COEF,…)`) und multipliziert damit das verzögerte
-  Eingangssignal (D_15D → D_14D). Wie der Wert 0x17 kodiert ist, ist noch offen.
+- Pegel (0x027–0x044): Der Pegel ist eine lineare Verstärkung im Format 5.23. Die MCU nimmt sie aus
+  `data_dsp_vol` (256 Werte in 0,5-dB-Schritten: Index 223 = 1,0 = 0 dB, 255 = +16 dB, 2 ≈ −110 dB, 0/1 = aus).
+  Die Vorgabe im Image 0x17 entspricht etwa −111 dB, also stumm, bis die MCU den gespeicherten Pegel schreibt.
+  Der DSP glättet den Wert gegen Knacken: um 6 Bit nach links (mehr Auflösung), vier Tiefpässe erster Ordnung mit
+  α = 1/128 (`C_002` ≈ 0,0078, `C_004` ≈ 0,992 = 1 − α, Zustände D_16F–D_172), wieder 6 Bit nach rechts. Das Ergebnis
+  schreibt er selbst als Verstärkung nach `C_008` (`ST(B,COEF,…)`) und multipliziert damit das verzögerte
+  Eingangssignal (D_15D → D_14D). Ausgangspegel `sFA`–`sFD` in Kern 2/3 werden ebenso behandelt.
 - Biquad: fünf Multiplikationen mit Akkumulation in der Reihenfolge b2, b1, b0, a1, a2 (Direktform I, Zustände im
   Datenspeicher), z. B. ab 0x1D0 für `s1F`.
 
@@ -188,7 +194,7 @@ Mixer, Kern 2 mit fünf Ketten und drei Kanälen nur mit Pegel); `tas3108_flow.p
 ## Offen
 
 - Bedeutung der vom 8051-Code behandelten Arten (3–0x10, 0x62); dazu den 8051-Code disassemblieren.
-- Kodierung des Pegelwerts (0x17), ALU2 0x4F.
+- ALU2 0x4F belegen (Vermutung „Null → DLYI“, siehe Disassembler).
 - Die Analyse ist statisch (bedingte Sprünge werden nicht genommen); am Gerät gegenprüfen, z. B. Biquad setzen
   und den Ausgang messen.
 - Der 8051-Teil (Firmware des Mikrocontrollers im TAS3108) ist 8051-Code und lässt sich mit üblichen Werkzeugen
