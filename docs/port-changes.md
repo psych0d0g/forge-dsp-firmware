@@ -117,11 +117,13 @@ Höchstens 12 dB Anhebung.
 
 Pegelmessung (Event 3, `src/level.c`): Die MCU liest 64-mal je Sekunde reihum ein Eingangssample der gewählten Eingänge
 per TAS3108-PEEK (Datenspeicher D_000–D_007, vom DSP in jedem Sample geschrieben). Die Lesezeitpunkte sind zum
-Audiotakt asynchron, also Zufallsstichproben; ihr mittleres Quadrat ist die Signalleistung. Gemittelt wird exponentiell
-mit der Zeitkonstante aus Event 4. Liegt der Pegel 0,1 s lang unter −60 dBFS (Pause), bleibt der Messwert stehen, damit
-die Anhebung beim Wiedereinsetzen nicht zu hoch ist. Gemessen am Gerät (Referenz 215, Bass 0,40): Ton mit −23/−33/−43 dBFS
-effektiv → Bass +1,0/+5,0/+9,0 dB (Soll 1,2/5,2/9,2, Ereignis in 0,5-dB-Stufen), in der Pause gehalten. Eingeschwungen
-nach etwa 15 s (Zeitkonstante plus 0,2-dB-Rampe). Gains zwischen den 0,1-dB-Stufen der Tabelle `data_power_gain` rechnet die Firmware direkt aus (`10^(g/40)`); ganze 0,1-dB-Stufen kommen weiter aus der Tabelle, bitgleich zum Original. Beispiel: `set.1 modc.9=[1,108,01DF280F,70,0,0,0,5000A00F]` = Ausgänge 1/2, folgt Event 70, Bass
+Audiotakt asynchron, also Zufallsstichproben; ihr mittleres Quadrat ist die Signalleistung. Je 64 Stichproben (1 s)
+ergeben einen Blockpegel in dB; Blöcke unter −60 dBFS (Pause) zählen nicht, damit die Anhebung beim Wiedereinsetzen
+nicht zu hoch ist. Aus den letzten 5 Blöcken gilt der Median, so bleiben kurze laute Impulse (bis etwa 2 s) ohne
+Wirkung. Der Median wird in dB mit der Zeitkonstante aus Event 4 geglättet, der ausgegebene Wert hat 1 dB Hysterese.
+Gemessen am Gerät (Referenz 215, Bass 0,40): Ton mit −23/−33/−43 dBFS effektiv → Bass +1,0/+5,0/+9,0 dB (Soll
+1,2/5,2/9,2, Ereignis in 0,5-dB-Stufen), in der Pause gehalten; ein Impuls von 0,5 s mit +20 dB ändert nichts.
+Eingeschwungen nach etwa 5–15 s. Gains zwischen den 0,1-dB-Stufen der Tabelle `data_power_gain` rechnet die Firmware direkt aus (`10^(g/40)`); ganze 0,1-dB-Stufen kommen weiter aus der Tabelle, bitgleich zum Original. Beispiel: `set.1 modc.9=[1,108,01DF280F,70,0,0,0,5000A00F]` = Ausgänge 1/2, folgt Event 70, Bass
 80 Hz × 0,40, Höhen 4 kHz × 0,15; 20 dB unter der Referenz ergibt Bass +8 dB und Höhen +3 dB.
 
 Auslegung: Die GUI nennt die Flags 3/4 „Gain“ (Anzeige x,xx dB). Als feste Anhebung wären 0,01–2,5 dB zu wenig, deshalb

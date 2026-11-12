@@ -1876,6 +1876,26 @@ class LevelTest(LinesMixin, unittest.TestCase):
         v = int(lv[2].split(",")[1])
         self.assertLessEqual(abs(v - 195), 2, lv[2])               # -30 dBFS: 195
 
+    def test_short_impulse_ignored(self):
+        """A short loud impulse (20 dB above the programme) does not move the level."""
+        f = "V40-96ELN"
+        out = self.lines(f, ["#level_feed=-30,1920", "#level?",          # 30 s at -30 dBFS
+                             "#level_feed=-10,64", "#level?",            # 1 s block 20 dB louder
+                             "#level_feed=-30,640", "#level?"])          # 10 s at -30 dBFS again
+        lv = [int(l.split(",")[1]) for l in out if l.startswith("@level:")]
+        self.assertEqual(lv[0], 195)
+        self.assertEqual(lv[1], 195)                                     # median of 5 blocks
+        self.assertEqual(lv[2], 195)
+
+    def test_hysteresis(self):
+        """Changes up to 1 dB do not move the reported level, larger ones do."""
+        f = "V40-96ELN"
+        out = self.lines(f, ["#level_feed=-30,1920", "#level?", "#level_feed=-30.8,3200", "#level?",
+                             "#level_feed=-33,3200", "#level?"])
+        lv = [int(l.split(",")[1]) for l in out if l.startswith("@level:")]
+        self.assertEqual(lv[0:2], [195, 195])                            # -0.8 dB: held
+        self.assertLessEqual(abs(lv[2] - 189), 2)                        # -3 dB: follows
+
     def test_loudness_follows_level(self):
         f = "V40-96ELN"
         reads = LoudnessTest.blocks(self, f, 35, None)

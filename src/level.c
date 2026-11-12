@@ -11,15 +11,21 @@
 
 static uint8_t mask, next_in;
 static double tau = 3.0;
-static double slow, fast;
-static uint8_t valid, last_value;
+static double block_sum;            /* power sum of the running block */
+static uint8_t block_n;
+static double hist[LEVEL_MEDIAN];   /* dB of the last blocks above the gate */
+static uint8_t hist_n, hist_i;
+static double smooth_db;            /* smoothed level, dB */
+static uint8_t valid, value;        /* value: reported level with hysteresis */
 
 void level_init(void)
 {
 	mask = next_in = 0;
-	slow = fast = 0.0;
+	block_sum = 0.0;
+	block_n = hist_n = hist_i = 0;
+	smooth_db = -120.0;
 	valid = 0;
-	last_value = 0;
+	value = 0;
 }
 
 void level_config(uint8_t m, uint8_t tau_tenths)
@@ -33,11 +39,9 @@ void level_config(uint8_t m, uint8_t tau_tenths)
 
 uint8_t level_valid(void) { return valid; }
 
-static uint8_t to_scale(double p)
+static uint8_t to_scale(double db)
 {
-	if (p <= 1e-12)
-		return 0;
-	double v = 255.0 + 2.0 * 10.0 * log10(p);  /* 0.5 dB per step */
+	double v = 255.0 + 2.0 * db;  /* 0.5 dB per step */
 	if (v < 0.0)
 		return 0;
 	if (v > 255.0)
@@ -45,27 +49,58 @@ static uint8_t to_scale(double p)
 	return (uint8_t)(v + 0.5);
 }
 
-uint8_t level_value(void) { return to_scale(slow); }
+uint8_t level_value(void) { return value; }
+
+static double median(void)
+{
+	double s[LEVEL_MEDIAN];
+	uint8_t n = hist_n;
+	for (uint8_t i = 0; i < n; i++)
+		s[i] = hist[i];
+	for (uint8_t i = 1; i < n; i++)  /* insertion sort, n <= LEVEL_MEDIAN */
+		for (uint8_t j = i; j > 0 && s[j - 1] > s[j]; j--) {
+			double t = s[j];
+			s[j] = s[j - 1];
+			s[j - 1] = t;
+		}
+	return s[n / 2];
+}
+
+static void block_done(double db)
+{
+	hist[hist_i] = db;
+	hist_i = (uint8_t)((hist_i + 1) % LEVEL_MEDIAN);
+	if (hist_n < LEVEL_MEDIAN)
+		hist_n++;
+	double m = median();
+	if (!valid) {
+		smooth_db = m;
+		valid = 1;
+	} else {
+		double a = LEVEL_BLOCK_S / tau;
+		if (a > 1.0)
+			a = 1.0;
+		smooth_db += (m - smooth_db) * a;
+	}
+	uint8_t v = to_scale(smooth_db);
+	/* hysteresis: follow only changes of more than LEVEL_HYST_STEPS (or the first value) */
+	if (value == 0 || v > value + LEVEL_HYST_STEPS || v + LEVEL_HYST_STEPS < value) {
+		value = v;
+		modc_loudness_touch();
+	}
+}
 
 void level_feed(double sample)
 {
-	double p = sample * sample;
-	/* one sample per call over all selected inputs: the average is their mean power */
-	const double dt = 1.0 / LEVEL_RATE_HZ;
-	fast += (p - fast) * (dt / LEVEL_FAST_S);
-	if (fast < LEVEL_GATE_POWER)
+	block_sum += sample * sample;
+	if (++block_n < LEVEL_BLOCK_N)
+		return;
+	double p = block_sum / block_n;
+	block_sum = 0.0;
+	block_n = 0;
+	if (p < LEVEL_GATE_POWER)
 		return;  /* pause: hold */
-	if (!valid) {
-		slow = fast;  /* first level: start from the fast average */
-		valid = 1;
-	} else {
-		slow += (p - slow) * (dt / tau);
-	}
-	uint8_t v = to_scale(slow);
-	if (v != last_value) {
-		last_value = v;
-		modc_loudness_touch();
-	}
+	block_done(10.0 * log10(p));
 }
 
 void level_mainloop(void)

@@ -8,14 +8,20 @@
  *    D_000..D_007 = in1..in8, written by ST(DI,DATA,n) every sample), round robin over the
  *    selected inputs. The reads are asynchronous to the audio clock, so they are random
  *    samples of the signal; their mean square is the signal power.
- *  - Exponential average of the power with time constant tau; a fast average (0.1 s) gates:
- *    below LEVEL_GATE_DB the slow average holds, so pauses do not raise the loudness boost.
- *  - level_value(): the level in the scale of gain.* (255 = 0 dBFS RMS, 0.5 dB per step).
+ *  - Blocks of LEVEL_BLOCK_N samples (1 s): mean power in dB. Blocks below LEVEL_GATE_DB are
+ *    dropped (pauses do not raise the loudness boost).
+ *  - Median of the last LEVEL_MEDIAN blocks: a short loud impulse (up to ~2 s) is ignored.
+ *  - Exponential smoothing in dB with time constant tau.
+ *  - level_value(): the level in the scale of gain.* (255 = 0 dBFS RMS, 0.5 dB per step) with a
+ *    hysteresis of LEVEL_HYST_STEPS steps.
  */
 #define LEVEL_RATE_HZ 64
+#define LEVEL_BLOCK_N 64          /* samples per block */
+#define LEVEL_BLOCK_S (LEVEL_BLOCK_N / (double)LEVEL_RATE_HZ)
+#define LEVEL_MEDIAN 5            /* blocks */
+#define LEVEL_HYST_STEPS 2        /* 1 dB */
 #define LEVEL_GATE_DB (-60)
-#define LEVEL_GATE_POWER 1e-6   /* 10^(LEVEL_GATE_DB/10) */
-#define LEVEL_FAST_S 0.1   /* gate detector: a sudden stop costs the slow average < 1 dB */
+#define LEVEL_GATE_POWER 1e-6     /* 10^(LEVEL_GATE_DB/10) */
 
 void level_init(void);
 void level_mainloop(void);                 /* one PEEK per call, LEVEL_RATE_HZ */
