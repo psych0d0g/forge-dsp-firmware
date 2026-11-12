@@ -171,6 +171,25 @@ def parse_key_info(text):
     return parts[1], parts[2]
 
 
+def check_clock(port, args):
+    """--expect-clock si5338|none (#10): V30 and V40 boards report the same identity (96ELN-4.0);
+    only V40 boards carry the Si5338 clock generator, at 0xE0 or 0xE2 on I2C bus 1 (the firmware
+    probes both). get.1 i2c.1.scan is
+    answered by the original firmware and the port alike."""
+    import re
+    ans = app_query(port, args, "get.1 i2c.1.scan", wait=1.0)
+    m = re.search(r"i2c\.1\.scan=\[([^\]]*)\]", ans)
+    if not m:
+        raise SystemExit(f"board check: no answer to get.1 i2c.1.scan ({ans.strip()!r}). Not flashing.")
+    found = m.group(1).upper()
+    has = "&HE0" in found or "&HE2" in found
+    want = args.expect_clock == "si5338"
+    if has != want:
+        raise SystemExit("board check: Si5338 " + ("found" if has else "missing") + " on I2C bus 1, this build is for "
+                         + ("a V40 board (with Si5338)" if want else "a V30 board (without Si5338)") + ". Not flashing.")
+    log("board check: Si5338 " + ("present (V40 board)" if has else "absent (V30 board)") + " ok")
+
+
 def check_device(port, args):
     """--expect-device MODEL-PCB[,MODEL-PCB...]: one build may serve several identities (#31)."""
     allowed = [tuple(x.strip().split("-", 1)) for x in args.expect_device.split(",") if x.strip()]
@@ -363,6 +382,9 @@ def main(argv=None):
     ap.add_argument("--expect-device", metavar="MODEL-PCB[,...]",
                     help="before anything else ask the running firmware (get.1 system.key.info) and "
                          "abort unless it reports this model and PCB, e.g. 96ELN3-4.1")
+    ap.add_argument("--expect-clock", choices=("si5338", "none"),
+                    help="before flashing check the board generation by the Si5338 clock generator on "
+                         "I2C bus 1 (V40: si5338, V30: none); V30 and V40 96ELN report the same identity")
     ap.add_argument("--app-baud", type=int, default=38400, help="baud rate of the application")
     ap.add_argument("--resume", action="store_true",
                     help="bootloader still active from an earlier --stay: skip autobaud")
@@ -424,6 +446,8 @@ def main(argv=None):
     try:
         if args.expect_device and not args.resume:
             check_device(port, args)
+        if getattr(args, "expect_clock", None) and not args.resume:
+            check_clock(port, args)
         if args.enter and not args.resume:
             enter_bootloader(port, args)
         if args.resume:

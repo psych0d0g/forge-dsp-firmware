@@ -53,6 +53,6 @@ Eine falsche Erkennung bedeutet falsches EEPROM-Layout (Abstimmung zerstört) od
 
 Umgebungen `V30-96LN`, `V30-96ELN`, `V4x-96ELN` (96ELN, CORED8), `V4x-96ELN-3`. Die Kennung wählt `src/identity.c` aus
 der Liste des Builds; gespeichert ab EEPROM 0xF00 (Magic 0xA5, Index). Ohne Eintrag gilt die generierte Variante.
-Der Upload liest die Kennung der laufenden Firmware (`--expect-device` mit Liste) und setzt sie nach dem Flashen
+Der Upload prüft die Platinengeneration am Taktgeber Si5338 (`--expect-clock`, #10), liest die Kennung der laufenden Firmware (`--expect-device` mit Liste) und setzt sie nach dem Flashen
 (`--keep-identity`). *Forge: flash release 1.11.6000* fragt die Kennung ab und wählt die passende Original-HEX.
 

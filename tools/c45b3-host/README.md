@@ -19,6 +19,9 @@ python3 -m c45b3 --sim --sim-image main.hex info                # Trockenlauf ge
   Port antworten ` *.1 system.boot ok` und springen per Software-Reset (Original nach ~1 s) in den Bootloader.
 - `backup DIR`: Versionen, Flash und EEPROM in einer Sitzung, dazu `backup.json` mit sha256.
 - `--expect-device MODEL-PCB` fragt vorher `get.1 system.key.info` ab und bricht bei anderem Gerät ab.
+- `--expect-clock si5338|none` prüft vorher die Platinengeneration: V30 und V40 melden beide `96ELN-4.0`, nur V40
+  trägt den Taktgeber Si5338 auf I2C-Bus 1 (0xE0/0xE2, `get.1 i2c.1.scan`, auch im Original). PlatformIO übergibt
+  den Wert aus `custom_expect_clock` (#10).
 - Integration in PlatformIO: `scripts/c45b3_pio.py` im Hauptverzeichnis. Test ohne Hardware: `tests/pty_bridge.py`.
 - Dumps: `OUT.bin` + `OUT.hex`, vorhandene Dateien werden nicht überschrieben, sha256 wird ausgegeben.
 - Schreiben (`write-flash`, `write-eeprom`) nur mit `--allow-write`.

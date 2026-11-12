@@ -35,6 +35,7 @@ env["ENV"]["PYTHONPATH"] = c45b3_dir + os.pathsep + env["ENV"].get("PYTHONPATH",
 wait = opt("wait_seconds", "30")
 enter = opt("enter_cmd", "")
 expect = env.GetProjectOption("custom_expect_device", "")
+clock = env.GetProjectOption("custom_expect_clock", "")
 flavour = env.subst("$PIOENV")  # env name = flavour id
 app_baud = opt("app_baud", "38400")  # USB-COM rate of the running firmware (reg_baud_ch1)
 base = '"$PYTHONEXE" -m c45b3 --port "$UPLOAD_PORT" --wait %s --app-baud %s' % (wait, app_baud)
@@ -42,6 +43,9 @@ if expect:
     # refuses to continue if the running firmware reports another model/PCB; the identity found
     # is set in the new port firmware afterwards (builds serving several identities, #31)
     base += ' --expect-device "%s"' % expect
+if clock:
+    # V30 and V40 report the same identity; the Si5338 on I2C bus 1 tells the board apart (#10)
+    base += ' --expect-clock %s' % clock
 if enter:
     base += ' --enter "%s"' % enter
 

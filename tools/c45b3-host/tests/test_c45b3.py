@@ -63,8 +63,9 @@ class ProtocolTest(unittest.TestCase):
 class FakeApp:
     """Running firmware at the text protocol: answers key.info, ping and the identity set."""
 
-    def __init__(self, ident="CORED8-4.1", settable=True):
+    def __init__(self, ident="CORED8-4.1", settable=True, scan="&H20,&H22,&H68,&HA0,&HE0"):
         self.ident, self.settable, self.sent, self.out = ident, settable, [], b""
+        self.scan = scan
         self.baudrate = 38400
 
     def reset_input_buffer(self):
@@ -76,6 +77,8 @@ class FakeApp:
         if line == "get.1 system.key.info":
             m, p = self.ident.split("-")
             self.out += f' <.1 system.key.info="BNS-{m}-{p}-0102-CCBYNCSA-20261111-MDD"\r\n'.encode()
+        elif line == "get.1 i2c.1.scan" and self.scan is not None:
+            self.out += f" <.1 i2c.1.scan=[{self.scan}]\r\n".encode()
         elif line == "get.1 system.ping":
             self.out += b' <.1 system.ping="pong"\r\n'
         elif line.startswith('set.1 system.key.info="') and self.settable:
@@ -93,6 +96,23 @@ class IdentityTest(unittest.TestCase):
     def args(self, expect):
         import argparse
         return argparse.Namespace(app_baud=38400, baud=115200, expect_device=expect)
+
+    def test_check_clock(self):
+        """#10: V30/V40 told apart by the Si5338 at 0xE0 on bus 1."""
+        import argparse
+        import c45b3.__main__ as cli
+        a = argparse.Namespace(app_baud=38400, baud=115200, expect_clock="si5338")
+        cli.check_clock(FakeApp(), a)                                         # V40 board: ok
+        with self.assertRaises(SystemExit):
+            cli.check_clock(FakeApp(scan="&H20,&H22,&H68,&HA0"), a)           # V30 board
+        a.expect_clock = "si5338"
+        cli.check_clock(FakeApp(scan="&H20,&H68,&HE2"), a)                    # alternative address
+        a.expect_clock = "none"
+        cli.check_clock(FakeApp(scan="&H20,&H22,&H68,&HA0"), a)
+        with self.assertRaises(SystemExit):
+            cli.check_clock(FakeApp(), a)
+        with self.assertRaises(SystemExit):
+            cli.check_clock(FakeApp(scan=None), a)                            # no answer: refuse
 
     def test_check_device_list(self):
         import c45b3.__main__ as cli
