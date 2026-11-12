@@ -105,8 +105,8 @@ MOP3 = 0 `DLYPTR`).
 Zweite Quelle: TI „TAS3xxx DSP Instruction Set Reference Guide“ (Januar 2009, Familienfassung). Sie enthält
 dieselben Tabellen, mit weiteren Fehlern (ALOG2 und SHR(1) mit dem Code von LOG2, ST(L,COEF) mit dem von ST(DI)),
 aber zusätzlich: `COMP` vergleicht die Beträge (|A| > |B| → 1, bei Gleichheit entscheidet das Vorzeichen), das
-Ergebnis steht zwei Takte später für BOC/BNC/LDC/LNC bereit; Sprungziele müssen beim TAS3108 in den ersten 1K
-Befehlen liegen, nach JMP/BOC/BNC folgen drei NOPs.
+Ergebnis steht zwei Takte später für BOC/BNC/LDC/LNC bereit; Sprungbefehle müssen beim TAS3108 in den ersten 1K
+Befehlen stehen (das Ziel hat ohnehin nur 10 Bit), nach JMP/BOC/BNC folgen drei NOPs.
 
 Alle 14 Programme dekodieren vollständig bis auf einen Code (Test). Abweichungen von SLEU067A, aus den Programmen
 belegt:

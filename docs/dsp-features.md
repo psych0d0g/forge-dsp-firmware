@@ -66,9 +66,11 @@ Bass/Höhen-Schnittstelle, DO5–DO8 von Kern 2/3, Abtastraten außer 96 kHz.
 
 Voraussetzungen, bevor man das baut:
 
-- Ein Assembler (Umkehrung von `tas3108_dis.py`, die Kodierung ist vollständig bekannt) und ein Prüfwerkzeug, das
-  ein neues Programm mit `tas3108_flow.py` gegen den alten Signalfluss und das Taktbudget prüft.
-  Regeln der Hardware, die das Prüfwerkzeug durchsetzen muss: Sprungziele unter 0x400, drei NOPs nach
+- Assembler und Prüfwerkzeug: `tools/tas3108_asm.py` (vorhanden, #47). `asm` übersetzt die Syntax des
+  Disassemblers (mit Labels) und setzt das Programm auf Wunsch in ein vorhandenes Boot-Image ein; der Test erzeugt
+  alle 14 Originale bitgleich neu. `check` prüft die Regeln unten und das Taktbudget. Noch offen: der Vergleich
+  des Signalflusses mit dem alten Programm (`tas3108_flow.py`).
+  Regeln der Hardware, die das Prüfwerkzeug durchsetzen muss: Sprungbefehle in den ersten 1K Befehlen, drei NOPs nach
   JMP/BOC/BNC, `COMP`-Ergebnis erst zwei Takte später, 13 Takte zwischen `DLYPTR` und `ST(DLYO)`.
 - Die MCU schreibt `dsp_N_code` beim Start ins EEPROM des TAS3108, wenn die Prüfsumme abweicht. Ein geändertes
   Programm kommt also mit der Port-Firmware aufs Gerät, ohne zusätzlichen Weg.

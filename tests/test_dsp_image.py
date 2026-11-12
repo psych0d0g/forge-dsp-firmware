@@ -11,6 +11,7 @@ import dsp_image  # noqa: E402
 import tas3108_dis  # noqa: E402
 import tas3108_flow  # noqa: E402
 import c51_dis  # noqa: E402
+import tas3108_asm  # noqa: E402
 
 
 class DspImageTest(unittest.TestCase):
@@ -162,6 +163,49 @@ class DspImageTest(unittest.TestCase):
                 code, _ = c51_dis.disassemble(m, entries)
                 bad = [hex(pc) for pc, (_, text) in code.items() if text.startswith("DB")]
                 self.assertEqual(bad, [], (h, p))
+
+    def test_assembler_roundtrip(self):
+        """#47: disassembly (with register names) -> assembler -> the same words and a bit
+        identical boot image, for all programs; the originals pass the hardware rules."""
+        headers = sorted(glob.glob(os.path.join(HERE, "..", "src", "flavours", "*", "flavour_data.h")))
+        for h in headers:
+            for p in (1, 2):
+                img = dsp_image.extract(h, p)
+                blocks, rest = dsp_image.parse(img)
+                prog = tas3108_dis.program(blocks)
+                names = tas3108_dis.coef_names(dsp_image.regmap(blocks))
+                src = "\n".join(f"{pc:04X}  {w:014X}  {tas3108_dis.disasm(w, names)[0]}"
+                                for pc, w in enumerate(prog))
+                words = tas3108_asm.assemble(src)
+                self.assertEqual(words, prog, (h, p))
+                self.assertEqual(dsp_image.build(tas3108_asm.replace_program(blocks, words), rest), img, (h, p))
+                self.assertEqual(tas3108_asm.check(prog), [], (h, p))
+
+    def test_checker(self):
+        """The checker finds broken hardware rules; labels work."""
+        nop = "NOP | NOP | NOP | NOP | NOP"
+        ok = tas3108_asm.assemble("\n".join([
+            "JMP | NOP | NOP | NOP | PCADDR(start)", nop, nop, nop,
+            "end:", "STOP | NOP | NOP | NOP | PCADDR(0)", nop, nop, nop,
+            "start:", "NOP | ADD(ACC,LR,NONE,DLYI) | NOP | NOP | DLYPTR(3)"] + [nop] * 13 + [
+            "NOP | NOP | NOP | NOP | ST(DLYO,DATA,D_010)",
+            "JMP | NOP | NOP | NOP | PCADDR(end)", nop, nop, nop]))
+        self.assertEqual(ok[0] & 0x3FF, 8)
+        self.assertEqual(tas3108_asm.check(ok), [])
+        short = list(ok)
+        del short[9]  # DLYPTR -> ST(DLYO) only 13 instructions
+        self.assertTrue(any("DLYO" in e for e in tas3108_asm.check(short)))
+        jmp = tas3108_asm.assemble("JMP | NOP | NOP | NOP | PCADDR(0x004)")[0]
+        far = ok[:-4] + [0] * (0x400 - len(ok) + 4) + [jmp, 0, 0, 0]  # last JMP at 0x400
+        self.assertTrue(any("1K" in e for e in tas3108_asm.check(far)))
+        busy = list(ok)
+        busy[1] = tas3108_asm.assemble("NOP | CLRACC | NOP | NOP | NOP")[0]
+        self.assertTrue(any("NOPs" in e for e in tas3108_asm.check(busy)))
+        long = ok[:8] + [0] * 1500 + ok[8:]
+        long[0] = tas3108_asm.assemble("JMP | NOP | NOP | NOP | PCADDR(0x0C)")[0]
+        self.assertTrue(any("budget" in e for e in tas3108_asm.check(long)))
+        with self.assertRaises(tas3108_asm.AsmError):
+            tas3108_asm.assemble("NOP | FOO | NOP | NOP | NOP")
 
 
 if __name__ == "__main__":
