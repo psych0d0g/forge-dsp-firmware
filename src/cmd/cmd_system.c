@@ -25,6 +25,7 @@
 #include "identity.h"
 #include "sys_init.h"
 #include "sd.h"
+#include "limiter.h"
 #include "hwcheck.h"
 void watchdog_kick(void);
 #include "cmd.h"
@@ -672,6 +673,7 @@ static void cmd_set_system_errors(void);
 	X("cfg|.change", cmd_set_system_cfg) \
 	X("channel|.in.N|.name.N", cmd_set_system_channel) \
 	X("debug|.hide|.mode|.out", cmd_set_system_debug) \
+	X("dsp|.limiter.N|.limiter.attack|.limiter.release", cmd_set_system_dsp) /* PORT extension (#58) */ \
 	X("errors", cmd_set_system_errors) /* PORT extension: =0 empties the counters */ \
 	X("hardware|.memory.eram", cmd_set_system_hardware) \
 	X("key|.info", cmd_set_system_key) \
@@ -1067,7 +1069,7 @@ static void cmd_get_system_hardware_dsp(void)
 
 /* PORT diagnostics (#57): get system.hardware.dsp.1 = this start, .2 = the start before the last
  * DSP restart (hw_check_dsp_restart), [valid, core 1..3 [found, written, verify, state bytes 4..1,
- * version bytes 4..1], bus 1/2 as system.hardware.dsp] */
+ * version bytes 4..1, bus freed], bus 1/2 as system.hardware.dsp] */
 static void out_bytes_rev(const uint8_t *b)
 {
 	for (int8_t i = 3; i >= 0; i--) {
@@ -1092,6 +1094,8 @@ static void cmd_get_system_hardware_dsp_rec(uint8_t n)
 			out_u16(k->verify);
 			out_bytes_rev(k->state);
 			out_bytes_rev(k->version);
+			out_chr(',');
+			out_u16(k->bus_cleared);  /* #58: bus freed after the EEPROM work */
 			out_chr(']');
 		}
 		for (uint8_t b = 1; b <= 2; b++) {
@@ -1168,6 +1172,7 @@ static void cmd_get_system_help(void);
 	X("limits||.biquad|.in|.names|.out|.types", cmd_get_system_limits) /* PORT extension (#54) */ \
 	X("ping", cmd_get_system_ping) \
 	X("poti|.N", cmd_get_system_poti) \
+	X("dsp|.limiter|.limiter.N|.limiter.attack|.limiter.release", cmd_get_system_dsp) /* PORT extension (#58) */ \
 	X("sd||.files|.read", cmd_get_system_sd) /* PORT extension (#24) */ \
 	X("startup|.N|.*", cmd_get_system_startup) /* PORT extension (#40) */ \
 	X("supply||.cal|.low|.mute|.raw|.source|.vcc", cmd_get_system_supply) /* PORT extension (#46) */ \

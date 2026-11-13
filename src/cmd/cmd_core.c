@@ -455,7 +455,7 @@ static const struct name names_one[] = {
 };
 
 static const struct name names_two[] = {
-	{0x002A, ".*"}, {0x6261, ".baud"}, {0x626C, ".block"}, {0x626F, ".boot"}, {0x7375, ".supply"} /* port #46 */, {0x7675, ".vu"} /* port #52 */, {0x6269, ".biquads"} /* port #47 */, {0x6865, ".help"} /* port */, {0x7364, ".sd"} /* port #24 */,
+	{0x002A, ".*"}, {0x6261, ".baud"}, {0x626C, ".block"}, {0x626F, ".boot"}, {0x7375, ".supply"} /* port #46 */, {0x7675, ".vu"} /* port #52 */, {0x6269, ".biquads"} /* port #47 */, {0x6865, ".help"} /* port */, {0x7364, ".sd"} /* port #24 */, {0x6473, ".dsp"} /* port #58 */,
 	{0x636F, ".copy"}, {0x6366, ".cfg"}, {0x6368, ".channel"}, {0x6379, ".cycles"},
 	{0x6465, ".debug"}, {0x6563, ".echo"}, {0x656E, ".enable"}, {0x6665, ".feature"},
 	{0x6669, ".firmware"}, {0x6775, ".gui"}, {0x6861, ".hardware"}, {0x6972, ".ir"},
@@ -561,7 +561,7 @@ void cmd_answer_header(void)
 			goto word_four;
 		} else if (w3 == 0x7363) {
 			s = w1 == 0x6761 ? ".scale" : ".scan";
-		} else if (w2 == 0x7364 && w1 == 0x7379) {
+		} else if ((w2 == 0x7364 || w2 == 0x6473) && w1 == 0x7379) {
 			/* PORT (#24, #59): system.sd.<files|export|open|read|…>, the word as typed */
 			out_chr('.');
 			out_str(req_input_str(cmd_req_word_three));
@@ -580,6 +580,9 @@ word_four:;
 	if (REQ_B(10) == cmd_req_number) {
 		out_chr('.');
 		out_u16(REQ_B(9));
+	} else if (w4 != 0x0000 && w1 == 0x7379 && w2 == 0x6473) {
+		out_chr('.');  /* PORT (#58): system.dsp.limiter.attack/.release as typed */
+		out_str(req_input_str(cmd_req_word_four));
 	} else if (w4 != 0x0000) {
 		s = lookup(names_four, w4);
 		if (s) {

@@ -52,5 +52,7 @@ void dsp_pool_load(void);
 
 /* level meter (#52): data word behind DO1..DO4 (k = 0..3) of cores 2/3, 0 = unknown */
 uint16_t dsp_do_word(uint8_t k);
+/* output limiter (#58): subaddress k of program 2 (0..3 DO slots, 4 shared), 0 = no limiter */
+uint8_t dsp_limiter_sub(uint8_t k);
 
 #endif

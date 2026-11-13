@@ -25,6 +25,7 @@
 #include "hwcheck.h"
 #include "tas3108.h"
 #include "log.h"
+#include "limiter.h"
 uint8_t mcu_reset_flags;  /* RST.STATUS of this start (#60 log) */
 #include "api.h"
 #include "events.h"
@@ -96,6 +97,7 @@ int main(void)
 	 * power-up bits, DAC (muted), DSP program EEPROMs, peripheral resets, DSP cores, SPDIF */
 	flavour_systeminit_peripherals();
 	hw_check_dsp_restart();  /* PORT (#45): cores missing -> restart once */
+	limiter_apply();         /* PORT (#58): output limiter settings from the EEPROM to the DSP */
 	/* libs/api/init.bas, then the preset load of modc_load_preset (MODC itself follows) */
 	api_init();
 	api_init_mute();

@@ -23,5 +23,6 @@ void dsp_1_ack_delay(void);
 void dsp_set_phase_reg(uint32_t value);      /* one output register, dsp_core/dsp_reg set */
 void dsp_init_vum(void);
 void dsp_get_vum(void);
+void dsp_set_reg(uint8_t size);              /* PORT (#58): verified write of buffer_bytes(1..size) */
 uint8_t dsp_peek(uint8_t core, uint8_t mem, uint16_t addr, uint8_t out[8]);  /* PORT (#51) */
 #endif

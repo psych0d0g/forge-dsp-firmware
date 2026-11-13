@@ -390,6 +390,17 @@ uint16_t dsp_do_word(uint8_t k)
 	return 0;
 }
 
+/* output limiter (#58): subaddress k of program 2 (0..3 = DO slots, 4 = shared), 0 = no limiter */
+uint8_t dsp_limiter_sub(uint8_t k)
+{
+#ifdef DSP_LIMITER
+	if (k < 5)
+		return dsp_2_limiter_sub[k];
+#endif
+	(void)k;
+	return 0;
+}
+
 /* --- image stream: base bytes before the program block, the new block, base bytes after --- */
 void dsp_img_open(struct dsp_img *g, uint8_t core, const uint8_t *code)
 {

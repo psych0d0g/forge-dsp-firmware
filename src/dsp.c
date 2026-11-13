@@ -118,6 +118,14 @@ static void plain_write(const struct core *c, uint8_t reg, uint8_t size, uint8_t
 		delay_ms(BAS_DSP_WRITEDELAY);
 }
 
+/* PORT (#58): buffer_bytes(1..size) to dsp_core/dsp_reg, verified as the biquads */
+void dsp_set_reg(uint8_t size)
+{
+	const struct core *c = cur();
+	if (c && size <= BAS_DSP_REG_SIZE_BIQUAD)
+		verified_write(c, size);
+}
+
 void dsp_set_biquad(const uint32_t raw[6])
 {
 	const struct core *c = cur();

@@ -283,7 +283,11 @@ class OptHeaderTest(unittest.TestCase):
                 img = b[2:2 + (b[0] | b[1] << 8)]
                 words = dis.program(di.parse(img)[0])
                 self.assertEqual(asm.check(words), [], (f, n))
-                self.assertLess(asm.cycles(words), asm.cycles(dis.program(di.parse(di.extract(os.path.join(base, "flavour_data.h"), n))[0])), (f, n))
+                orig = asm.cycles(dis.program(di.parse(di.extract(os.path.join(base, "flavour_data.h"), n))[0]))
+                # program 2 carries the output limiter (#58, 4 x 27 instructions): without it shorter than the original
+                extra = 4 * 27 if n == 2 else 0
+                self.assertLess(asm.cycles(words) - extra, orig, (f, n))
+                self.assertLessEqual(asm.cycles(words), 1408, (f, n))
 
 
 class ChainTest(unittest.TestCase):
@@ -397,3 +401,59 @@ class PoolTest(unittest.TestCase):
         self.assertEqual([c[2] for c in p.channels], [3, 3, 1, 3])
         self.assertEqual(len(self.progs[1].slots), 172)
         self.assertEqual(self.progs[1].generate([72, 72]), self.progs[1].words)  # spares unused: same program
+
+
+class LimiterTest(unittest.TestCase):
+    """#58: output limiter of program 2 (tools/dsp_limiter.py)"""
+
+    def setUp(self):
+        import dsp_limiter
+        self.L = dsp_limiter
+
+    def run_block(self, amp, t_db, n=3000, f=1000.0, rate=96000.0, **kw):
+        import math
+        core = self.L.block_core(t_db=t_db, **kw)
+        fs = 1 << 31                            # CLP32 level of the simulator's data values
+        g_addr = self.L.layout()["g0"]
+        out, gains = [], []
+        for i in range(n):
+            core.data[0x100] = int(amp * fs * math.sin(2 * math.pi * f * i / rate))
+            core.frame([0] * 8)
+            out.append(core.data[0x100] / fs)
+            gains.append(core.coef[g_addr] / self.L.ONE)
+        return out, gains
+
+    def test_never_above_the_threshold(self):
+        for t_db in (-1.0, -6.0, -12.0, -20.0):
+            out, gains = self.run_block(0.9, t_db)
+            t = 10 ** (t_db / 20)
+            self.assertLessEqual(max(abs(v) for v in out), t * (1 + 2 ** -20), t_db)
+            self.assertLess(min(gains), 1.0, t_db)                        # the soft part works
+            # after the attack the gain holds the peaks near the threshold (soft, little clipping)
+            tail = out[-500:]
+            self.assertGreater(max(abs(v) for v in tail), 0.8 * t, t_db)
+
+    def test_quiet_signal_untouched_and_release(self):
+        out, gains = self.run_block(0.3, -6.0, n=400)
+        self.assertEqual(min(gains), 1.0)                                 # below the threshold: no change
+        core = self.L.block_core(t_db=-6.0)
+        g = self.L.layout()["g0"]
+        for i in range(200):                                              # loud, then silence
+            core.data[0x100] = (1 << 31) - 1 if i % 2 else -(1 << 31)
+            core.frame([0] * 8)
+        low = core.coef[g]
+        for i in range(2000):
+            core.data[0x100] = 0
+            core.frame([0] * 8)
+        self.assertLess(low, 0.6 * self.L.ONE)
+        self.assertGreater(core.coef[g], 0.85 * self.L.ONE)               # release: back towards 1 (1/1024 per sample)
+
+    def test_off_is_bit_identical(self):
+        """off (defaults): DO of the program with the block equal to the program without it"""
+        import dsp_opt_gen
+        for f in ("V40-96ELN", "V40-96ELN-3"):
+            path = os.path.join(HERE, "..", "src", "flavours", f, "flavour_data.h")
+            base, _, _ = dsp_opt_gen.optimize(dsp_image.extract(path, 2), 2)
+            lim = self.L.add_limiter(base, dsp_opt_gen.do_words(base)[:4])
+            self.assertEqual(tas3108_asm.check(tas3108_dis.program(dsp_image.parse(lim)[0])), [], f)
+            self.assertIsNone(self.L.transparent(base, lim, frames=200), f)

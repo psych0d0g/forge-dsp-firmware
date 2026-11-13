@@ -597,8 +597,8 @@ class Tas3108Test(unittest.TestCase):
                                                 "1|get.1 system.hardware.dsp.3"])
         self.assertIn("system.hardware.dsp.2=[0]", out)   # nothing kept yet
         # empty EEPROMs: every core rewritten once and read back correctly; core 3 state byte 1 = 0x55
-        core3 = "[1,1,1,0,0,0,85,0,0,0,0]"
-        rec = f"[1,[1,1,1,0,0,0,0,0,0,0,0],[1,1,1,0,0,0,0,0,0,0,0],{core3},[0,0,0,0,0],[0,0,0,0,0]]"
+        core3 = "[1,1,1,0,0,0,85,0,0,0,0,0]"
+        rec = f"[1,[1,1,1,0,0,0,0,0,0,0,0,0],[1,1,1,0,0,0,0,0,0,0,0,0],{core3},[0,0,0,0,0],[0,0,0,0,0]]"
         self.assertIn("system.hardware.dsp.1=" + rec, out)
         self.assertIn("system.hardware.dsp.2=" + rec, out)
         self.assertIn("system.hardware.dsp.3 command out of range", out)
@@ -2455,6 +2455,62 @@ class HelpTest(LinesMixin, unittest.TestCase):
             ans = [l for l in out if f" {c}" in l]
             self.assertTrue(ans, c)
             self.assertNotIn("unknown command", ans[0], c)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class LimiterCmdTest(LinesMixin, unittest.TestCase):
+    """#58: system.dsp.limiter, coefficients over I2C to the limiter block of program 2"""
+    PRE = ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect"]
+
+    @staticmethod
+    def w523(v):
+        return round(v * (1 << 23)) & 0xFFFFFFFF
+
+    def writes(self, out, dev, sub):
+        """data words of the writes to a DSP subaddress, in address order (first on the bus first)"""
+        got = []
+        for l in out:
+            if l.startswith("@i2c2:") and f"S {dev} {sub:02X} " in l and "Sr" not in l:
+                b = [int(x, 16) for x in l.split(f"S {dev} {sub:02X} ")[1].split(" P")[0].split()]
+                got.append([int.from_bytes(bytes(b[i:i + 4]), "big") for i in range(0, len(b), 4)])
+        return got
+
+    def test_threshold_attack_release(self):
+        f = "V40-96ELN"
+        out = self.lines(f, self.PRE + ["#i2clog=1", "1|set.1 system.dsp.limiter.1=-60", "#i2clog=0",
+                                        "1|get.1 system.dsp.limiter", "1|get.1 system.dsp.limiter.1",
+                                        "1|get.1 system.dsp.limiter.attack", "1|get.1 system.dsp.limiter.release",
+                                        "1|set.1 system.dsp.limiter.1=-250", "1|set.1 system.dsp.limiter.9=-10",
+                                        "1|set.1 system.dsp.limiter.release=0", "1|set.1 system.dsp.limiter.x=1"])
+        text = "\n".join(out)
+        t = 10 ** (-6.0 / 20)
+        # output 1 = DO3 of core 3 (0x6A): subaddress 0xF2 = [1/T, T]
+        self.assertIn([self.w523(1 / t), self.w523(t)], self.writes(out, "6A", 0xF2))
+        self.assertIn([0x00800000, 0x00800000], self.writes(out, "68", 0xF2))      # output 5 off
+        rel = 1 - math.exp(-1000 / (100 * 96000))
+        att = math.exp(-10000 / (1 * 96000))
+        shared3, shared2 = self.writes(out, "6A", 0xF4)[-1], self.writes(out, "68", 0xF4)[-1]
+        self.assertAlmostEqual(shared3[0], self.w523(att), delta=1)                   # core 3 limits: attack (to523 truncates)
+        self.assertEqual(shared2[0], 0x00800000)                                     # core 2 all off: transparent
+        self.assertEqual(shared3[1] + shared3[2], 0x00800000)                        # 1 - rel + rel = 1 exactly
+        self.assertAlmostEqual(shared3[2], self.w523(rel), delta=1)
+        self.assertIn("system.dsp.limiter=[-60,0,0,0,0,0,0,0]", text)
+        self.assertIn("system.dsp.limiter.1=-60", text)
+        self.assertIn("system.dsp.limiter.attack=1", text)
+        self.assertIn("system.dsp.limiter.release=100", text)
+        self.assertEqual(text.count("command out of range"), 3)
+        self.assertIn("system.dsp.limiter.x unknown command", text)
+
+    def test_stored_and_not_on_v30_96ln(self):
+        f = "V40-96ELN"
+        p, ee = run(f, self.PRE + ["1|set.1 system.dsp.limiter.8=-125", "1|set.1 system.dsp.limiter.release=250"],
+                    want_eeprom=True)
+        p2, _ = run(f, self.PRE + ["1|get.1 system.dsp.limiter", "1|get.1 system.dsp.limiter.release"], eeprom=ee,
+                    want_eeprom=True)
+        self.assertIn("system.dsp.limiter=[0,0,0,0,0,0,0,-125]", p2.stdout)          # 0.5 dB steps
+        self.assertIn("system.dsp.limiter.release=250", p2.stdout)
+        out = self.lines("V30-96LN", ["1|get.1 system.dsp.limiter"])
+        self.assertIn("unknown command", out[0])
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")

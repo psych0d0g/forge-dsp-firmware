@@ -190,6 +190,18 @@ static void eeprom_copy_data(const struct dsp_def *d)
 	delay_ms(BAS_EEPROM_PAGE_WRITE_DELAY);
 }
 
+/* PORT (#58/#57): after the long EEPROM reads and writes an EEPROM held SDA low on the DEV unit
+ * (13.11.2026: bus 2 without a single edge after the reset release, core 3 in the error state).
+ * The cores cannot load their program then; free the bus (8 SCL pulses) before they start. */
+static void bus_release(const struct dsp_def *d, struct dsp_boot_core *r)
+{
+	if (twi_sda(d->bus) == 0) {
+		r->bus_cleared++;
+		log_event(LOG_WARN, LOGM_DSP, LOGE_DSP_BUS_CLEARED, d->bus, d->core);
+	}
+	i2c_reset(d->bus);  /* clears only if SDA is low */
+}
+
 void dsp_eeprom_init(uint8_t n)
 {
 	if (n < 1 || n > sizeof dsps / sizeof dsps[0])
@@ -224,6 +236,7 @@ void dsp_eeprom_init(uint8_t n)
 		log_event(r->verify == 1 ? LOG_INFO : LOG_ERROR, LOGM_DSP, LOGE_DSP_EEPROM, d->core,
 		          (uint16_t)(r->verify | r->written << 8));  /* PORT (#60) */
 	}
+	bus_release(d, &dsp_boot_now.core[d->core - 1]);
 }
 
 void dsp_core_init(uint8_t n)

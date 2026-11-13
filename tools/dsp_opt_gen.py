@@ -17,6 +17,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import dsp_image  # noqa: E402
+import dsp_limiter  # noqa: E402
 import dsp_pool  # noqa: E402
 import tas3108_asm as asm  # noqa: E402
 import tas3108_dis as dis  # noqa: E402
@@ -94,6 +95,14 @@ def header(flavour):
         if n == 1:
             out, spare = spare_biquads(path, out)
             report.append(f"program 1: {spare} spare biquads")
+        else:
+            # output limiter (#58), transparent while off
+            base = out
+            out = dsp_limiter.add_limiter(base, do_words(base)[:4])
+            if dsp_limiter.transparent(base, out, frames=200):
+                raise SystemExit("program 2: limiter not transparent when off")
+            after = asm.cycles(dis.program(dsp_image.parse(out)[0]))
+            report.append(f"limiter +{after - asm.cycles(dis.program(dsp_image.parse(base)[0]))} cycles")
         imgs[n] = out
         parts.append(table(f"dsp_{n}_code_opt", out))
         report.append(f"program {n}: {before} -> {after} cycles")
@@ -126,6 +135,10 @@ def header(flavour):
     parts.append("/* level meter (#52): data words of program 2 sent to DO1..DO4 (SDOUT1 L/R, SDOUT2 L/R) */\n"
                  f"static const uint16_t dsp_2_do_word[4] = {{{', '.join(f'0x{x:03X}' for x in dos[:4])}}};")
     report.append("DO1..4 " + " ".join(f"D_{x:03X}" for x in dos[:4]))
+    subs = dsp_limiter.subs_of(imgs[2])
+    parts.append("/* output limiter (#58, tools/dsp_limiter.py): subaddresses of program 2, [1/T, T] for DO1..DO4,\n"
+                 " * then [attack, 1 - release, release] */\n#define DSP_LIMITER 1\n"
+                 f"static const uint8_t dsp_2_limiter_sub[5] = {{{', '.join(f'0x{x:02X}' for x in subs)}}};")
     report.append("pools " + ", ".join(f"core {k}: {len(progs[1 if k == 1 else 2].slots)}" for k in sorted(cores)))
     parts.append("#endif")
     return "\n".join(parts) + "\n", report

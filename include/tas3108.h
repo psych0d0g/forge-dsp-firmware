@@ -24,6 +24,7 @@ struct dsp_boot_core {
 	uint8_t version[4];  /* subaddress 0x08, buffer_bytes(1..4) */
 	uint8_t state[4];    /* subaddress 0x02 */
 	uint8_t found;       /* answered on I2C */
+	uint8_t bus_cleared; /* SDA was low after the EEPROM work: bus freed (8 SCL pulses) */
 };
 struct dsp_boot_rec {
 	uint8_t magic, check;  /* check: byte sum of the rest, against garbage after power-on */

@@ -29,6 +29,7 @@
 #define LOGE_SYS_HW_MISMATCH 3  /* p1 = hardware_dsp, p2 = hardware_other */
 #define LOGE_DSP_EEPROM      1  /* p1 = core, p2 = verify (1 ok, 2 wrong) | written << 8 */
 #define LOGE_DSP_CORE        2  /* p1 = core, p2 = state byte 1 | found << 8 */
+#define LOGE_DSP_BUS_CLEARED 3  /* SDA low after the EEPROM work: p1 = bus, p2 = core */
 #define LOGE_PRESET_LOADED   1  /* p1 = preset (0-based) */
 #define LOGE_PRESET_SD       2  /* p1 = file number N of preset_N.cfg */
 #define LOGE_SUPPLY_LOW      1  /* p1 = supply mV */

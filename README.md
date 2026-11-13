@@ -51,6 +51,7 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
 - **Startprotokoll der DSP-Kerne** (`get.1 system.hardware.dsp.1`/`.2`): Status, Version und ob das EEPROM neu geschrieben und richtig zurückgelesen wurde, für diesen Start und den vor einem DSP-Neustart (#57). Geschriebene DSP-Programme werden zurückgelesen; dadurch braucht das Umverteilen der Biquads nur noch einen Neustart.
 - **Pegelanzeige** (`get.1 system.vu`): Effektivpegel aller acht Eingänge für ein VU-Meter in der GUI, gemessen nur
   solange jemand fragt (#52).
+- **Limiter je Ausgang im DSP** (`set.1 system.dsp.limiter.N=-60`, Attack/Release gemeinsam): weich geregelt und hart auf der Schwelle begrenzt, ausgeschaltet bitgleich (#58).
 - **Ausgangspegel** (`get.1 system.vu.out`): Effektivpegel der Ausgänge 1–8 nach Gain und Laufzeit, gleiche Skala wie `system.vu` (#52).
 - **Befehlsliste** (`get.1 system.help`): alle `get`/`set system.*`-Befehle der Firmware, erzeugt aus den Verteiltabellen.
 - **Fehlerzähler zurücksetzen** (`set.1 system.errors=0`), im Original nur per Werks-Reset.

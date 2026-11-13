@@ -44,6 +44,7 @@ Stufen wie `dbglvl_*` des Originals: 1 fatal, 2 error, 3 warn, 4 info, 5 debug, 
 | 2 Fehlerzähler | Fehlertyp (wie `system.errors`) | error, ab Typ 128 warn | Zählerstand danach | 0 |
 | 3 DSP | 1 EEPROM neu geschrieben | info (error bei falscher Prüfsumme) | Kern | Prüfung (1 ok, 2 falsch) · Anzahl Schreibvorgänge × 256 |
 | 3 DSP | 2 Kern-Status nach dem Laden | debug (error bei Fehlerzustand) | Kern | Status-Byte 1 · 256 (antwortet) |
+| 3 DSP | 3 Bus nach der EEPROM-Arbeit freigeräumt (SDA lag low) | warn | Bus | Kern |
 | 4 Preset | 1 geladen | info | Preset (ab 0) | 0 |
 | 4 Preset | 2 von der Karte geladen | info | N von `preset_N.cfg` | 0 |
 | 5 Versorgung | 1 Spannung zu niedrig (#46) | warn | mV | 0 |
