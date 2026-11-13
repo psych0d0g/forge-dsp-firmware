@@ -53,6 +53,7 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
   solange jemand fragt (#52).
 - **Ausgangspegel** (`get.1 system.vu.out`): Effektivpegel der Ausgänge 1–8 nach Gain und Laufzeit, gleiche Skala wie `system.vu` (#52).
 - **Befehlsliste** (`get.1 system.help`): alle `get`/`set system.*`-Befehle der Firmware, erzeugt aus den Verteiltabellen.
+- **Fehlerzähler zurücksetzen** (`set.1 system.errors=0`), im Original nur per Werks-Reset.
 - **microSD prüfen** (`get.1 system.sd`, `get.1 system.sd.files`): Karte, Dateisystem, Größe und Dateien, nur lesend (#24).
 - **Preset auf die microSD exportieren** (`set.1 system.sd.export=N`): schreibt `preset_N.cfg` im GUI-Format, das der Vorlader beim Start wieder liest (#24).
 - **Dateien auf die microSD und zurück** (`system.sd.open/create/read/write/close/delete`): in Blöcken mit Prüfsumme über die serielle Verbindung, für die GUI (#59).

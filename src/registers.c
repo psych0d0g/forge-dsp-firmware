@@ -36,6 +36,20 @@ void errorcount_init(void)
 		error_count_type[i] = eram_rb(ERAM_EL(ERROR_COUNT_TYPE_ERAM, i));
 }
 
+/* PORT extension: set system.errors=0 empties the error counters (the original only by a
+ * factory reset); written slots only, so an empty list costs no EEPROM writes */
+void errorcount_clear(void)
+{
+	for (uint8_t i = 1; i <= BAS_ERROR_COUNT_MAX; i++) {
+		if (error_count_type[i] == 0xFF)
+			continue;
+		error_count_type[i] = 0xFF;
+		eram_wb(ERAM_EL(ERROR_COUNT_TYPE_ERAM, i), 0xFF);
+		eram_ww(ERAM_EL(ERROR_COUNT_ERAM, i), 0xFFFF);
+	}
+	error_count = 0;
+}
+
 void errorcount(uint8_t errortype)
 {
 	uint8_t tfound = 0, efound = 0;

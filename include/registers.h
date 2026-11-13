@@ -13,6 +13,7 @@ extern uint8_t error_count;                               /* errors since start 
 extern uint8_t error_count_type[BAS_ERROR_COUNT_MAX + 1]; /* 1-based, 0xFF = free */
 void errorcount_init(void);
 void errorcount(uint8_t errortype);
+void errorcount_clear(void);  /* PORT: set system.errors=0 */
 
 /* systeminit.bas, part before the peripherals: may set sysinit and reset the MCU */
 void sysinit_check(uint8_t dbg_init_finest);

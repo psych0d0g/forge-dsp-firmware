@@ -664,6 +664,7 @@ static void sys_help(const char *spec, uint8_t n, const char *verb, uint8_t *fir
 	}
 }
 
+static void cmd_set_system_errors(void);
 #define SYS_SET(X) \
 	X("baud|.N", cmd_set_system_baud) \
 	X("biquads|.K", cmd_set_system_biquads) /* PORT extension (#47) */ \
@@ -671,6 +672,7 @@ static void sys_help(const char *spec, uint8_t n, const char *verb, uint8_t *fir
 	X("cfg|.change", cmd_set_system_cfg) \
 	X("channel|.in.N|.name.N", cmd_set_system_channel) \
 	X("debug|.hide|.mode|.out", cmd_set_system_debug) \
+	X("errors", cmd_set_system_errors) /* PORT extension: =0 empties the counters */ \
 	X("hardware|.memory.eram", cmd_set_system_hardware) \
 	X("key|.info", cmd_set_system_key) \
 	X("reinit", cmd_set_system_reinit) \
@@ -765,6 +767,21 @@ static void cmd_get_system_debug(void)
 	case 0x6F75: cmd_answer_header(); out_u16(registers[BAS_REG_DEBUGOUT]); out_crlf(); break;
 	default: cmd_error_unknown();
 	}
+}
+
+/* PORT extension: set system.errors=0 empties the error counters */
+static void cmd_set_system_errors(void)
+{
+	if (req_w(cmd_req_word_three) != 0x0000 || (cmd_reg_var_state & (1 << cmd_reg_state_isString))) {
+		cmd_error_unknown();
+		return;
+	}
+	if (cmd_reg_var_integers[1] != 0) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	errorcount_clear();
+	cmd_answer_ok();
 }
 
 static void cmd_get_system_errors(void)

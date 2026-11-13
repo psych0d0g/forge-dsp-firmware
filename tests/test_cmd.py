@@ -553,6 +553,20 @@ class Tas3108Test(unittest.TestCase):
         self.assertIn("system.errors=[[5,1]]", out)    # only core 3 counted as missing
         self.assertIn("system.hardware.dsp=[0,0,0,0,0,0,0,0,0,11,0]", out)
 
+    def test_errors_clear(self):
+        """set system.errors=0 empties the counters (port extension); new errors count from 1 again"""
+        f = "V41-96ELN-3"
+        out, _ = self.run_dsp(f, image(f), {}, ["#i2cdev=1,68", "#i2cdev=2,68", "#i2cnack=2,6A,9", "#dsp_core=3",
+                                                "1|get.1 system.errors", "1|set.1 system.errors=1",
+                                                "1|set.1 system.errors=0", "1|get.1 system.errors",
+                                                "#dsp_core=3", "1|get.1 system.errors"])
+        got = [l for l in out.splitlines() if "system.errors" in l]
+        self.assertIn("system.errors=[[5,1]]", got[0])
+        self.assertIn("system.errors command out of range", got[1])
+        self.assertIn("system.errors ok", got[2])
+        self.assertIn("system.errors=[]", got[3])
+        self.assertIn("system.errors=[[5,1]]", got[4])
+
     def test_restart_once(self):
         """#45: cores missing at the end of systeminit -> one software reset, then go on."""
         f = "V41-96ELN-3"
