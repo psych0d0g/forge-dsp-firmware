@@ -23,6 +23,7 @@
 #include "si5338.h"
 #include "flavour_systeminit.h"
 #include "hwcheck.h"
+#include "tas3108.h"
 #include "api.h"
 #include "events.h"
 #include "loopcall.h"
@@ -60,6 +61,14 @@ int main(void)
 	/* referenced so --gc-sections keeps the version string */
 	__asm__ __volatile__("" :: "r"(fw_version_c45b3));
 	clock_init();
+	{
+		/* PORT diagnostics (#57): the record of the start before a DSP restart survives only a
+		 * software reset */
+		uint8_t rst = RST.STATUS;
+		if (!(rst & RST_SRF_bm))
+			dsp_boot_power_on();
+		RST.STATUS = rst;
+	}
 	/* main.bas line 1: config priority = roundrobin, vector = application, lo/med/hi enabled.
 	 * Must precede the peripheral sequence: i2c_sda_wait4silence counts the SDA edges of the
 	 * booting TAS3108 in a pin interrupt (without it the wait ends while they still load). */

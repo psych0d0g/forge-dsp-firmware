@@ -572,6 +572,22 @@ class Tas3108Test(unittest.TestCase):
         self.assertIn("@soft_reset", out)
         self.assertIn("@dsp_restart: hw=003F flag=1 restarted=0", out)
 
+    def test_boot_record(self):
+        """#57: get system.hardware.dsp.1/.2 = what the cores reported in this start / before the restart."""
+        f = "V41-96ELN-3"
+        out, _ = self.run_dsp(f, image(f), {}, ["1|get.1 system.hardware.dsp.2", "#i2cdev=1,68", "#i2cdev=2,68",
+                                                "#i2cdev=2,6A,5=255", "#dsp_eeprom=1", "#dsp_eeprom=2",
+                                                "#dsp_eeprom=3", "#dsp_detect", "1|get.1 system.hardware.dsp.1",
+                                                "#dsp_restart", "1|get.1 system.hardware.dsp.2",
+                                                "1|get.1 system.hardware.dsp.3"])
+        self.assertIn("system.hardware.dsp.2=[0]", out)   # nothing kept yet
+        # empty EEPROMs: every core rewritten once and read back correctly; core 3 state byte 1 = 0x55
+        core3 = "[1,1,1,0,0,0,85,0,0,0,0]"
+        rec = f"[1,[1,1,1,0,0,0,0,0,0,0,0],[1,1,1,0,0,0,0,0,0,0,0],{core3},[0,0,0,0,0],[0,0,0,0,0]]"
+        self.assertIn("system.hardware.dsp.1=" + rec, out)
+        self.assertIn("system.hardware.dsp.2=" + rec, out)
+        self.assertIn("system.hardware.dsp.3 command out of range", out)
+
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class DacTest(unittest.TestCase):

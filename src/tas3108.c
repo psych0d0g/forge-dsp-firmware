@@ -24,6 +24,42 @@ void watchdog_kick(void);
 uint16_t hardware_dsp;
 uint8_t dsp_state_error;  /* a core reported an error state (no program loaded) during this start */
 
+/* PORT diagnostics (#57) */
+struct dsp_boot_rec dsp_boot_now;
+#ifdef __AVR__
+struct dsp_boot_rec dsp_boot_prev __attribute__((section(".noinit")));
+#else
+struct dsp_boot_rec dsp_boot_prev;  /* the native harness "resets" within one process */
+#endif
+
+static uint8_t boot_sum(const struct dsp_boot_rec *r)
+{
+	const uint8_t *p = (const uint8_t *)r;
+	uint8_t s = 0;
+	for (uint8_t i = 2; i < sizeof *r; i++)
+		s = (uint8_t)(s + p[i]);
+	return s;
+}
+
+void dsp_boot_keep(void)
+{
+	for (uint8_t b = 0; b < 3; b++)
+		dsp_boot_now.bus[b] = dspboot_diag[b];
+	dsp_boot_prev = dsp_boot_now;
+	dsp_boot_prev.magic = DSP_BOOT_MAGIC;
+	dsp_boot_prev.check = boot_sum(&dsp_boot_prev);
+}
+
+void dsp_boot_power_on(void)
+{
+	dsp_boot_prev.magic = 0;
+}
+
+uint8_t dsp_boot_prev_valid(void)
+{
+	return dsp_boot_prev.magic == DSP_BOOT_MAGIC && dsp_boot_prev.check == boot_sum(&dsp_boot_prev);
+}
+
 struct dsp_def {
 	uint8_t core, bus, eeprom_adr, core_adr, eeprom_rdy, core_rdy;
 	const uint8_t *code;
@@ -173,8 +209,17 @@ void dsp_eeprom_init(uint8_t n)
 	uint16_t data_chksum = data_get_chksum(d);
 	uint16_t eeprom_chksum = eeprom_get_chksum(d, size);
 	if (data_chksum != eeprom_chksum) {
-		eeprom_clear_mem(d);
-		eeprom_copy_data(d);
+		struct dsp_boot_core *r = &dsp_boot_now.core[d->core - 1];
+		/* PORT (#57): read the written program back; one more try if the sum is wrong */
+		for (uint8_t i = 0; i < 2; i++) {
+			eeprom_clear_mem(d);
+			eeprom_copy_data(d);
+			r->written = (uint8_t)(i + 1);
+			watchdog_kick();
+			r->verify = eeprom_get_chksum(d, size) == data_chksum ? 1 : 2;
+			if (r->verify == 1)
+				break;
+		}
 	}
 }
 
@@ -206,15 +251,21 @@ void dsp_core_init(uint8_t n)
 	}
 	if (!(hardware_dsp & (1u << d->core_rdy)))
 		return;
+	struct dsp_boot_core *r = &dsp_boot_now.core[d->core - 1];
+	r->found = 1;
 	/* dsp_N_get_version, dsp_N_get_state: buffer_bytes(4..1) */
 	i2c_device_addr = d->core_adr;
 	i2c_reg = BAS_DSP_SUB_VERSION;
 	i2c_size = BAS_DSP_REG_SIZE_VERSION;
 	i2c_rbuffer(d->bus);
+	for (uint8_t i = 0; i < 4; i++)
+		r->version[i] = buffer_bytes[i + 1];
 	i2c_device_addr = d->core_adr;
 	i2c_reg = BAS_DSP_SUB_STATUS;
 	i2c_size = BAS_DSP_REG_SIZE_STATE;
 	i2c_rbuffer(d->bus);
+	for (uint8_t i = 0; i < 4; i++)
+		r->state[i] = buffer_bytes[i + 1];
 	if (buffer_byte > 0x00) {
 		errorcount(BAS_ERRORCOUNT_SW_DSP);
 		dsp_state_error = 1;  /* PORT (#47): hw_check_dsp_restart restarts once */

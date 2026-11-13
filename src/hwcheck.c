@@ -58,5 +58,6 @@ void hw_check_dsp_restart(void)
 		return;
 	}
 	eram_wb(EE_DSP_RESTART, 1);
+	dsp_boot_keep();  /* PORT diagnostics (#57): get system.hardware.dsp.2 after the restart */
 	mcu_reset();
 }

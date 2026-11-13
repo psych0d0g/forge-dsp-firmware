@@ -48,6 +48,7 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
   mit Spannungsteiler, Ereignis bei Unterspannung und auf Wunsch Stummschalten, Abgleich der 3,3-V-Messung gegen ein
   Multimeter (`set.1 system.supply.vcc=mV`) ([docs/supply.md](docs/supply.md), #46).
 - **DSP-Ladevorgang messen** (`get.1 system.hardware.dsp`): wie lange die TAS3108 beim Start ihr Programm laden, je I2C-Bus (#45).
+- **Startprotokoll der DSP-Kerne** (`get.1 system.hardware.dsp.1`/`.2`): Status, Version und ob das EEPROM neu geschrieben und richtig zurückgelesen wurde, für diesen Start und den vor einem DSP-Neustart (#57). Geschriebene DSP-Programme werden zurückgelesen; dadurch braucht das Umverteilen der Biquads nur noch einen Neustart.
 - **Pegelanzeige** (`get.1 system.vu`): Effektivpegel aller acht Eingänge für ein VU-Meter in der GUI, gemessen nur
   solange jemand fragt (#52).
 - **Namen der Eingänge** im Gerät (`set.1 system.channel.in.N="…"`), wie es sie für die Ausgänge schon gab (#55).

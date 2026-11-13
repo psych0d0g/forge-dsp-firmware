@@ -968,8 +968,61 @@ static void cmd_get_system_hardware_dsp(void)
 	out_crlf();
 }
 
+/* PORT diagnostics (#57): get system.hardware.dsp.1 = this start, .2 = the start before the last
+ * DSP restart (hw_check_dsp_restart), [valid, core 1..3 [found, written, verify, state bytes 4..1,
+ * version bytes 4..1], bus 1/2 as system.hardware.dsp] */
+static void out_bytes_rev(const uint8_t *b)
+{
+	for (int8_t i = 3; i >= 0; i--) {
+		out_chr(',');
+		out_u16(b[i]);
+	}
+}
+
+static void cmd_get_system_hardware_dsp_rec(uint8_t n)
+{
+	const struct dsp_boot_rec *r = n == 1 ? &dsp_boot_now : &dsp_boot_prev;
+	uint8_t valid = n == 1 || dsp_boot_prev_valid();
+	cmd_answer_header();
+	out_chr('[');
+	out_u16(valid);
+	if (valid) {
+		for (uint8_t c = 0; c < 3; c++) {
+			const struct dsp_boot_core *k = &r->core[c];
+			out_str(",[");
+			out_u16(k->found); out_chr(',');
+			out_u16(k->written); out_chr(',');
+			out_u16(k->verify);
+			out_bytes_rev(k->state);
+			out_bytes_rev(k->version);
+			out_chr(']');
+		}
+		for (uint8_t b = 1; b <= 2; b++) {
+			const struct dspboot_diag *d = n == 1 ? &dspboot_diag[b] : &r->bus[b];
+			out_str(",[");
+			out_u16(d->sda_low_ms); out_chr(',');
+			out_u16(d->edges); out_chr(',');
+			out_u16(d->quiet_ms); out_chr(',');
+			out_u16(d->timeout); out_chr(',');
+			out_u16(d->retries);
+			out_chr(']');
+		}
+	}
+	out_chr(']');
+	out_crlf();
+}
+
 static void cmd_get_system_hardware(void)
 {
+	if (req_w(cmd_req_word_three) == 0x6473 && REQ_B(10) == cmd_req_number) {
+		uint8_t n = REQ_B(9);
+		if (n < 1 || n > 2) {
+			cmd_error_cmd_oor();
+			return;
+		}
+		cmd_get_system_hardware_dsp_rec(n);
+		return;
+	}
 	if (req_w(cmd_req_word_three) == 0x6473 && req_w(cmd_req_word_four) == 0x0000) {
 		cmd_get_system_hardware_dsp();  /* PORT diagnostics: DSP program load per bus */
 		return;
