@@ -1917,10 +1917,11 @@ class SdPresetTest(unittest.TestCase):
                                  at24=b"\xff" * 65536)
         self.assertIn("*.1 gain.out.1 ok", out)
         self.assertIn("biquad.1.2.calc ok", out)
-        # only what get reports but set refuses: mixer.position 0 of the empty harness state and
-        # delay.in.7/8 (get lists 8 input delays, set takes 1..6; c45b3 restore-tuning sees the same)
+        # only mixer.position 0 of the empty harness state; delay.in.7/8 (digital inputs, no delay)
+        # are not exported
         errs = sorted(set(re.findall(r"!\.1 (\S+) ", out)))
-        self.assertEqual(errs, ["delay.in.7", "delay.in.8", "mixer.position"])
+        self.assertEqual(errs, ["mixer.position"])
+        self.assertFalse([l for l in cat if "delay.in.7" in l or "delay.in.8" in l])
 
     def test_other_model_and_no_card(self):
         f = "V40-96ELN"

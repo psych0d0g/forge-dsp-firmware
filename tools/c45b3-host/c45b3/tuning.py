@@ -101,6 +101,8 @@ def blank(reg, value):
         return value.startswith("[255,")
     if reg.startswith("modc."):
         return False
+    if re.fullmatch(r"delay\.in\.[78]", reg):
+        return True  # digital inputs: get lists them, they have no delay (set refuses them)
     return value in ("255", "32767", "65535", '""')
 
 

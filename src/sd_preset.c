@@ -14,6 +14,7 @@
  * (V30-96LN: file_datetimes_eram); the other flavours use EEPROM 0xE00.. (unused there).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
+#include <stdlib.h>
 #include <string.h>
 #include "sd.h"
 #include "api.h"
@@ -218,6 +219,12 @@ static void x_line(void)
 	const char *v = eq + 1;
 	if (!strcmp(p, "biquad") || !strcmp(p, "modc.enable") || x_blank(p, v))
 		return;
+#ifdef BAS_STORE_DELAY_IN_COUNT
+	/* get delay.in.* lists all 8 inputs like the original, but only the analog ones have a delay
+	 * (7/8 are the digital inputs); set refuses the others */
+	if (!strncmp(p, "delay.in.", 9) && atoi(p + 9) > BAS_STORE_DELAY_IN_COUNT)
+		return;
+#endif
 	/* biquad.C.B -> biquad.C.B.calc */
 	uint8_t dots = 0;
 	for (const char *q = p; *q; q++)
