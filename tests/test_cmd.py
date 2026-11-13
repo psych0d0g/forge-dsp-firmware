@@ -7,6 +7,7 @@ import glob
 import math
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import unittest
@@ -2248,6 +2249,46 @@ class VuTest(LinesMixin, unittest.TestCase):
         peeks = [int(l.split("S 68 06 00 02 00 ")[1][:2], 16) for l in out if l.startswith("@i2c1:") and "S 68 06 00 02" in l]
         self.assertEqual(peeks.count(6), 8 + 2)                                    # 8 for loudness, 2 from the meter rounds
         self.assertEqual(len(peeks), 8 * 3)
+
+
+@unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
+class HelpTest(LinesMixin, unittest.TestCase):
+    """get system.help lists every system command (port extension)."""
+
+    def help(self, f="V40-96ELN"):
+        line = self.lines(f, ["1|get.1 system.help"])[0]
+        self.assertIn("system.help=[", line)
+        return re.findall(r'"([^"]*)"', line.split("=", 1)[1])
+
+    def test_matches_dispatchers(self):
+        """help is built from the dispatch tables: every row listed, command words unique"""
+        src = pathlib.Path(HERE, "..", "src", "cmd", "cmd_system.c").read_text()
+        cmds = self.help()
+        self.assertEqual(len(cmds), len(set(cmds)))
+        for verb in ("get", "set"):
+            table = src.split(f"#define SYS_{verb.upper()}(X) \\\n")[1].split("\n\n")[0]
+            rows = re.findall(r'X\("([^"]*)", ', table)
+            self.assertGreater(len(rows), 5)
+            words = [r[:2] for r in rows]
+            self.assertEqual(len(words), len(set(words)), f"{verb}: two rows with the same command word")
+            for r in rows:
+                name, *paths = r.split("|")
+                want = [f"{verb} system.{name}{x}" for x in (paths or [""])]
+                for w in want:
+                    self.assertIn(w, cmds)
+        self.assertIn("get system.vu.out", cmds)
+        self.assertIn("set system.biquads.K", cmds)
+        self.assertNotIn("set system.vu", cmds)
+
+    def test_every_get_is_answered(self):
+        f = "V40-96ELN"
+        gets = [c[4:].replace(".N", ".1").replace(".K", ".1") for c in self.help() if c.startswith("get ")]
+        out = self.lines(f, ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect"]
+                         + [f"1|get.1 {c}" for c in gets])
+        for c in gets:
+            ans = [l for l in out if f" {c}" in l]
+            self.assertTrue(ans, c)
+            self.assertNotIn("unknown command", ans[0], c)
 
 
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")

@@ -599,23 +599,95 @@ static void cmd_set_system_supply(void)
 	cmd_answer_ok();
 }
 
+/* --- dispatch tables (PORT): one row per system command. The first two letters of the name are
+ * the command word the parser keeps (e.g. "temperature" = 0x7465). The rest of the row lists the
+ * paths below it for get/set system.help, '|'-separated; an empty first path = the bare command,
+ * N/K = number, * = all. A new row is dispatched and listed in the help at the same time. */
+#ifndef PROGMEM
+#define PROGMEM
+#endif
+#define SYS_SPEC_STR(spec, fn) spec "\n"
+#define SYS_FN(spec, fn) fn,
+typedef void (*sys_fn)(void);
+
+/* index of the row of command word w in a table of '\n'-terminated specs, -1 if none */
+static int8_t sys_find(const char *spec, uint8_t n, uint16_t w)
+{
+	const uint8_t *p = (const uint8_t *)spec;
+	for (uint8_t i = 0; i < n; i++) {
+		if ((uint16_t)(bas_data_byte(p) << 8 | bas_data_byte(p + 1)) == w)
+			return (int8_t)i;
+		while (bas_data_byte(p++) != '\n')
+			;
+	}
+	return -1;
+}
+
+static void sys_call(const sys_fn *t, int8_t i)
+{
+#ifdef __AVR__
+	sys_fn fn = (sys_fn)pgm_read_ptr(&t[i]);
+#else
+	sys_fn fn = t[i];
+#endif
+	fn();
+}
+
+/* "get system.vu", "get system.vu.out", … for one table */
+static void sys_help(const char *spec, uint8_t n, const char *verb, uint8_t *first)
+{
+	const uint8_t *p = (const uint8_t *)spec;
+	for (uint8_t i = 0; i < n; i++) {
+		const uint8_t *name = p;
+		uint8_t len = 0;
+		while (bas_data_byte(p) != '|' && bas_data_byte(p) != '\n') {
+			p++;
+			len++;
+		}
+		do {  /* one entry per path; a row without paths is the bare command */
+			if (bas_data_byte(p) == '|')
+				p++;
+			if (!*first)
+				out_chr(',');
+			*first = 0;
+			Q();
+			out_str(verb);
+			out_str(" system.");
+			for (uint8_t k = 0; k < len; k++)
+				out_chr((char)bas_data_byte(name + k));
+			for (; bas_data_byte(p) != '|' && bas_data_byte(p) != '\n'; p++)
+				out_chr((char)bas_data_byte(p));
+			Q();
+		} while (bas_data_byte(p) == '|');
+		p++;  /* '\n' */
+	}
+}
+
+#define SYS_SET(X) \
+	X("baud|.N", cmd_set_system_baud) \
+	X("biquads|.K", cmd_set_system_biquads) /* PORT extension (#47) */ \
+	X("boot", cmd_set_system_boot) \
+	X("cfg|.change", cmd_set_system_cfg) \
+	X("channel|.in.N|.name.N", cmd_set_system_channel) \
+	X("debug|.hide|.mode|.out", cmd_set_system_debug) \
+	X("hardware|.memory.eram", cmd_set_system_hardware) \
+	X("key|.info", cmd_set_system_key) \
+	X("reinit", cmd_set_system_reinit) \
+	X("startup|.N", cmd_set_system_startup) /* PORT extension (#40) */ \
+	X("supply|.cal|.low|.mute|.source|.vcc", cmd_set_system_supply) /* PORT extension (#46) */ \
+
+static const char sys_set_spec[] PROGMEM = SYS_SET(SYS_SPEC_STR);
+static const sys_fn sys_set_fn[] PROGMEM = { SYS_SET(SYS_FN) };
+#define SYS_SET_N (sizeof sys_set_fn / sizeof sys_set_fn[0])
+
 void cmd_set_system(void)
 {
 	api_set_out_mute_change();
-	switch (req_w(cmd_req_word_two)) {
-	case 0x6261: cmd_set_system_baud(); break;
-	case 0x626F: cmd_set_system_boot(); break;
-	case 0x6368: cmd_set_system_channel(); break;
-	case 0x6465: cmd_set_system_debug(); break;
-	case 0x6366: cmd_set_system_cfg(); break;
-	case 0x6B65: cmd_set_system_key(); break;
-	case 0x6861: cmd_set_system_hardware(); break;
-	case 0x7265: cmd_set_system_reinit(); break;
-	case 0x7374: cmd_set_system_startup(); break;  /* PORT extension (#40) */
-	case 0x7375: cmd_set_system_supply(); break;   /* PORT extension (#46) */
-	case 0x6269: cmd_set_system_biquads(); break;  /* PORT extension (#47) */
-	default: cmd_error_unknown();
-	}
+	int8_t i = sys_find(sys_set_spec, SYS_SET_N, req_w(cmd_req_word_two));
+	if (i >= 0)
+		sys_call(sys_set_fn, i);
+	else
+		cmd_error_unknown();
 }
 
 /* --- get ----------------------------------------------------------------------- */
@@ -1059,28 +1131,54 @@ static void cmd_get_system_hardware(void)
 	out_crlf();
 }
 
+static void cmd_get_system_help(void);
+#define SYS_GET(X) \
+	X("biquads", cmd_get_system_biquads) /* PORT extension (#47) */ \
+	X("channel|.in.N|.in.*|.name.N|.name.*", cmd_get_system_channel) \
+	X("cycles", cmd_get_system_cycles) \
+	X("debug|.mode|.out", cmd_get_system_debug) \
+	X("echo", cmd_get_system_echo) \
+	X("errors", cmd_get_system_errors) \
+	X("feature|.attributes|.attributes.fr|.attributes.hw|.attributes.oa|.attributes.ob", cmd_get_system_feature) \
+	X("firmware||.port", cmd_get_system_firmware) \
+	X("gui|.panes|.panes.bq|.panes.in|.panes.ou|.panes.sy", cmd_get_system_gui) \
+	X("hardware|.boot.N|.dsp|.dsp.N", cmd_get_system_hardware) /* PORT extension (#22, #45, #57) */ \
+	X("help", cmd_get_system_help) /* PORT extension */ \
+	X("info", cmd_get_system_info) \
+	X("key|.info|.info.board|.info.list|.info.type|.info.version", cmd_get_system_key) \
+	X("limits||.biquad|.in|.names|.out|.types", cmd_get_system_limits) /* PORT extension (#54) */ \
+	X("ping", cmd_get_system_ping) \
+	X("poti|.N", cmd_get_system_poti) \
+	X("startup|.N|.*", cmd_get_system_startup) /* PORT extension (#40) */ \
+	X("supply||.cal|.low|.mute|.raw|.source|.vcc", cmd_get_system_supply) /* PORT extension (#46) */ \
+	X("temperature||.celsius|.fahrenheit|.kelvin", cmd_get_system_temp) \
+	X("vu||.out", cmd_get_system_vu) /* PORT extension (#52) */ \
+
+static const char sys_get_spec[] PROGMEM = SYS_GET(SYS_SPEC_STR);
+static const sys_fn sys_get_fn[] PROGMEM = { SYS_GET(SYS_FN) };
+#define SYS_GET_N (sizeof sys_get_fn / sizeof sys_get_fn[0])
+
+/* PORT extension: get system.help = every get and set system command, built from the tables */
+static void cmd_get_system_help(void)
+{
+	if (req_w(cmd_req_word_three) != 0x0000) {
+		cmd_error_unknown();
+		return;
+	}
+	uint8_t first = 1;
+	cmd_answer_header();
+	out_chr('[');
+	sys_help(sys_get_spec, SYS_GET_N, "get", &first);
+	sys_help(sys_set_spec, SYS_SET_N, "set", &first);
+	out_chr(']');
+	out_crlf();
+}
+
 void cmd_get_system(void)
 {
-	switch (req_w(cmd_req_word_two)) {
-	case 0x6368: cmd_get_system_channel(); break;
-	case 0x6379: cmd_get_system_cycles(); break;
-	case 0x6465: cmd_get_system_debug(); break;
-	case 0x6563: cmd_get_system_echo(); break;
-	case 0x6572: cmd_get_system_errors(); break;
-	case 0x6669: cmd_get_system_firmware(); break;
-	case 0x696E: cmd_get_system_info(); break;
-	case 0x6B65: cmd_get_system_key(); break;
-	case 0x7069: cmd_get_system_ping(); break;
-	case 0x7374: cmd_get_system_startup(); break;  /* PORT extension (#40) */
-	case 0x6861: cmd_get_system_hardware(); break; /* PORT extension (#22 diagnostics) */
-	case 0x6665: cmd_get_system_feature(); break;
-	case 0x6775: cmd_get_system_gui(); break;
-	case 0x706F: cmd_get_system_poti(); break;
-	case 0x7465: cmd_get_system_temp(); break;
-	case 0x7375: cmd_get_system_supply(); break;  /* PORT extension (#46) */
-	case 0x7675: cmd_get_system_vu(); break;      /* PORT extension (#52) */
-	case 0x6C69: cmd_get_system_limits(); break;  /* PORT extension (#54) */
-	case 0x6269: cmd_get_system_biquads(); break; /* PORT extension (#47) */
-	default: cmd_error_unknown();
-	}
+	int8_t i = sys_find(sys_get_spec, SYS_GET_N, req_w(cmd_req_word_two));
+	if (i >= 0)
+		sys_call(sys_get_fn, i);
+	else
+		cmd_error_unknown();
 }
