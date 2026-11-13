@@ -534,7 +534,7 @@ void iface_putc(uint8_t buart, char c)
 void iface_flush(uint8_t buart) { (void)buart; }
 
 /* start as after power-on with the EEPROM in eeprom[] (0xFF everywhere: sysinit) */
-static void host_boot(void)
+static __attribute__((unused)) void host_boot(void)
 {
 	errorcount_init();
 	registers_load();
@@ -572,26 +572,74 @@ static int host_line(char *line)
 #else
 #define SIM_API
 #endif
-/* the board as a fully populated Forge: every chip the flavour knows answers, then systeminit */
+/* the board as a fully populated Forge: every chip the flavour knows answers; the MCU temperature
+ * sensor reads about 38 °C (ADCB 0 = 2251 with the calibration 0x0A00 of the harness) */
 static const char *const sim_board[] = {
 	"#i2cdev=1,E0", "#i2cdev=1,40", "#i2cdev=1,4E", "#i2cdev=2,90", "#i2cdev=1,20", "#i2cdev=1,22",
 	"#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#i2cdev=2,30", "#i2cdev=1,98", "#i2cdev=2,20",
-	"#systeminit", "#dsp_detect", "#dac_init", "#events_init", "#modc_init",
+	"#adc=1,0,2251",
 };
+#include "factory.h"
+#include "ir.h"
+#include "limiter.h"
+#include "loopcall.h"
+#include "sd.h"
+#include "supply.h"
+void sys_init_init(void);
+static uint16_t sim_counter, sim_zero;
+static uint32_t sim_us;
 /* the EEPROM (4096 bytes) to load before sim_boot or to save after commands */
 SIM_API uint8_t *sim_eeprom(void) { return eeprom; }
-/* boot; returns 1 if the firmware asked for a reset since the last boot */
+/* start as main.c does after power-on (FORGE_BRINGUP); returns 1 if a reset was pending */
 SIM_API int sim_boot(void)
 {
 	char l[64];
 	int r = sim_reset;
 	sim_reset = 0;
-	host_boot();
+	errorcount_init();
+	registers_load();
+	sysinit_check(0);
+	log_event(LOG_FATAL, LOGM_SYS, LOGE_SYS_START, 0, 0);
+	i2c_bus_init(1);
+	i2c_bus_init(2);
+	memset(at24, 0xFF, sizeof at24);
+	memset(dspee, 0xFF, sizeof dspee);
 	for (unsigned i = 0; i < sizeof sim_board / sizeof sim_board[0]; i++) {
 		snprintf(l, sizeof l, "%s", sim_board[i]);
 		host_line(l);
 	}
-	sim_n = 0;  /* nothing of the boot on the USB port */
+	flavour_systeminit_peripherals();
+	hw_check_dsp_restart();
+	limiter_apply();
+	api_init();
+	api_init_mute();
+	sd_init();
+	irreceiver_init();
+	ir_custom_init();
+	sys_init_init();
+	ctrl_events_init();
+	events_poll_pins();
+	events_adc_init();
+	supply_init();
+	level_init();
+	events_spdif_init();
+	ctrl_modc_init();
+	hw_check_evaluate();
+	cmd_init();
+	sd_preset_load_init();
+	sysinit_count_boot();
+	cmd_req_value[0] = 'o'; cmd_req_value[1] = 'k'; cmd_req_value[2] = 0;
+	if (factory_write()) {   /* end of systeminit.bas after a factory reset: event, done, reset */
+		static const uint16_t reinit_event[cmd_req_words_max] = {0x0104, 0x7379, 0x7265, 0x0000, 0x0000};
+		cmd_load_header(reinit_event);
+		cmd_sendevent();
+		set_register(BAS_REG_STARTUP_STATE, BAS_STARTUP_STATE_DONE);
+		mcu_reset_delayed();
+	}
+	static const uint16_t bootrdy_event[cmd_req_words_max] = {0x0104, 0x7379, 0x626F, 0x0000, 0x0000};
+	cmd_load_header(bootrdy_event);
+	cmd_sendevent();
+	sim_n = 0;  /* the boot messages are not for the GUI */
 	return r;
 }
 /* one command line from the GUI to the USB port (without CR/LF) */
@@ -601,12 +649,18 @@ SIM_API void sim_command(const char *cmd)
 	snprintf(l, sizeof l, "1|%s", cmd);
 	host_line(l);
 }
-/* the main loop once: MODC, API (volume, mute ramps …), store */
+/* run the firmware for ms milliseconds: the TCE0 tick (1.954 ms) with the loopcall bits of tick.c */
 SIM_API void sim_loop(uint16_t ms)
 {
-	host_ms = (uint16_t)(host_ms + ms);
-	char l[] = "#mainloop";
-	host_line(l);
+	sim_us += (uint32_t)ms * 1000u;
+	while (sim_us >= 1954u) {
+		sim_us -= 1954u;
+		host_ms = (uint16_t)(host_ms + 2);
+		uint16_t c = ++sim_counter;
+		uint16_t bits = (uint16_t)(~sim_zero & c);
+		sim_zero = c;
+		loopcall(bits);
+	}
 }
 /* USB output since the last call (NUL-terminated), and whether a reset is pending */
 SIM_API const char *sim_output(void) { sim_out[sim_n] = 0; sim_n = 0; return sim_out; }

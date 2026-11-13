@@ -22,11 +22,17 @@ int main(void)
 {
 	memset(sim_eeprom(), 0xFF, 4096);
 	sim_boot();
+	if (sim_reset_pending()) { printf("factory defaults written, boot again\n"); sim_boot(); }
+	sim_loop(2000);
+	sim_output();
 	expect("get.1 system.ping", "pong");
 	expect("get.1 system.firmware.port", "9.8.7-test");
 	expect("set.1 gain.out.1=200", "gain.out.1");
 	expect("get.1 gain.out.1", "=200");
 	expect("get.1 nonsense.x", "!.1");
+	expect("get.1 preset.loaded", "preset.loaded=");
+	expect("get.1 system.temperature", "system.temperature=");
+	expect("get.1 system.biquads", "system.biquads=");
 	sim_loop(10);
 	/* the EEPROM keeps the value over a new boot */
 	sim_boot();
