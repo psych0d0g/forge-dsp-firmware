@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 uint8_t *sim_eeprom(void);
+uint8_t *sim_at24(void);
 int sim_boot(void);
 void sim_command(const char *cmd);
 void sim_loop(uint16_t ms);
@@ -21,6 +22,7 @@ static void expect(const char *cmd, const char *want)
 int main(void)
 {
 	memset(sim_eeprom(), 0xFF, 4096);
+	memset(sim_at24(), 0xFF, 65536);
 	sim_boot();
 	if (sim_reset_pending()) { printf("factory defaults written, boot again\n"); sim_boot(); }
 	sim_loop(2000);
@@ -33,6 +35,7 @@ int main(void)
 	expect("get.1 preset.loaded", "preset.loaded=");
 	expect("get.1 system.temperature", "system.temperature=");
 	expect("get.1 system.biquads", "system.biquads=");
+	expect("get.1 system.errors", "system.errors=[]");
 	sim_loop(10);
 	/* the EEPROM keeps the value over a new boot */
 	sim_boot();

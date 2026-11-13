@@ -590,6 +590,8 @@ static uint16_t sim_counter, sim_zero;
 static uint32_t sim_us;
 /* the EEPROM (4096 bytes) to load before sim_boot or to save after commands */
 SIM_API uint8_t *sim_eeprom(void) { return eeprom; }
+/* the preset EEPROM (AT24C512, 65536 bytes), the same way; 0xFF everywhere = blank */
+SIM_API uint8_t *sim_at24(void) { return at24; }
 /* start as main.c does after power-on (FORGE_BRINGUP); returns 1 if a reset was pending */
 SIM_API int sim_boot(void)
 {
@@ -602,8 +604,11 @@ SIM_API int sim_boot(void)
 	log_event(LOG_FATAL, LOGM_SYS, LOGE_SYS_START, 0, 0);
 	i2c_bus_init(1);
 	i2c_bus_init(2);
-	memset(at24, 0xFF, sizeof at24);
-	memset(dspee, 0xFF, sizeof dspee);
+	static int first = 1;   /* the external EEPROMs keep their content over a restart, like the chips */
+	if (first) {
+		first = 0;
+		memset(dspee, 0xFF, sizeof dspee);
+	}
 	for (unsigned i = 0; i < sizeof sim_board / sizeof sim_board[0]; i++) {
 		snprintf(l, sizeof l, "%s", sim_board[i]);
 		host_line(l);
