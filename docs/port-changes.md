@@ -119,7 +119,7 @@ Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `get modc
   Referenz, Peripherie auf einem I2C-Modell, SD-Karte als FAT-Image).
 - Simulator für die Web-GUI (`tools/sim`, forge-dsp-gui-ng#11): derselbe native Build mit `-DSIM` und einer kleinen
   API statt stdin/stdout (`sim_boot`, `sim_command`, `sim_loop`, `sim_output`, EEPROM von außen), als WebAssembly je
-  Variante. Bestückt wie ein vollständiger Forge (alle Bausteine antworten, MCU-Temperatur etwa 38 °C), Start wie
+  Variante. Bestückt wie ein vollständiger Forge (alle Bausteine antworten, MCU-Temperatur etwa 38 °C, Zündung an), Start wie
   `main.c` im Bring-up-Build mit Werks-Reset (leeres EEPROM bekommt die Vorgaben, Preset 0 geladen), danach läuft
   `loopcall` im Takt von TCE0 (1,954 ms) mit denselben Bits wie im Timer-Interrupt. Nativ geprüft mit
   `tools/sim/sim_test.c` (`make -C tests/native build/sim-test-<Variante>`).

@@ -573,11 +573,13 @@ static int host_line(char *line)
 #define SIM_API
 #endif
 /* the board as a fully populated Forge: every chip the flavour knows answers; the MCU temperature
- * sensor reads about 38 °C (ADCB 0 = 2251 with the calibration 0x0A00 of the harness) */
+ * sensor reads about 38 °C (ADCB 0 = 2251 with the calibration 0x0A00 of the harness), the ignition
+ * input (power ctrl in) is on */
 static const char *const sim_board[] = {
 	"#i2cdev=1,E0", "#i2cdev=1,40", "#i2cdev=1,4E", "#i2cdev=2,90", "#i2cdev=1,20", "#i2cdev=1,22",
 	"#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#i2cdev=2,30", "#i2cdev=1,98", "#i2cdev=2,20",
 	"#adc=1,0,2251",
+	"#pin=PIN_CPU_POWER_CTRL_IN,1",   /* ignition on: otherwise the shutdown block runs and repeats its event */
 };
 #include "factory.h"
 #include "ir.h"

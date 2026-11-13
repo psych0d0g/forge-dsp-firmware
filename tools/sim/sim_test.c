@@ -27,6 +27,9 @@ int main(void)
 	if (sim_reset_pending()) { printf("factory defaults written, boot again\n"); sim_boot(); }
 	sim_loop(2000);
 	sim_output();
+	/* the ignition is on: the main loop runs quietly, no shutdown event */
+	sim_loop(1000);
+	if (strstr(sim_output(), "system.shutdown")) { printf("FAIL: the simulated Forge shuts down\n"); fails++; }
 	expect("get.1 system.ping", "pong");
 	expect("get.1 system.firmware.port", "9.8.7-test");
 	expect("set.1 gain.out.1=200", "gain.out.1");
