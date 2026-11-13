@@ -467,7 +467,7 @@ static void save_eeprom(void)
 }
 
 /* internal EEPROM and the external ones that were asked for (#dspee_out, #at24out) */
-static void save_all(void)
+static __attribute__((unused)) void save_all(void)
 {
 	save_eeprom();
 	for (int i = 0; i < 3; i++)
@@ -483,11 +483,24 @@ static void save_all(void)
 	}
 }
 
+#ifdef SIM
+/* Simulator for the GUI (tools/sim, forge-dsp-gui-ng #11): the USB output collects in a buffer,
+ * a reset is remembered and the caller boots again. */
+static char sim_out[1u << 16];
+static unsigned sim_n;
+static int sim_reset;
+#endif
+
 void mcu_reset_delayed(void)
 {
+#ifdef SIM
+	sim_reset = 1;
+	return;
+#else
 	printf("\n@reset\n");
 	save_all();
 	exit(0);
+#endif
 }
 
 uint8_t iface_copy2buffer(uint8_t ch, uint8_t *buffer)
@@ -502,6 +515,11 @@ uint8_t iface_copy2buffer(uint8_t ch, uint8_t *buffer)
 
 void iface_putc(uint8_t buart, char c)
 {
+#ifdef SIM
+	if (buart == 0 && sim_n < sizeof sim_out - 1)
+		sim_out[sim_n++] = c;
+	return;
+#endif
 	if (buart != cur) {
 		printf("%s@%u:", cur < 0 ? "" : "\n", buart);
 		cur = buart;
@@ -515,6 +533,85 @@ void iface_putc(uint8_t buart, char c)
 
 void iface_flush(uint8_t buart) { (void)buart; }
 
+/* start as after power-on with the EEPROM in eeprom[] (0xFF everywhere: sysinit) */
+static void host_boot(void)
+{
+	errorcount_init();
+	registers_load();
+	sysinit_check(0);
+	sysinit_count_boot();
+	memset(at24, 0xFF, sizeof at24);
+	memset(dspee, 0xFF, sizeof dspee);
+	i2c_bus_init(1);
+	i2c_bus_init(2);
+	at24c512_detect();
+	cmd_init();
+}
+
+/* one input line: "#..." harness command, "<ch>|<command>" to interface ch (1 = USB);
+ * returns 1 if it was a command to an interface */
+static int host_line(char *line)
+{
+	line[strcspn(line, "\r\n")] = 0;
+	if (!strncmp(line, "#dtr=", 5)) { host_dtr = atoi(line + 5); return 0; }
+	if (!strncmp(line, "#ir=", 4)) { host_ir = atoi(line + 4); return 0; }
+	if (line[0] == '#') { store_cmd(line); return 0; }
+	int ch = line[0] - '0';
+	if (ch < 1 || ch > 4 || line[1] != '|')
+		return 0;
+	snprintf((char *)rx[ch], sizeof rx[ch], "%.125s\r\n", line + 2);
+	iface_todo[ch] = 1;
+	cmd_check4buffer();
+	return 1;
+}
+
+#ifdef SIM
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#define SIM_API EMSCRIPTEN_KEEPALIVE
+#else
+#define SIM_API
+#endif
+/* the board as a fully populated Forge: every chip the flavour knows answers, then systeminit */
+static const char *const sim_board[] = {
+	"#i2cdev=1,E0", "#i2cdev=1,40", "#i2cdev=1,4E", "#i2cdev=2,90", "#i2cdev=1,20", "#i2cdev=1,22",
+	"#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#i2cdev=2,30", "#i2cdev=1,98", "#i2cdev=2,20",
+	"#systeminit", "#dsp_detect", "#dac_init", "#events_init", "#modc_init",
+};
+/* the EEPROM (4096 bytes) to load before sim_boot or to save after commands */
+SIM_API uint8_t *sim_eeprom(void) { return eeprom; }
+/* boot; returns 1 if the firmware asked for a reset since the last boot */
+SIM_API int sim_boot(void)
+{
+	char l[64];
+	int r = sim_reset;
+	sim_reset = 0;
+	host_boot();
+	for (unsigned i = 0; i < sizeof sim_board / sizeof sim_board[0]; i++) {
+		snprintf(l, sizeof l, "%s", sim_board[i]);
+		host_line(l);
+	}
+	sim_n = 0;  /* nothing of the boot on the USB port */
+	return r;
+}
+/* one command line from the GUI to the USB port (without CR/LF) */
+SIM_API void sim_command(const char *cmd)
+{
+	char l[160];
+	snprintf(l, sizeof l, "1|%s", cmd);
+	host_line(l);
+}
+/* the main loop once: MODC, API (volume, mute ramps …), store */
+SIM_API void sim_loop(uint16_t ms)
+{
+	host_ms = (uint16_t)(host_ms + ms);
+	char l[] = "#mainloop";
+	host_line(l);
+}
+/* USB output since the last call (NUL-terminated), and whether a reset is pending */
+SIM_API const char *sim_output(void) { sim_out[sim_n] = 0; sim_n = 0; return sim_out; }
+SIM_API int sim_reset_pending(void) { return sim_reset; }
+#else
 /* usage: cmd-<flavour> [EEPROM_IN|- [EEPROM_OUT]]  (default: blank 0xFF, i.e. sysinit) */
 int main(int argc, char **argv)
 {
@@ -527,30 +624,14 @@ int main(int argc, char **argv)
 	}
 	if (argc > 2)
 		eeprom_out = argv[2];
-	errorcount_init();
-	registers_load();
-	sysinit_check(0);
-	sysinit_count_boot();
-	memset(at24, 0xFF, sizeof at24);
-	memset(dspee, 0xFF, sizeof dspee);
-	i2c_bus_init(1);
-	i2c_bus_init(2);
-	at24c512_detect();
-	cmd_init();
+	host_boot();
 	while (fgets(line, sizeof line, stdin)) {
-		line[strcspn(line, "\r\n")] = 0;
-		if (!strncmp(line, "#dtr=", 5)) { host_dtr = atoi(line + 5); continue; }
-		if (!strncmp(line, "#ir=", 4)) { host_ir = atoi(line + 4); continue; }
-		if (line[0] == '#') { store_cmd(line); continue; }
-		int ch = line[0] - '0';
-		if (ch < 1 || ch > 4 || line[1] != '|')
+		if (!host_line(line))
 			continue;
-		snprintf((char *)rx[ch], sizeof rx[ch], "%.125s\r\n", line + 2);
-		iface_todo[ch] = 1;
-		cmd_check4buffer();
 		if (cur >= 0) { printf("\n"); cur = -1; }
 		printf("--\n");
 	}
 	save_all();
 	return 0;
 }
+#endif

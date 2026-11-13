@@ -20,3 +20,11 @@ $(O)/cmd-%: $(SRC) $(wildcard $(ROOT)/include/*.h stub/*.h) $(addprefix $(ROOT)/
 
 clean:
 	rm -rf $(O)
+
+# simulator API for the GUI (tools/sim): same sources with -DSIM, checked natively by tools/sim/sim_test.c
+$(O)/sim-test-%: $(SRC) $(ROOT)/tools/sim/sim_test.c $(wildcard $(ROOT)/include/*.h stub/*.h) $(addprefix $(ROOT)/src/flavours/%/,flavour.h flavour_eram.h flavour_data.h flavour_systeminit.c flavour_systeminit.h) $(wildcard $(ROOT)/src/flavours/%/dsp_opt.h)
+	mkdir -p $(O)
+	$(CC) $(CFLAGS) -DSIM -I$(ROOT)/src/flavours/$* -o $@ $(SRC) $(ROOT)/src/flavours/$*/flavour_systeminit.c $(ROOT)/tools/sim/sim_test.c -lm
+
+print-src:
+	@echo $(SRC)

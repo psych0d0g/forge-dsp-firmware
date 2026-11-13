@@ -176,6 +176,8 @@ c45b3 braucht nur pyserial, das liefert PlatformIO mit. CLI: `pio run -e V4x-96E
   mit Datei:Zeile, Referenz beim Portieren).
 - `tools/c45b3-host/`: Linux-Host für chip45boot3, mit Tests gegen ein Modell und gegen den nativ übersetzten Original-
   Bootloader-Code. `tests/pty_bridge.py` emuliert Firmware + Bootloader an einem pty für Upload-Tests ohne Hardware.
+- `tools/sim/`: die Firmware als WebAssembly-Simulator für die Web-GUI (Befehle, EEPROM, Steuerblöcke ohne Gerät),
+  gebaut mit emsdk 6.0.13 (`make -C tools/sim`).
 - Offizielle HEX 1.11.6000 aller Varianten: GitHub-Release `0.0.1116000` (nicht im git).
 
 ## Sicherheit

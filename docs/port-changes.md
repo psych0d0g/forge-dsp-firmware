@@ -117,6 +117,10 @@ Bekannt, aber wie im Original belassen (damit die GUI dasselbe sieht): `get modc
 
 - Nativ: 106 Tests, alle 7 Varianten (Protokoll, EEPROM-Layout gegen die Release-HEX, Biquads gegen eine unabhängige
   Referenz, Peripherie auf einem I2C-Modell, SD-Karte als FAT-Image).
+- Simulator für die Web-GUI (`tools/sim`, forge-dsp-gui-ng#11): derselbe native Build mit `-DSIM` und einer kleinen
+  API statt stdin/stdout (`sim_boot`, `sim_command`, `sim_loop`, `sim_output`, EEPROM von außen), als WebAssembly je
+  Variante. Bestückt wie ein vollständiger Forge (alle Bausteine antworten, danach `systeminit`). Nativ geprüft mit
+  `tools/sim/sim_test.c` (`make -C tests/native build/sim-test-<Variante>`).
 - Am Gerät (DEV-Forge V40-96ELN): Start auf dem EEPROM des Originals ohne Werks-Reset, alle Bausteine erkannt,
   Biquad-Koeffizienten aus dem DSP bitgenau gleich der Referenz, Abschalten über Remote-In (#39).
 
