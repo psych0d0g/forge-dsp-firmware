@@ -455,7 +455,7 @@ static const struct name names_one[] = {
 };
 
 static const struct name names_two[] = {
-	{0x002A, ".*"}, {0x6261, ".baud"}, {0x626C, ".block"}, {0x626F, ".boot"}, {0x7375, ".supply"} /* port #46 */, {0x7675, ".vu"} /* port #52 */, {0x6269, ".biquads"} /* port #47 */, {0x6865, ".help"} /* port */,
+	{0x002A, ".*"}, {0x6261, ".baud"}, {0x626C, ".block"}, {0x626F, ".boot"}, {0x7375, ".supply"} /* port #46 */, {0x7675, ".vu"} /* port #52 */, {0x6269, ".biquads"} /* port #47 */, {0x6865, ".help"} /* port */, {0x7364, ".sd"} /* port #24 */,
 	{0x636F, ".copy"}, {0x6366, ".cfg"}, {0x6368, ".channel"}, {0x6379, ".cycles"},
 	{0x6465, ".debug"}, {0x6563, ".echo"}, {0x656E, ".enable"}, {0x6665, ".feature"},
 	{0x6669, ".firmware"}, {0x6775, ".gui"}, {0x6861, ".hardware"}, {0x6972, ".ir"},
@@ -561,6 +561,8 @@ void cmd_answer_header(void)
 			goto word_four;
 		} else if (w3 == 0x7363) {
 			s = w1 == 0x6761 ? ".scale" : ".scan";
+		} else if (w3 == 0x6669 && w2 == 0x7364) {
+			s = ".files";  /* PORT (#24): system.sd.files */
 		} else {
 			s = lookup(names_three, w3);
 		}

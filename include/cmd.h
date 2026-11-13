@@ -145,6 +145,7 @@ extern uint8_t buart_channel;
 void out_str(const char *s);
 void out_chr(char c);
 void out_u16(uint16_t v);       /* print of a numeric variable / str() */
+void out_u32(uint32_t v);
 void out_i16(int16_t v);
 void out_crlf(void);
 

@@ -9,5 +9,6 @@
 extern uint8_t sd_ready;           /* global_state.sdFileRdy: card mounted */
 uint8_t sd_card_present(void);     /* card switch */
 void sd_init(void);                /* dos_init: SPI, card, mount */
-void sd_preset_load_init(void);    /* libs/file/preset_load: preset_N.cfg -> preset N-1 */
+void sd_preset_load_init(void);
+void cmd_get_system_sd(void);    /* PORT (#24): get system.sd / system.sd.files */    /* libs/file/preset_load: preset_N.cfg -> preset N-1 */
 #endif

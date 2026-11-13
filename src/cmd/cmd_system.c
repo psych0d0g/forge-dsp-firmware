@@ -24,6 +24,7 @@
 #include "factory.h"
 #include "identity.h"
 #include "sys_init.h"
+#include "sd.h"
 #include "hwcheck.h"
 void watchdog_kick(void);
 #include "cmd.h"
@@ -1149,6 +1150,7 @@ static void cmd_get_system_help(void);
 	X("limits||.biquad|.in|.names|.out|.types", cmd_get_system_limits) /* PORT extension (#54) */ \
 	X("ping", cmd_get_system_ping) \
 	X("poti|.N", cmd_get_system_poti) \
+	X("sd||.files", cmd_get_system_sd) /* PORT extension (#24) */ \
 	X("startup|.N|.*", cmd_get_system_startup) /* PORT extension (#40) */ \
 	X("supply||.cal|.low|.mute|.raw|.source|.vcc", cmd_get_system_supply) /* PORT extension (#46) */ \
 	X("temperature||.celsius|.fahrenheit|.kelvin", cmd_get_system_temp) \

@@ -126,3 +126,52 @@ void sd_preset_load_init(void)
 }
 
 /* FatFs needs a time with FF_FS_NORTC = 0 only; kept for a later RTC */
+
+/* PORT extension (#24 diagnostics), read-only:
+ *   get system.sd       = [card present, mounted, FAT type 1/2/3 = FAT12/16/32 (0 none), size in MB]
+ *   get system.sd.files = ["NAME.EXT:bytes", …] of the root directory (8.3 names, at most 32)
+ * A card inserted after the start is mounted on the first request. No free space: on FAT32
+ * without valid FSINFO that would scan the whole FAT (longer than the watchdog). */
+void cmd_get_system_sd(void)
+{
+	uint16_t w3 = req_w(cmd_req_word_three);
+	if ((w3 != 0x0000 && w3 != 0x6669) || req_w(cmd_req_word_four) != 0x0000) {
+		cmd_error_unknown();
+		return;
+	}
+	uint8_t present = sd_card_present();
+	if (!present)
+		sd_ready = 0;
+	else if (!sd_ready)
+		sd_init();
+	cmd_answer_header();
+	out_chr('[');
+	if (w3 == 0x0000) {
+		uint8_t t = sd_ready ? fs.fs_type : 0;
+		uint32_t mb = sd_ready ? (uint32_t)(fs.n_fatent - 2) * fs.csize / 2048u : 0;
+		out_u16(present); out_chr(',');
+		out_u16(sd_ready); out_chr(',');
+		out_u16(t == FS_FAT12 ? 1 : t == FS_FAT16 ? 2 : t == FS_FAT32 ? 3 : 0); out_chr(',');
+		out_u32(mb);
+	} else if (sd_ready) {
+		DIR d;
+		FILINFO fi;
+		uint8_t n = 0;
+		if (f_opendir(&d, "/") == FR_OK) {
+			while (n < 32 && f_readdir(&d, &fi) == FR_OK && fi.fname[0]) {
+				if (fi.fattrib & (AM_DIR | AM_HID | AM_SYS))
+					continue;
+				if (n++)
+					out_chr(',');
+				out_chr('"');
+				out_str(fi.fname);
+				out_chr(':');
+				out_u32(fi.fsize);
+				out_chr('"');
+			}
+			f_closedir(&d);
+		}
+	}
+	out_chr(']');
+	out_crlf();
+}

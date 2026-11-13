@@ -1879,6 +1879,19 @@ class SdPresetTest(unittest.TestCase):
             self.assertEqual(list(o[av[1] + vout - 1:av[1] + vout + 1]), [99, 122], f)   # and preset 1
             self.assertIn(b"11.11.26 18:30:00", ee, f)                  # date stored in the EEPROM
 
+    def test_diagnostics(self):
+        """get system.sd / system.sd.files (read-only); a card inserted later is mounted on request"""
+        f = "V40-96ELN"
+        files = [("preset_1.cfg", "[96ELN]\n", None), ("notes.txt", "x" * 1234, None)]
+        out, _, _ = self.run_sd(f, files, ["1|get.1 system.sd", "1|get.1 system.sd.files", "#sd_card=1",
+                                           "1|get.1 system.sd", "1|get.1 system.sd.files", "1|get.1 system.sd.x"])
+        ans = [l for l in out.splitlines() if "system.sd" in l]
+        self.assertIn("system.sd=[0,0,0,0]", ans[0])
+        self.assertIn("system.sd.files=[]", ans[1])
+        self.assertRegex(ans[2], r"system\.sd=\[1,1,1,[78]\]")              # 8 MB image: FAT12
+        self.assertIn('system.sd.files=["PRESET_1.CFG:8","NOTES.TXT:1234"]', ans[3])
+        self.assertIn("unknown command", ans[4])
+
     def test_other_model_and_no_card(self):
         f = "V40-96ELN"
         cfg = '[96LN]\nFILE_v10 = "gain.out.1=111"\n'

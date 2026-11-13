@@ -109,6 +109,18 @@ void out_u16(uint16_t v)
 		out_chr(b[--n]);
 }
 
+void out_u32(uint32_t v)
+{
+	char b[10];
+	uint8_t n = 0;
+	do {
+		b[n++] = (char)('0' + v % 10);
+		v /= 10;
+	} while (v);
+	while (n)
+		out_chr(b[--n]);
+}
+
 void out_i16(int16_t v)
 {
 	if (v < 0) {
