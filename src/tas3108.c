@@ -16,6 +16,7 @@
 #include "registers.h"
 #include "tas3108.h"
 #include "dsp_pool.h"
+#include "log.h"
 
 #define DSP_CORE_RETRIES 8     /* PORT (#45): 8 x 250 ms = 2 s more per core */
 #define DSP_CORE_RETRY_MS 250
@@ -220,6 +221,8 @@ void dsp_eeprom_init(uint8_t n)
 			if (r->verify == 1)
 				break;
 		}
+		log_event(r->verify == 1 ? LOG_INFO : LOG_ERROR, LOGM_DSP, LOGE_DSP_EEPROM, d->core,
+		          (uint16_t)(r->verify | r->written << 8));  /* PORT (#60) */
 	}
 }
 
@@ -266,6 +269,8 @@ void dsp_core_init(uint8_t n)
 	i2c_rbuffer(d->bus);
 	for (uint8_t i = 0; i < 4; i++)
 		r->state[i] = buffer_bytes[i + 1];
+	log_event(buffer_byte ? LOG_ERROR : LOG_DEBUG, LOGM_DSP, LOGE_DSP_CORE, d->core,
+	          (uint16_t)(buffer_byte | 1u << 8));  /* PORT (#60) */
 	if (buffer_byte > 0x00) {
 		errorcount(BAS_ERRORCOUNT_SW_DSP);
 		dsp_state_error = 1;  /* PORT (#47): hw_check_dsp_restart restarts once */

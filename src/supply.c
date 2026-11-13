@@ -6,6 +6,7 @@
  * EEPROM 0x0F03..0x0F10 (identity uses 0x0F00/0x0F01, clickless 0x0F02).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
+#include "log.h"
 #include "supply.h"
 #include "adc_hw.h"
 #include "api.h"
@@ -165,6 +166,7 @@ void supply_mainloop(void)
 			low = want;
 			debounce = 0;
 			send_event(low ? "low" : "ok");
+			log_event(low ? LOG_WARN : LOG_INFO, LOGM_SUPPLY, low ? LOGE_SUPPLY_LOW : LOGE_SUPPLY_OK, (uint16_t)mv, 0);  /* PORT (#60) */
 		}
 	} else {
 		debounce = 0;

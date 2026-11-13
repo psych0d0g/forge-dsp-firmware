@@ -15,6 +15,7 @@
 #include "registers.h"
 #include "store.h"
 #include "tick.h"
+#include "log.h"
 
 void sys_init_mainloop(void);
 void events_vumeter_mainloop(void);
@@ -48,6 +49,7 @@ void loopcall(uint16_t bits)
 		api_mainloop();
 		bqramp_mainloop();  /* PORT (#44): clickless EQ steps */
 		store_mainloop();
+		log_mainloop();     /* PORT (#60): binary log to the microSD */
 #if BAS_MODUL_CS8416 > 0
 		/* V30-96LN: spdif events at 1/8 s */
 		if (PIN_READ(PIN_OPTION_SPDIF_4CH) == 0x00)

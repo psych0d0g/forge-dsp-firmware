@@ -57,6 +57,7 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
 - **microSD prüfen** (`get.1 system.sd`, `get.1 system.sd.files`): Karte, Dateisystem, Größe und Dateien, nur lesend (#24).
 - **Preset auf die microSD exportieren** (`set.1 system.sd.export=N`): schreibt `preset_N.cfg` im GUI-Format, das der Vorlader beim Start wieder liest (#24).
 - **Dateien auf die microSD und zurück** (`system.sd.open/create/read/write/close/delete`): in Blöcken mit Prüfsumme über die serielle Verbindung, für die GUI (#59).
+- **Binäres Log auf der microSD** (`set.1 system.debug.out=4`, Stufe mit `system.debug.mode`): kleine Sätze statt Text, für die Auswertung in der GUI; Format in [docs/log-format.md](docs/log-format.md) (#60).
 - **Namen der Eingänge** im Gerät (`set.1 system.channel.in.N="…"`), wie es sie für die Ausgänge schon gab (#55).
 - **Grenzen lesbar** (`get.1 system.limits.*`): Wertebereiche, Filtertypen und Laufzeit-Speicher je DSP, damit eine GUI
   nichts fest einbauen muss (#54).

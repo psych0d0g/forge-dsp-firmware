@@ -2000,6 +2000,51 @@ class SdPresetTest(unittest.TestCase):
         after = out.split("system.sd.close ok")[1]
         self.assertIn("*.1 gain.out.1 ok", after)                                  # same date as the export, still loaded
 
+    def log_records(self, out, which="@sd_hex:"):
+        import struct
+        hexes = [l[len(which):] for l in out.splitlines() if l.startswith(which)]
+        recs = []
+        for h in hexes:
+            b = bytes.fromhex(h)
+            recs.append([struct.unpack("<HIBBHH", b[i:i + 12]) for i in range(0, len(b), 12)])
+        return recs
+
+    def test_log(self):
+        """#60: binary log, switched by system.debug.out bit 2 and system.debug.mode (level)"""
+        f = "V41-96ELN-3"
+        steps = ["#sd_card=1", "#sd_init", "#log_event=1,1,1,0,0", "#log_loop", "#sd_hex=FORGE.LOG",   # off: nothing
+                 "1|set.1 system.debug.out=4", "1|set.1 system.debug.mode=4",
+                 "#ms=1500", "#log_event=4,4,1,2,0", "#log_event=5,3,2,1,0",                      # debug > info: not written
+                 "#i2cdev=1,68", "#i2cnack=2,6A,9", "#dsp_core=3",                               # error counter 5 -> ERR event
+                 "#log_loop", "#sd_hex=FORGE.LOG"]
+        out, _, _ = self.run_sd(f, [], steps)
+        recs = self.log_records(out)
+        self.assertEqual(recs[0], [])
+        r = recs[1]
+        lvl_mod = [(x[2] >> 5, x[2] & 31, x[3]) for x in r]
+        self.assertEqual(lvl_mod[0], (1, 6, 1))                       # format record first
+        self.assertEqual((r[0][4], r[0][5]), (1, 12))                 # version 1, 12 bytes
+        self.assertIn((4, 4, 1), lvl_mod)                             # preset loaded, info
+        self.assertNotIn((5, 3, 2), lvl_mod)                          # debug level filtered
+        err = [x for x in r if x[2] & 31 == 2]
+        self.assertEqual([(x[3], x[4]) for x in err], [(5, 1)])       # error type 5, count 1
+        self.assertGreaterEqual(r[1][1], 1500)                        # ms since start
+
+    def test_log_rotation_and_queue(self):
+        f = "V40-96ELN"
+        many = [f"#log_event=4,4,1,{i},0" for i in range(20)]           # 20 > queue of 16
+        steps = (["#sd_card=1", "#sd_init", "1|set.1 system.debug.out=4", "1|set.1 system.debug.mode=4"] + many
+                 + ["#log_loop", "#sd_hex=FORGE.LOG"] + [f"#log_event=4,4,1,{100 + i},0" for i in range(16)]
+                 + ["#log_loop", "#log_event=4,4,1,200,0", "#log_loop", "#sd_hex=FORGE.LOG", "#sd_hex=FORGE.OLD"])
+        out, _, _ = self.run_sd(f, [], steps)
+        first, log, old = self.log_records(out)
+        self.assertEqual([x[4] for x in first if x[3] == 1 and x[2] & 31 == 4], list(range(16)))
+        self.assertEqual([(x[3], x[4]) for x in first if x[2] & 31 == 6][-1], (2, 4))   # 4 dropped
+        # 240-byte limit in the native build: the full file became FORGE.OLD, the new one starts with the format record
+        self.assertTrue(old)
+        self.assertEqual((log[0][2] & 31, log[0][3]), (6, 1))
+        self.assertEqual(log[-1][4], 200)
+
     def test_other_model_and_no_card(self):
         f = "V40-96ELN"
         cfg = '[96LN]\nFILE_v10 = "gain.out.1=111"\n'

@@ -25,6 +25,7 @@
 #include "iface.h"
 #include "identity.h"
 #include "store.h"
+#include "log.h"
 
 uint8_t sd_ready;
 static FATFS fs;
@@ -146,6 +147,7 @@ void sd_preset_load_init(void)
 			run_line(line);
 		}
 		f_close(&f);
+		log_event(LOG_INFO, LOGM_PRESET, LOGE_PRESET_SD, i, 0);  /* PORT (#60) */
 		store_save_values_all();
 		buart_channel = ch;
 		storage_flags = 0;

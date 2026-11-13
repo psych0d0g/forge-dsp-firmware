@@ -16,6 +16,7 @@
 #include "store.h"
 #include "tas3108.h"
 #include "eram.h"
+#include "log.h"
 
 #define EE_DSP_RESTART 0x0F11  /* byte: 1 = the last start restarted for missing DSP cores */
 uint8_t hw_dsp_restarted;
@@ -42,8 +43,10 @@ uint8_t hw_check_evaluate(void)
 		bad = 1;
 	if (hardware_other != hw_check_expected_other())
 		bad = 1;
-	if (bad)
+	if (bad) {
 		api_set_out_mute_prio(api_mute_out_prio_hardware, api_mute_out_on);
+		log_event(LOG_ERROR, LOGM_SYS, LOGE_SYS_HW_MISMATCH, hardware_dsp, hardware_other);  /* PORT (#60) */
+	}
 	return bad;
 }
 
@@ -58,6 +61,8 @@ void hw_check_dsp_restart(void)
 		return;
 	}
 	eram_wb(EE_DSP_RESTART, 1);
+	log_event(LOG_ERROR, LOGM_SYS, LOGE_SYS_DSP_RESTART, hardware_dsp, dsp_state_error);  /* PORT (#60) */
+	log_mainloop();   /* the queue would be lost with the reset: write it now (mounts the card) */
 	dsp_boot_keep();  /* PORT diagnostics (#57): get system.hardware.dsp.2 after the restart */
 	mcu_reset();
 }

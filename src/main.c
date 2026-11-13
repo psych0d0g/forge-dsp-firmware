@@ -24,6 +24,8 @@
 #include "flavour_systeminit.h"
 #include "hwcheck.h"
 #include "tas3108.h"
+#include "log.h"
+uint8_t mcu_reset_flags;  /* RST.STATUS of this start (#60 log) */
 #include "api.h"
 #include "events.h"
 #include "loopcall.h"
@@ -68,6 +70,7 @@ int main(void)
 		if (!(rst & RST_SRF_bm))
 			dsp_boot_power_on();
 		RST.STATUS = rst;
+		mcu_reset_flags = rst;
 	}
 	/* main.bas line 1: config priority = roundrobin, vector = application, lo/med/hi enabled.
 	 * Must precede the peripheral sequence: i2c_sda_wait4silence counts the SDA edges of the
@@ -84,6 +87,7 @@ int main(void)
 	sysinit_check(PIN_READ(PIN_DBG_INIT_FINEST));
 	mcuid_init();
 	tick_init();
+	log_event(LOG_FATAL, LOGM_SYS, LOGE_SYS_START, mcu_reset_flags, 0);  /* PORT (#60) */
 	iface_init();
 	i2c_bus_init(1);   /* libs/interface/V40/5/init.bas: open "twic", 100 kHz */
 	i2c_bus_init(2);   /* .../6/init.bas: open "twie" */

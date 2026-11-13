@@ -41,6 +41,7 @@ void host_i2c_block(uint8_t bus, uint8_t addr);
 #include "tick.h"
 #include "ir.h"
 #include "sd.h"
+#include "log.h"
 #include "ff.h"
 void host_sd_card(int on);
 int host_sd_image(const char *path, unsigned mb);
@@ -65,6 +66,8 @@ static void host_ir_fill(const char *spec)
 	irreceiver_state |= 1;  /* buffer used */
 }
 volatile uint16_t timer_tce0_counter;
+static uint16_t host_ms;  /* PORT (#60): time of the log */
+uint16_t tick_ms(void) { return host_ms; }
 volatile int16_t timer_tce0_value;
 volatile uint8_t timer_tce0_factor = 1, timer_tce0_min = 0, timer_tce0_max = 255;
 static uint16_t host_adc[2][2], host_tempsense = 0x0A00;
@@ -244,6 +247,26 @@ static void store_cmd(const char *l)
 	} else if (!strcmp(l, "#sd_init")) {
 		sd_init();
 		printf("@sd_ready:%u\n", sd_ready);
+	} else if (!strncmp(l, "#ms=", 4)) {          /* PORT (#60): advance tick_ms */
+		host_ms = (uint16_t)(host_ms + atoi(l + 4));
+	} else if (!strcmp(l, "#log_loop")) {
+		log_mainloop();
+	} else if (!strncmp(l, "#log_event=", 11)) {  /* #log_event=level,module,event,p1,p2 */
+		unsigned a = 0, b = 0, c = 0, d = 0, e = 0;
+		sscanf(l + 11, "%u,%u,%u,%u,%u", &a, &b, &c, &d, &e);
+		log_event((uint8_t)a, (uint8_t)b, (uint8_t)c, (uint16_t)d, (uint16_t)e);
+	} else if (!strncmp(l, "#sd_hex=", 8)) {      /* print a file of the mounted card as hex */
+		FIL f;
+		uint8_t buf[64];
+		UINT n;
+		printf("@sd_hex:");
+		if (f_open(&f, l + 8, FA_READ) == FR_OK) {
+			while (f_read(&f, buf, sizeof buf, &n) == FR_OK && n)
+				for (UINT i = 0; i < n; i++)
+					printf("%02X", buf[i]);
+			f_close(&f);
+		}
+		printf("\n");
 	} else if (!strncmp(l, "#sd_cat=", 8)) {      /* PORT (#24): print a file of the mounted card */
 		FIL f;
 		char line[200];
