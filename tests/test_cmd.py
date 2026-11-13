@@ -2220,7 +2220,25 @@ class VuTest(LinesMixin, unittest.TestCase):
         self.assertEqual(len(peeks), 8, peeks)
         addr = [int(l.split("S 68 06 00 02 00 ")[1][:2], 16) for l in peeks]
         self.assertEqual(addr, [4, 5, 2, 3, 0, 1, 7, 6])                          # G1..G8 = in5, in6, in3, in4, in1, in2, in8, in7
-        self.assertEqual([l for l in out if l.startswith("@vu:")], ["@vu:0", "@vu:1", "@vu:0"])   # off again after 3 s
+        self.assertEqual([l for l in out if l.startswith("@vu:")], ["@vu:0,0", "@vu:1,0", "@vu:0,0"])   # off again after 3 s
+
+    def test_outputs(self):
+        """#52 step 2: system.vu.out = outputs 1..8 from the DO words of cores 3 (1-4) and 2 (5-8)."""
+        f = "V40-96ELN"
+        out = self.lines(f, self.PRE + ["1|get.1 system.vu.out", "#vo_feed=1,-20,200", "#vo_feed=8,-6,200",
+                                        "1|get.1 system.vu.out", "#vu?"])
+        self.assertEqual(self.vu(out[0]), [0] * 8)
+        self.assertEqual(self.vu(out[1]), [215, 0, 0, 0, 0, 0, 0, 243])
+        self.assertIn("@vu:0,1", out[2])                                           # inputs stay off
+        loops = ["#level_loop"] * 4
+        for f, words in (("V40-96ELN", ["1C0", "1C1", "1BE", "1BF"]), ("V40-96ELN-3", ["1C4", "1C5", "1C2", "1C3"])):
+            out = self.lines(f, self.PRE + ["1|get.1 system.vu.out", "#i2clog=1"] + loops)
+            peeks = [l for l in out if l.startswith("@i2c2:") and " 06 00 02 " in l]
+            got = [(l.split("S ")[1][:2], l.split(" 06 00 02 ")[1][:5].replace(" ", "")) for l in peeks]
+            want = [("6A", "0" + w) for w in words] + [("68", "0" + w) for w in words]
+            self.assertEqual(got, want, f)                                         # outputs 1-4 core 3, 5-8 core 2
+        out = self.lines("V30-96LN", self.PRE + ["1|get.1 system.vu.out"])
+        self.assertIn("unknown command", out[0])                                   # no known output words
 
     def test_loudness_measurement_keeps_its_rate(self):
         """The level meter adds PEEKs, it does not take any from the loudness block (#51)."""

@@ -378,6 +378,18 @@ uint8_t dsp_pool_set(uint8_t core, const uint8_t *len) { (void)core; (void)len; 
 void dsp_pool_load(void) {}
 #endif
 
+/* level meter (#52): data word of core 2/3 that the program sends to DO1..DO4 (k = 0..3),
+ * 0 = unknown (program without the generated tables) */
+uint16_t dsp_do_word(uint8_t k)
+{
+#ifdef DSP_POOL
+	if (k < 4)
+		return dsp_2_do_word[k];
+#endif
+	(void)k;
+	return 0;
+}
+
 /* --- image stream: base bytes before the program block, the new block, base bytes after --- */
 void dsp_img_open(struct dsp_img *g, uint8_t core, const uint8_t *code)
 {

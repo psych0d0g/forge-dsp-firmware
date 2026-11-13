@@ -8,6 +8,7 @@
 #include "level.h"
 #include "dsp.h"
 #include "modc.h"
+#include "dsp_pool.h"
 
 static uint8_t mask, next_in;
 static double tau = 3.0;
@@ -19,6 +20,8 @@ static double smooth_db;            /* smoothed level, dB */
 static uint8_t valid, value;        /* value: reported level with hysteresis */
 static double vu_pow[8];            /* level meter (#52): smoothed power per mixer input */
 static uint8_t vu_hold, vu_pair;
+static double vo_pow[8];            /* output levels (#52) */
+static uint8_t vo_hold, vo_pair;
 
 void level_init(void)
 {
@@ -28,9 +31,9 @@ void level_init(void)
 	smooth_db = -120.0;
 	valid = 0;
 	value = 0;
-	vu_hold = vu_pair = 0;
+	vu_hold = vu_pair = vo_hold = vo_pair = 0;
 	for (uint8_t i = 0; i < 8; i++)
-		vu_pow[i] = 0.0;
+		vu_pow[i] = vo_pow[i] = 0.0;
 }
 
 void level_config(uint8_t m, uint8_t tau_tenths)
@@ -132,10 +135,10 @@ void level_vu_get(uint8_t out[8])
 		out[i] = vu_pow[i] > 1e-13 ? to_scale(10.0 * log10(vu_pow[i])) : 0;
 }
 
-static uint8_t peek_sample(uint8_t addr, double *x)
+static uint8_t peek_sample_core(uint8_t core, uint16_t addr, double *x)
 {
 	uint8_t b[8];
-	if (!dsp_peek(1, 2, addr, b))
+	if (!dsp_peek(core, 2, addr, b))
 		return 0;
 	int64_t v = 0;
 	for (int8_t i = 5; i >= 0; i--)
@@ -144,6 +147,47 @@ static uint8_t peek_sample(uint8_t addr, double *x)
 		v -= (int64_t)1 << 48;
 	*x = (double)v / 549755813888.0;  /* 2^39 = full scale */
 	return 1;
+}
+
+static uint8_t peek_sample(uint8_t addr, double *x) { return peek_sample_core(1, addr, x); }
+
+/* output n (1..8) -> DO slot of its core: outputs 1/2 = DO3/DO4 (SDOUT2), 3/4 = DO1/DO2 (SDOUT1),
+ * measured on the V40-96ELN (#47); core 3 carries outputs 1-4, core 2 outputs 5-8 */
+static const uint8_t vo_do[4] = {2, 3, 0, 1};
+
+uint8_t level_vu_out_active(void) { return vo_hold > 0; }
+
+void level_vu_out_feed(uint8_t n, double sample)
+{
+	if (n < 1 || n > 8)
+		return;
+	vo_pow[n - 1] += (sample * sample - vo_pow[n - 1]) * LEVEL_VU_ALPHA;
+}
+
+uint8_t level_vu_out_get(uint8_t out[8])
+{
+	if (!vo_hold)
+		for (uint8_t i = 0; i < 8; i++)
+			vo_pow[i] = 0.0;
+	uint8_t known = dsp_do_word(0) != 0;
+	vo_hold = known ? LEVEL_VU_HOLD : 0;
+	for (uint8_t i = 0; i < 8; i++)
+		out[i] = vo_pow[i] > 1e-13 ? to_scale(10.0 * log10(vo_pow[i])) : 0;
+	return known;
+}
+
+static void vo_mainloop(void)
+{
+	if (!vo_hold)
+		return;
+	vo_hold--;
+	for (uint8_t k = 0; k < 2; k++) {
+		uint8_t n = (uint8_t)(2 * vo_pair + k + 1);
+		double x;
+		if (peek_sample_core(n <= 4 ? 3 : 2, dsp_do_word(vo_do[(n - 1) % 4]), &x))
+			level_vu_out_feed(n, x);
+	}
+	vo_pair = (uint8_t)((vo_pair + 1) % 4);
 }
 
 static void vu_mainloop(void)
@@ -163,6 +207,7 @@ static void vu_mainloop(void)
 void level_mainloop(void)
 {
 	vu_mainloop();
+	vo_mainloop();
 	if (!mask)
 		return;
 	for (uint8_t k = 0; k < 8; k++) {

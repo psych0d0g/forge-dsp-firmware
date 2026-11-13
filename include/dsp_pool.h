@@ -50,4 +50,7 @@ void dsp_pool_store(const uint8_t *len);
 uint8_t dsp_pool_set(uint8_t core, const uint8_t *len);      /* lengths of one core, moves the presets */
 void dsp_pool_load(void);
 
+/* level meter (#52): data word behind DO1..DO4 (k = 0..3) of cores 2/3, 0 = unknown */
+uint16_t dsp_do_word(uint8_t k);
+
 #endif

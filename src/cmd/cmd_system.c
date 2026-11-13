@@ -454,11 +454,17 @@ static void cmd_get_system_vu(void)
 {
 	uint8_t u[8];
 	int16_t v[8];
-	if (req_w(cmd_req_word_three) != 0x0000) {
+	if (req_w(cmd_req_word_three) == 0x6F75 && req_w(cmd_req_word_four) == 0x0000) {
+		/* PORT extension (#52, step 2): get system.vu.out = outputs 1..8 */
+		if (!level_vu_out_get(u)) {
+			cmd_error_unknown();
+			return;
+		}
+	} else if (req_w(cmd_req_word_three) != 0x0000) {
 		cmd_error_unknown();
 		return;
-	}
-	level_vu_get(u);
+	} else
+		level_vu_get(u);
 	for (uint8_t i = 0; i < 8; i++)
 		v[i] = u[i];
 	out_list(v, 8);

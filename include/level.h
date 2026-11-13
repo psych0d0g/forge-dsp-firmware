@@ -42,4 +42,11 @@ uint8_t level_value(void);                 /* gain scale, 255 = 0 dBFS RMS */
 void level_vu_get(uint8_t out[8]);
 void level_vu_feed(uint8_t g, double sample);  /* one sample for mixer input g = 1..8 (tests, mainloop) */
 uint8_t level_vu_active(void);
+/* Output levels (#52, step 2): out[0..7] = outputs 1..8, same scale, PEEK of the data words the
+ * cores 3 (outputs 1-4) and 2 (5-8) send to their serial outputs, after gain, mute and delay.
+ * Armed separately (level_vu_out_get), one stereo pair per level_mainloop call. Returns 0 if the
+ * program has no known output words (then out stays 0). */
+uint8_t level_vu_out_get(uint8_t out[8]);
+void level_vu_out_feed(uint8_t n, double sample);  /* tests */
+uint8_t level_vu_out_active(void);
 #endif
