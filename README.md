@@ -28,84 +28,96 @@ Alle: ATxmega256A3U, interner 32-MHz-Takt.
 
 **Stand:** Der Funktionsumfang des Originals ist portiert: komplettes Textprotokoll, Register und EEPROM-Layout,
 Presets, Biquads, Mixer, Delays, MODC-Steuerblöcke, Events, ADC/Temperatur, IR-Empfänger und die Einschaltsequenz
-aller Bausteine. Nativ getestet für alle 7 Varianten (128 Protokolltests); auf einem Forge 96ELN (V40) laufen sichere und
-Bring-up-Variante: Start auf der Abstimmung des Originals ohne Werks-Reset, alle Bausteine erkannt,
-Biquad-Koeffizienten bitgenau, Abschalten über Remote-In, Audioweg gemessen (#49). Erstes Release: **2.0.0**
-(bewusst oberhalb der letzten BASCOM-Firmware 1.11.6000). Remote-Out ist seit 2.0.0 wie im Original aktiv, mit
-angeschlossener Endstufe aber noch nicht geprüft. Fahrplan in den GitHub-Issues.
+aller Bausteine. Nativ getestet für alle 7 Varianten (über 150 Protokolltests, dazu die DSP-Programme im
+Simulator); auf einem Forge 96ELN (V40) laufen sichere und Bring-up-Variante seit Wochen im Test: Start auf der
+Abstimmung des Originals ohne Werks-Reset, Biquad-Koeffizienten bitgenau, Audioweg gemessen (#49). Aktuelles Release:
+**2.1.0** (Versionsnummern bewusst oberhalb der letzten BASCOM-Firmware 1.11.6000). Remote-Out ist wie im Original
+aktiv, mit angeschlossener Endstufe aber noch nicht geprüft. Fahrplan in den GitHub-Issues.
+
+## Bedienen: Web-GUI
+
+Neben der Original-GUI (Java, Windows) gibt es eine eigene Oberfläche im Browser:
+**[psych0d0g.github.io/forge-dsp-gui-ng](https://psych0d0g.github.io/forge-dsp-gui-ng/)**
+([Quelltext](https://github.com/psych0d0g/forge-dsp-gui-ng)). Sie verbindet sich über Web Serial direkt mit dem USB-Port
+des Forge, nichts zu installieren, und nutzt die Erweiterungen dieser Firmware: Pegelanzeige, Biquad-Verteilung,
+Weichenansicht, Speicherkarte und Log, Diagnose und das **Firmware-Update im Browser** (Seite *Firmware*, mit
+Sicherung von Flash und EEPROM vorher). Mit der Original-Firmware funktioniert sie ebenfalls, ohne die Erweiterungen.
 
 ## Was die Port-Firmware zusätzlich kann
 
-Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes.md)**.
+Ausführlich mit allen Unterschieden und Befehlen: **[docs/port-changes.md](docs/port-changes.md)**.
+`get.1 system.help` listet alle Systembefehle der laufenden Firmware.
 
-- **Firmware-Update ohne Taster:** `set.1 system.boot` bringt den Forge direkt in den Bootloader, Updates aus VS Code
-  laufen damit ohne Aus-/Einschalten. Grundlage ist eine Analyse des ausgelesenen Bootloaders: Er startet auch über eine
-  Sequenz im EEPROM, die das Original vorgesehen, aber nie geschrieben hat ([docs/bootloader.md](docs/bootloader.md), #22).
-  Am Gerät geprüft: Sicherung, Flashen und Start mit Kennung komplett ohne Taster.
-- **Abstimmung sichern und vergleichen** beim Update (`c45b3 export-tuning / compare-tuning / restore-tuning`,
-  Tasks *Forge: export/compare tuning*), im `.cfg`-Format der Original-GUI (#30).
-- **Versorgungsspannung überwachen** (`get.1 system.supply`): 3,3-V-Schiene intern, Bordspannung über einen GVOL-Eingang
-  mit Spannungsteiler, Ereignis bei Unterspannung und auf Wunsch Stummschalten, Abgleich der 3,3-V-Messung gegen ein
-  Multimeter (`set.1 system.supply.vcc=mV`) ([docs/supply.md](docs/supply.md), #46).
-- **DSP-Ladevorgang messen** (`get.1 system.hardware.dsp`): wie lange die TAS3108 beim Start ihr Programm laden, je I2C-Bus (#45).
-- **Startprotokoll der DSP-Kerne** (`get.1 system.hardware.dsp.1`/`.2`): Status, Version und ob das EEPROM neu geschrieben und richtig zurückgelesen wurde, für diesen Start und den vor einem DSP-Neustart (#57). Geschriebene DSP-Programme werden zurückgelesen; dadurch braucht das Umverteilen der Biquads nur noch einen Neustart.
-- **Pegelanzeige** (`get.1 system.vu`): Effektivpegel aller acht Eingänge für ein VU-Meter in der GUI, gemessen nur
-  solange jemand fragt (#52).
-- **Limiter je Ausgang im DSP** (`set.1 system.dsp.limiter.N=-60`, Attack/Release gemeinsam): weich geregelt und hart auf der Schwelle begrenzt, ausgeschaltet bitgleich (#58).
-- **Ausgangspegel** (`get.1 system.vu.out`): Effektivpegel der Ausgänge 1–8 nach Gain und Laufzeit, gleiche Skala wie `system.vu` (#52).
-- **Befehlsliste** (`get.1 system.help`): alle `get`/`set system.*`-Befehle der Firmware, erzeugt aus den Verteiltabellen.
-- **Fehlerzähler zurücksetzen** (`set.1 system.errors=0`), im Original nur per Werks-Reset.
-- **microSD prüfen** (`get.1 system.sd`, `get.1 system.sd.files`): Karte, Dateisystem, Größe und Dateien, nur lesend (#24).
-- **Preset auf die microSD exportieren** (`set.1 system.sd.export=N`): schreibt `preset_N.cfg` im GUI-Format, das der Vorlader beim Start wieder liest (#24).
-- **Dateien auf die microSD und zurück** (`system.sd.open/create/read/write/close/delete`): in Blöcken mit Prüfsumme über die serielle Verbindung, für die GUI (#59).
-- **Binäres Log auf der microSD** (`set.1 system.debug.out=4`, Stufe mit `system.debug.mode`): kleine Sätze statt Text, für die Auswertung in der GUI; Format in [docs/log-format.md](docs/log-format.md) (#60).
-- **Namen der Eingänge** im Gerät (`set.1 system.channel.in.N="…"`), wie es sie für die Ausgänge schon gab (#55).
-- **Grenzen lesbar** (`get.1 system.limits.*`): Wertebereiche, Filtertypen und Laufzeit-Speicher je DSP, damit eine GUI
-  nichts fest einbauen muss (#54).
+### Klang und DSP
+
 - **Biquads frei verteilen** (`get.1 system.biquads`, `set.1 system.biquads.K=[…]`): Jeder DSP-Kern hat einen
   gemeinsamen Pool, die Filterzahl je Ausgang bzw. Summe ist einstellbar (z. B. 170 Bänder für einen Ausgang);
-  Summe A/B haben zusammen 28 Biquads mehr als im Original (172 statt 144).
-  Die MCU erzeugt das passende DSP-Programm selbst; gespeicherte Bänder wandern mit (#47).
-- **Robuster Start**: Ein DSP-Kern, der beim Start noch lädt, wird bis zu 2 s nachgefragt; fehlt er dann noch, startet die
-  Forge genau einmal neu statt stumm zu bleiben (#45).
-- **Bootloader auslesen** (nur lesend, `get.1 system.hardware.boot.N`, `tools/dump_bootsection.py`); das Abbild liegt unter
-  [`bootloader/`](bootloader/).
-- **Eingangswahl** `mixer.in` (und `mixer.in.max`) für die aktive Mixer-Position, mit Ereignis an die GUI; die
-  dokumentierten, im Original nie gesetzten Ereignisse 45–48 (`SOURCE.1–4.MUX`) tragen jetzt die Eingangswahl je
-  Position (#23).
-- **Startbefehle**: bis zu 8 Befehle im EEPROM, die nach dem Laden des Presets beim Start laufen
-  (`set.1 system.startup.1="set.1 gain.out.2:150"`, #40).
+  Summe A/B haben zusammen 28 Biquads mehr als im Original (172 statt 144). Die MCU erzeugt das passende
+  DSP-Programm selbst; gespeicherte Bänder wandern mit (#47).
+- **Limiter je Ausgang im DSP** (`set.1 system.dsp.limiter.N=-60`, Attack/Release gemeinsam): weich geregelt und hart
+  auf der Schwelle begrenzt, schützt Endstufen und Lautsprecher; ausgeschaltet bitgleich zum Programm ohne Limiter (#58).
+- **Optimierte DSP-Programme** (Vorgabe in den Vollstart-Builds): gleiche Signalverarbeitung, im Simulator bitgleich,
+  mit freien Takten für die Erweiterungen (#47).
 - **Clickless** (Vorgabe aus, `set.1 biquad.clickless=1`): Filter- und Mixer-Änderungen werden ohne Aussetzer
   eingeblendet, andere Änderungen (Delay, Eingangswahl) sind nur noch ca. 1 s statt 2 s stumm (#44, #50).
-- **Mono je Ausgangspaar** (MODC „CTRL-MONO“ aus der Original-GUI, #14): Stereo, Mono links/rechts oder L+R, schaltbar
-  per Event, ohne die Abstimmung zu ändern.
-- **Analoger Mischer** (MODC „Analoger Mischer“ aus der Original-GUI, dort ohne Firmware-Gegenstück, #16): Anteil
-  der drei analogen Eingangspaare 0–100 % über die gespeicherte Mischung, mit Clickless gleitend.
-- **Automatische Eingangswahl** per Events (MODC „CTRL-MUX I“ aus der Original-GUI, #17), z. B. auf USB, sobald
-  dort Audio anliegt.
-- **IR-Fernbedienung, Taste 2** schaltet den Eingang weiter (#27).
-- **Loudness** (gehörrichtige Lautstärke) als neuer MODC-Block: hebt Bass und Höhen an, je leiser gehört wird,
-  folgt der Lautstärke in 0,2-dB-Schritten (feiner einstellbar bis 0,01 dB, #51), einstellbar im vorhandenen
-  Loudness-Dialog der Original-GUI. Optional **dynamisch**: Die Forge misst den Pegel des Eingangssignals selbst und
-  reagiert so auch auf Dämpfung an der Quelle (PC, Android) und leise gemischte Musik (#51)
-  (M6, #6; [Konfiguration](docs/port-changes.md#loudness-m6-6)).
-- **I2C-Puffer schreiben** zur Diagnose (`set.1 i2c.B.A.buffer=[r,b1,…]`), damit lässt sich z. B. der Speicher der DSPs per
-  PEEK auslesen (#51).
-- **Biquad-Typ 17 BandPass**, im Original geplant, aber nie umgesetzt (#20).
-- **Allpässe für den Phasenabgleich** (#48): Typ 21 Allpass 1. Ordnung (−90° bei f) und Typ 22 „Phase-Shift mit
-  Wunschwinkel“ (z. B. −45° bei 80 Hz, die Firmware wählt Ordnung und Eckfrequenz). Am Gerät nachgemessen.
-- **microSD wieder aktiv** (im Original aus Lizenzgründen entfernt): In der Original-GUI gespeicherte `.cfg`-Dateien
-  als `preset_1.cfg` … auf die Karte kopieren, der Forge übernimmt sie beim nächsten Start in die Presets (#24,
-  FatFs statt AVR-DOS; auf dem Gerät noch nicht getestet).
-- **Behobene Fehler des Originals**, u. a.: `preset.erase=4` löscht bei 4 Presets nicht mehr Preset 0 (#33),
-  Rohwert-Biquads `biquad.….raw` funktionieren (#35), `get event.N.value` antwortet (#36), Delays in ms/cm/inch
-  lassen sich lesen (#21), keine Speicherzugriffe hinter Arrays und Tabellen bei ungültigen Werten.
+- **Loudness** (gehörrichtige Lautstärke) als neuer MODC-Block, einstellbar im Loudness-Dialog der Original-GUI;
+  optional **dynamisch** nach dem gemessenen Eingangspegel ([Konfiguration](docs/port-changes.md#loudness-m6-6), #6, #51).
+- **Neue Filtertypen:** 17 BandPass (im Original geplant, #20), 21 Allpass 1. Ordnung und 22 „Phase-Shift mit
+  Wunschwinkel“ (z. B. −45° bei 80 Hz) für den Phasenabgleich (#48).
+- **MODC-Blöcke aus der Original-GUI**, die dort keine Firmware hatten: Mono je Ausgangspaar (#14), analoger Mischer
+  (#16), automatische Eingangswahl (#17).
+
+### Pegel, Diagnose, Log
+
+- **Pegelanzeige** (`get.1 system.vu`, `get.1 system.vu.out`): Effektivpegel aller Eingänge und Ausgänge für das
+  VU-Meter der GUI, gemessen nur solange jemand fragt (#52).
+- **Binäres Log auf der microSD** (`set.1 system.debug.out=4`, Stufe mit `system.debug.mode`): Start mit Reset-Ursache,
+  Fehlerzähler, DSP-Ereignisse, Presets, Versorgung als kleine Sätze statt Text, ausgewertet in der GUI
+  ([docs/log-format.md](docs/log-format.md), #60).
+- **Startprotokoll der DSP-Kerne** (`get.1 system.hardware.dsp`, `.1`/`.2`): Ladezeiten je I2C-Bus, Status, Version, ob ein
+  EEPROM neu geschrieben und richtig zurückgelesen wurde, auch für den Start vor einem DSP-Neustart (#45, #57).
+- **Versorgungsspannung überwachen** (`get.1 system.supply`): 3,3-V-Schiene, Bordspannung über einen GVOL-Eingang,
+  Ereignis und auf Wunsch Stummschalten bei Unterspannung ([docs/supply.md](docs/supply.md), #46).
+- **Fehlerzähler zurücksetzen** (`set.1 system.errors=0`), im Original nur per Werks-Reset.
+- **I2C-Diagnose**: Bausteine direkt lesen und schreiben (`i2c.B.A.…`, `set.1 i2c.B.A.buffer=[…]`), damit z. B. den
+  DSP-Speicher per PEEK (#51).
+- **Grenzen lesbar** (`get.1 system.limits.*`): Wertebereiche, Filtertypen und Laufzeit-Speicher je DSP, damit eine GUI
+  nichts fest einbauen muss (#54).
+
+### microSD
+
+- **Presets von der Karte** (im Original aus Lizenzgründen entfernt): `.cfg`-Dateien der GUI als `preset_N.cfg` lädt
+  der Forge beim Start in die Presets (FatFs statt AVR-DOS, am Gerät geprüft, #24).
+- **Preset exportieren** (`set.1 system.sd.export=N`) im selben Format.
+- **Dateien über die serielle Verbindung** (`system.sd.open/create/read/write/close/delete`): in Blöcken mit Prüfsumme,
+  die GUI hat dafür eine Seite *Speicherkarte* (#59). `get.1 system.sd` / `system.sd.files` zeigen Karte und Dateien.
+
+### Update, Start, Bedienung
+
+- **Firmware-Update ohne Taster:** `set.1 system.boot` bringt den Forge direkt in den Bootloader. Grundlage ist eine
+  Analyse des ausgelesenen Bootloaders ([docs/bootloader.md](docs/bootloader.md), #22). Update aus VS Code, mit
+  `c45b3` oder im Browser über die Web-GUI.
+- **Abstimmung sichern und vergleichen** beim Update (`c45b3 export-tuning / compare-tuning / restore-tuning`), im
+  `.cfg`-Format der Original-GUI (#30).
+- **Robuster Start**: DSP-Kerne, die beim Einschalten noch laden, werden nachgefragt; geschriebene DSP-Programme werden
+  zurückgelesen, der Bus danach freigegeben; fehlt ein Kern trotzdem, startet die Forge genau einmal neu (#45, #57).
+- **Vier statt sieben Builds**, die Kennung (Modell, PCB) steht im EEPROM (`get.1 system.key.info.list`,
+  `set.1 system.key.info="CORED8-4.1"`, #31).
+- **Namen der Eingänge** im Gerät (`set.1 system.channel.in.N="…"`, #55).
+- **Eingangswahl** `mixer.in` für die aktive Mixer-Position, mit Ereignis an die GUI (#23); IR-Taste 2 schaltet den
+  Eingang weiter (#27).
+- **Startbefehle**: bis zu 8 Befehle im EEPROM, die nach dem Laden des Presets laufen (#40).
+- **Bootloader auslesen** (nur lesend, `get.1 system.hardware.boot.N`); das Abbild liegt unter [`bootloader/`](bootloader/).
+
+### Behobene Fehler des Originals
+
+- `preset.erase=4` löscht bei 4 Presets nicht mehr Preset 0 (#33), Rohwert-Biquads `biquad.….raw` funktionieren
+  (#35), `get event.N.value` antwortet (#36), Delays in ms/cm/inch lassen sich lesen (#21), keine Speicherzugriffe
+  hinter Arrays und Tabellen bei ungültigen Werten.
 - **Sicherer Werks-Reset**: Abstimmungen werden nur mit `FORGE_FACTORY_RESET=1` gelöscht, nicht bei jedem
   Versionswechsel.
-- **Flashen unter Linux** aus VS Code, mit Backup, Gerätecheck und Rückweg auf die Originalfirmware.
-- **Vier statt sieben Builds**, die Kennung (Modell, PCB) steht im EEPROM: `get.1 system.key.info.list` zeigt die
-  möglichen, `set.1 system.key.info="CORED8-4.1"` wählt eine (#31).
-- Rund **39 % kleiner** als das Original (V40-96ELN: 125 KB statt 205 KB, mit microSD; ohne die Debug-Texte des Originals, #41).
+- Trotz der Erweiterungen (optimierte DSP-Programme mit Pool-Tabellen, FatFs, Limiter, Log) rund **16 % kleiner** als
+  das Original (V40-96ELN: 173 KB statt 205 KB; ohne die Debug-Texte des Originals, #41).
 
 ## Build-Optionen
 
@@ -116,7 +128,7 @@ In `platformio.ini` unter `[common]`:
 | `FORGE_BRINGUP` | 0 | 1 = vollständige Peripherie-Init wie das Original. 0 = sichere Variante: Erkennung und Protokoll, Peripherie im Reset, **kein Ton** |
 | `FORGE_AUDIO` | 0 (sicher), 1 (`-bringup`, seit 2.0.0) | 1 = Remote-Out (Endstufen) nach dem Laden des Presets wie im Original einschalten |
 | `FORGE_FACTORY_RESET` | 0 | 1 = Werks-Reset wie im Original (löscht Abstimmungen und Presets), braucht `FORGE_BRINGUP=1` |
-| `FORGE_DSP_OPT` | 0 (sicher), 1 (`-bringup`) | 1 = optimierte DSP-Programme: gleiche Signalverarbeitung, rund 130 bzw. 40 Takte je Sample weniger (Platz für mehr Filter, #47). V30-96LN behält sein Originalprogramm |
+| `FORGE_DSP_OPT` | 0 (sicher), 1 (`-bringup`) | 1 = optimierte DSP-Programme: gleiche Signalverarbeitung, rund 130 bzw. 40 Takte je Sample weniger; Voraussetzung für Biquad-Pools, Ausgangspegel und Limiter (#47, #52, #58). V30-96LN behält sein Originalprogramm |
 
 Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `lib/fatfs`: FatFs R0.16 von ChaN (BSD-1-Clause, `lib/fatfs/LICENSE.txt`). `tools/c45b3-host` und die Bootloader-Quellen in
 `tools/c45b3-host/tests/ctarget/upstream` stehen unter MIT (chip45boot3, Erik Lins).
