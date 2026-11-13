@@ -561,10 +561,11 @@ void cmd_answer_header(void)
 			goto word_four;
 		} else if (w3 == 0x7363) {
 			s = w1 == 0x6761 ? ".scale" : ".scan";
-		} else if (w3 == 0x6669 && w2 == 0x7364) {
-			s = ".files";  /* PORT (#24): system.sd.files */
-		} else if (w3 == 0x6578 && w2 == 0x7364) {
-			s = ".export";  /* PORT (#24): system.sd.export */
+		} else if (w2 == 0x7364 && w1 == 0x7379) {
+			/* PORT (#24, #59): system.sd.<files|export|open|read|…>, the word as typed */
+			out_chr('.');
+			out_str(req_input_str(cmd_req_word_three));
+			s = "";
 		} else {
 			s = lookup(names_three, w3);
 		}

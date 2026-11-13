@@ -45,6 +45,34 @@ void sd_init(void)
 		sd_ready = 1;  /* global_state.sdFileRdy */
 }
 
+uint8_t sd_mounted(void)
+{
+	if (!sd_card_present())
+		sd_ready = 0;
+	else if (!sd_ready)
+		sd_init();
+	return sd_ready;
+}
+
+/* preset_N.cfg written over the serial line (sd_file.c): forget the stored date, so the next
+ * start loads it (without a clock every written file gets the same date) */
+void sd_preset_changed(const char *name)
+{
+	for (uint8_t i = 1; i <= BAS_MODUL_MAX_PRESET && i <= 9; i++) {
+		char n[] = "PRESET_x.CFG";
+		n[7] = (char)('0' + i);
+		uint8_t eq = 1;
+		for (uint8_t k = 0; n[k] || name[k]; k++) {
+			char c = name[k];
+			if (c >= 'a' && c <= 'z')
+				c = (char)(c - 'a' + 'A');
+			if (c != n[k]) { eq = 0; break; }
+		}
+		if (eq)
+			eram_write_str(DT_ADDR(i), DT_LEN + 1, "");
+	}
+}
+
 static void two(char *p, uint8_t v)
 {
 	p[0] = (char)('0' + v / 10 % 10);
@@ -136,15 +164,16 @@ void sd_preset_load_init(void)
 void cmd_get_system_sd(void)
 {
 	uint16_t w3 = req_w(cmd_req_word_three);
+	if (w3 == 0x7265) {
+		sd_file_get();  /* read (sd_file.c) */
+		return;
+	}
 	if ((w3 != 0x0000 && w3 != 0x6669) || req_w(cmd_req_word_four) != 0x0000) {
 		cmd_error_unknown();
 		return;
 	}
 	uint8_t present = sd_card_present();
-	if (!present)
-		sd_ready = 0;
-	else if (!sd_ready)
-		sd_init();
+	sd_mounted();
 	cmd_answer_header();
 	out_chr('[');
 	if (w3 == 0x0000) {
@@ -260,6 +289,8 @@ static void x_chr(char c)
 void cmd_set_system_sd(void)
 {
 	uint8_t n = (uint8_t)cmd_reg_var_integers[1];
+	if (sd_file_set())
+		return;  /* open, create, seek, write, close, delete (sd_file.c) */
 	if (req_w(cmd_req_word_three) != 0x6578 || req_w(cmd_req_word_four) != 0x0000) {
 		cmd_error_unknown();
 		return;
@@ -268,9 +299,7 @@ void cmd_set_system_sd(void)
 		cmd_error_cmd_oor();
 		return;
 	}
-	if (sd_card_present() && !sd_ready)
-		sd_init();
-	if (!sd_card_present() || !sd_ready) {
+	if (!sd_mounted()) {
 		cmd_error_unknown();
 		return;
 	}

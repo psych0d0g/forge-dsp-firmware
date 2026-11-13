@@ -674,7 +674,7 @@ static void sys_help(const char *spec, uint8_t n, const char *verb, uint8_t *fir
 	X("hardware|.memory.eram", cmd_set_system_hardware) \
 	X("key|.info", cmd_set_system_key) \
 	X("reinit", cmd_set_system_reinit) \
-	X("sd|.export", cmd_set_system_sd) /* PORT extension (#24) */ \
+	X("sd|.close|.create|.delete|.export|.open|.seek|.write", cmd_set_system_sd) /* PORT extension (#24) */ \
 	X("startup|.N", cmd_set_system_startup) /* PORT extension (#40) */ \
 	X("supply|.cal|.low|.mute|.source|.vcc", cmd_set_system_supply) /* PORT extension (#46) */ \
 
@@ -1151,7 +1151,7 @@ static void cmd_get_system_help(void);
 	X("limits||.biquad|.in|.names|.out|.types", cmd_get_system_limits) /* PORT extension (#54) */ \
 	X("ping", cmd_get_system_ping) \
 	X("poti|.N", cmd_get_system_poti) \
-	X("sd||.files", cmd_get_system_sd) /* PORT extension (#24) */ \
+	X("sd||.files|.read", cmd_get_system_sd) /* PORT extension (#24) */ \
 	X("startup|.N|.*", cmd_get_system_startup) /* PORT extension (#40) */ \
 	X("supply||.cal|.low|.mute|.raw|.source|.vcc", cmd_get_system_supply) /* PORT extension (#46) */ \
 	X("temperature||.celsius|.fahrenheit|.kelvin", cmd_get_system_temp) \

@@ -1923,6 +1923,69 @@ class SdPresetTest(unittest.TestCase):
         self.assertEqual(errs, ["mixer.position"])
         self.assertFalse([l for l in cat if "delay.in.7" in l or "delay.in.8" in l])
 
+    def test_file_transfer(self):
+        """#59: files to and from the card over the command line, in blocks with CRC-16/XMODEM"""
+        def crc16(b):
+            c = 0
+            for x in b:
+                c ^= x << 8
+                for _ in range(8):
+                    c = ((c << 1) ^ 0x1021) & 0xFFFF if c & 0x8000 else (c << 1) & 0xFFFF
+            return c
+        f = "V40-96ELN"
+        data = bytes(range(256)) + b"forge" * 20                                    # 356 bytes = 3 blocks
+        wr = lambda b: f'1|set.1 system.sd.write="{b.hex()}:{crc16(b):04X}"'
+        writes = [wr(data[i:i + 40]) for i in range(0, len(data), 40)]
+        steps = (["#sd_card=1", "#sd_init", '1|set.1 system.sd.create="LOG.BIN"'] + writes
+                 + ["1|set.1 system.sd.close=1", "1|get.1 system.sd.files", '1|set.1 system.sd.open="log.bin"']
+                 + ["1|get.1 system.sd.read"] * 4 + ["1|set.1 system.sd.seek=1", "1|get.1 system.sd.read",
+                    '1|set.1 system.sd.delete="LOG.BIN"', "1|set.1 system.sd.close=1",
+                    '1|set.1 system.sd.delete="LOG.BIN"', "1|get.1 system.sd.files",
+                    '1|set.1 system.sd.open="../X"', '1|set.1 system.sd.write="00:0000"', "1|get.1 system.sd.read"])
+        out, _, _ = self.run_sd(f, [], steps)
+        ans = [l.split(": ", 1)[1].replace("\\r\\n", "").strip() for l in out.splitlines() if "system.sd" in l]
+        self.assertEqual(ans[:2 + len(writes)], ["*.1 system.sd.create ok"] + ["*.1 system.sd.write ok"] * len(writes)
+                         + ["*.1 system.sd.close ok"])
+        self.assertIn('"LOG.BIN:356"', ans[2 + len(writes)])
+        reads = [re.search(r"read=\[(\d+),\"([0-9A-F]*)\",(\d+)\]", a) for a in ans if "read=" in a]
+        blocks = [(int(m[1]), bytes.fromhex(m[2]), int(m[3])) for m in reads]
+        self.assertEqual([b[0] for b in blocks], [0, 1, 2, 3, 1])                  # 3 blocks, end, seek back
+        self.assertEqual(b"".join(b[1] for b in blocks[:4]), data)
+        for n, b, c in blocks:
+            self.assertEqual(c, crc16(b) if b else 0)
+        self.assertEqual(blocks[4][1], data[128:256])
+        rest = ans[-7:]
+        self.assertIn("!.1 system.sd.delete", rest[0])                             # still open
+        self.assertIn("*.1 system.sd.delete ok", rest[2])
+        self.assertIn("system.sd.files=[]", rest[3])
+        self.assertIn("!.1 system.sd.open", rest[4])                               # no paths
+        self.assertIn("!.1 system.sd.write", rest[5])                              # nothing open
+        self.assertIn("!.1 system.sd.read", rest[6])                               # nothing open
+        # a block without, with a wrong or with a cut crc is refused and not written
+        bad = ['1|set.1 system.sd.create="B.BIN"', '1|set.1 system.sd.write="0102"', '1|set.1 system.sd.write="0102:1234"',
+               f'1|set.1 system.sd.write="{bytes(48).hex()}:{crc16(bytes(48)):04X}"', wr(b"\x01\x02"),
+               "1|set.1 system.sd.close=1", "1|get.1 system.sd.files"]
+        out, _, _ = self.run_sd(f, [], ["#sd_card=1", "#sd_init"] + bad)
+        self.assertEqual(out.count("!.1 system.sd.write"), 2)
+        self.assertIn('"B.BIN:50"', out)                                          # 48 + 2 bytes
+
+    def test_upload_of_a_preset_loads_at_the_next_start(self):
+        def crc(b):
+            c = 0
+            for x in b:
+                c ^= x << 8
+                for _ in range(8):
+                    c = ((c << 1) ^ 0x1021) & 0xFFFF if c & 0x8000 else (c << 1) & 0xFFFF
+            return c
+        f = "V40-96ELN"
+        cfg = b'[96ELN]\nFILE_v10 = "gain.out.1=77"\n'
+        steps = ["#sd_card=1", "#sd_init", "1|set.1 system.sd.export=1", "#sd_load",
+                 '1|set.1 system.sd.create="PRESET_1.CFG"', f'1|set.1 system.sd.write="{cfg.hex()}:{crc(cfg):04X}"',
+                 "1|set.1 system.sd.close=1", "#sd_load"]
+        out, _, _ = self.run_sd(f, [], steps, at24=b"\xff" * 65536)
+        after = out.split("system.sd.close ok")[1]
+        self.assertIn("*.1 gain.out.1 ok", after)                                  # same date as the export, still loaded
+
     def test_other_model_and_no_card(self):
         f = "V40-96ELN"
         cfg = '[96LN]\nFILE_v10 = "gain.out.1=111"\n'
