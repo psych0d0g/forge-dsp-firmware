@@ -1937,6 +1937,36 @@ class SdPresetTest(unittest.TestCase):
         self.assertEqual(errs, ["mixer.position"])
         self.assertFalse([l for l in cat if "delay.in.7" in l or "delay.in.8" in l])
 
+    def test_backup(self):
+        """#61: system.sd.backup.* copies flash, MCU EEPROM, preset EEPROM and DSP EEPROMs to the card"""
+        f = "V40-96ELN"
+        at24 = bytes((i * 7 + 3) & 0xFF for i in range(65536))
+        steps = ["1|get.1 system.sd.backup", "1|set.1 system.sd.backup.eeprom=1",   # no card yet
+                 "#sd_card=1", "#sd_init"] + [f"1|set.1 system.sd.backup.{p}=2" for p in ("flash", "eeprom", "preset", "1", "2", "3")] + [
+                 "1|get.1 system.sd.files", '1|set.1 system.sd.open="PRESET_2.BIN"', "1|get.1 system.sd.read",
+                 "1|set.1 system.sd.close=1", '1|set.1 system.sd.open="FLASH_2.BIN"', "1|get.1 system.sd.read",
+                 "1|set.1 system.sd.close=1", "1|set.1 system.sd.backup.flash=0", "1|set.1 system.sd.backup.4=1",
+                 "1|set.1 system.sd.backup.x=1"]
+        out, _, _ = self.run_sd(f, [], steps, at24=at24)
+        ans = [m.strip() for m in re.findall(r"^@0: (.*?)\\r\\n$", out, re.M)]
+        self.assertEqual(ans[0], "<.1 system.sd.backup=[262144,4096,65536,3]")
+        self.assertIn("!.1 system.sd.backup.eeprom", ans[1])                      # no card
+        self.assertEqual(ans[2:8], [f"*.1 system.sd.backup.{p} ok" for p in ("flash", "eeprom", "preset", "1", "2", "3")])
+        for name, size in (("FLASH_2.BIN", 262144), ("EEPROM_2.BIN", 4096), ("PRESET_2.BIN", 65536),
+                           ("DSP1_2.BIN", 65536), ("DSP2_2.BIN", 65536), ("DSP3_2.BIN", 65536)):
+            self.assertIn(f'"{name}:{size}"', ans[8])
+        blk = lambda a: bytes.fromhex(a.split(',"')[1].split('"')[0])
+        self.assertEqual(blk(ans[10]), at24[:128])                                 # the preset EEPROM itself
+        self.assertEqual(blk(ans[13]), bytes((a ^ (a >> 8) ^ 0x5A) & 0xFF for a in range(128)))   # host flash
+        self.assertIn("system.sd.backup.flash command out of range", ans[15])      # slot 1..9
+        self.assertIn("!.1 system.sd.backup", ans[16])                              # no core 4
+        self.assertIn("system.sd.backup.x unknown command", ans[17])
+        # V30-96LN: two DSP cores
+        out, _, _ = self.run_sd("V30-96LN", [], ["#sd_card=1", "#sd_init", "1|get.1 system.sd.backup",
+                                                 "1|set.1 system.sd.backup.3=1"], at24=at24)
+        self.assertIn("system.sd.backup=[262144,4096,65536,2]", out)
+        self.assertIn("system.sd.backup.3 command out of range", out)
+
     def test_file_transfer(self):
         """#59: files to and from the card over the command line, in blocks with CRC-16/XMODEM"""
         def crc16(b):

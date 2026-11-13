@@ -455,6 +455,8 @@ void iface_hook_watchdog(void) {}
 static uint8_t eeprom[4096];
 static const char *eeprom_out;
 uint8_t eram_hw_read(uint16_t a) { return eeprom[a & 0xFFF]; }
+/* PORT (#61): the application flash for the backup, a fixed pattern (the address bytes mixed) */
+uint8_t host_flash_byte(uint32_t a) { return (uint8_t)(a ^ (a >> 8) ^ (a >> 16) ^ 0x5A); }
 void eram_hw_write(uint16_t a, uint8_t v) { eeprom[a & 0xFFF] = v; }
 
 static void save_eeprom(void)

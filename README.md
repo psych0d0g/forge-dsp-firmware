@@ -91,6 +91,9 @@ Ausführlich mit allen Unterschieden und Befehlen: **[docs/port-changes.md](docs
 - **Preset exportieren** (`set.1 system.sd.export=N`) im selben Format.
 - **Dateien über die serielle Verbindung** (`system.sd.open/create/read/write/close/delete`): in Blöcken mit Prüfsumme,
   die GUI hat dafür eine Seite *Speicherkarte* (#59). `get.1 system.sd` / `system.sd.files` zeigen Karte und Dateien.
+- **Sicherung vor dem Update** (`set.1 system.sd.backup.flash|eeprom|preset|N=S`, Platz S = 1…9): Die Firmware kopiert
+  Anwendungs-Flash, MCU-EEPROM, Preset-EEPROM und die EEPROMs der DSP-Kerne (Programm und Biquads) selbst auf die Karte
+  (`FLASH_S.BIN`, `EEPROM_S.BIN`, `PRESET_S.BIN`, `DSPN_S.BIN`) und prüft jede Datei durch Zurücklesen (#61).
 
 ### Update, Start, Bedienung
 

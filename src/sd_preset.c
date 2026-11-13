@@ -170,6 +170,10 @@ void cmd_get_system_sd(void)
 		sd_file_get();  /* read (sd_file.c) */
 		return;
 	}
+	if (w3 == 0x6261 && req_w(cmd_req_word_four) == 0x0000) {
+		sd_backup_get();  /* backup (sd_backup.c, #61) */
+		return;
+	}
 	if ((w3 != 0x0000 && w3 != 0x6669) || req_w(cmd_req_word_four) != 0x0000) {
 		cmd_error_unknown();
 		return;
@@ -293,6 +297,10 @@ void cmd_set_system_sd(void)
 	uint8_t n = (uint8_t)cmd_reg_var_integers[1];
 	if (sd_file_set())
 		return;  /* open, create, seek, write, close, delete (sd_file.c) */
+	if (req_w(cmd_req_word_three) == 0x6261) {
+		sd_backup_set();  /* backup (sd_backup.c, #61) */
+		return;
+	}
 	if (req_w(cmd_req_word_three) != 0x6578 || req_w(cmd_req_word_four) != 0x0000) {
 		cmd_error_unknown();
 		return;

@@ -152,5 +152,6 @@ void out_crlf(void);
 
 /* crc16 of BASCOM (CRC-16/XMODEM) */
 uint16_t bas_crc16(const uint8_t *p, uint16_t len);
+uint16_t bas_crc16_more(uint16_t crc, const uint8_t *p, uint16_t len);  /* PORT: continued over blocks */
 
 #endif

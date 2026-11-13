@@ -58,7 +58,11 @@ const char *req_input_str(uint8_t n)
 
 uint16_t bas_crc16(const uint8_t *p, uint16_t len)
 {
-	uint16_t crc = 0;
+	return bas_crc16_more(0, p, len);
+}
+
+uint16_t bas_crc16_more(uint16_t crc, const uint8_t *p, uint16_t len)
+{
 	while (len--) {
 		crc ^= (uint16_t)*p++ << 8;
 		for (uint8_t i = 0; i < 8; i++)
@@ -580,8 +584,8 @@ word_four:;
 	if (REQ_B(10) == cmd_req_number) {
 		out_chr('.');
 		out_u16(REQ_B(9));
-	} else if (w4 != 0x0000 && w1 == 0x7379 && w2 == 0x6473) {
-		out_chr('.');  /* PORT (#58): system.dsp.limiter.attack/.release as typed */
+	} else if (w4 != 0x0000 && w1 == 0x7379 && (w2 == 0x6473 || w2 == 0x7364)) {
+		out_chr('.');  /* PORT (#58, #61): system.dsp.limiter.attack/.release, system.sd.backup.flash as typed */
 		out_str(req_input_str(cmd_req_word_four));
 	} else if (w4 != 0x0000) {
 		s = lookup(names_four, w4);
