@@ -674,6 +674,7 @@ static void sys_help(const char *spec, uint8_t n, const char *verb, uint8_t *fir
 	X("hardware|.memory.eram", cmd_set_system_hardware) \
 	X("key|.info", cmd_set_system_key) \
 	X("reinit", cmd_set_system_reinit) \
+	X("sd|.export", cmd_set_system_sd) /* PORT extension (#24) */ \
 	X("startup|.N", cmd_set_system_startup) /* PORT extension (#40) */ \
 	X("supply|.cal|.low|.mute|.source|.vcc", cmd_set_system_supply) /* PORT extension (#46) */ \
 

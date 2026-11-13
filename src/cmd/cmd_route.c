@@ -93,7 +93,14 @@ void cmd_check4buffer(void)
 }
 
 /* print helpers on the current channel */
-void out_chr(char c) { iface_putc(buart_channel, c); }
+void (*out_capture)(char c);  /* PORT (#24): answers go here instead of the channel (preset export) */
+void out_chr(char c)
+{
+	if (out_capture)
+		out_capture(c);
+	else
+		iface_putc(buart_channel, c);
+}
 void out_str(const char *s) { while (*s) out_chr(*s++); }
 void out_crlf(void) { out_chr('\r'); out_chr('\n'); }
 

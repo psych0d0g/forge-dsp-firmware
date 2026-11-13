@@ -1892,6 +1892,36 @@ class SdPresetTest(unittest.TestCase):
         self.assertIn('system.sd.files=["PRESET_1.CFG:8","NOTES.TXT:1234"]', ans[3])
         self.assertIn("unknown command", ans[4])
 
+    def test_export_round_trip(self):
+        """set system.sd.export=N writes the settings as preset_N.cfg; the loader reads it back"""
+        f = "V40-96ELN"
+        out, ee, o = self.run_sd(f, [], ["#sd_card=1", "#sd_init", "1|set.1 gain.out.1=111", "1|set.1 gain.out.2=122",
+                                         "1|set.1 biquad.1.2.calc=[1,1000,60,1414,0,128]",
+                                         "1|set.1 system.sd.export=2", "#sd_cat=preset_2.cfg", "#sd_load",
+                                         "1|set.1 system.sd.export=0", "1|set.1 system.sd.x=1"],
+                                 at24=b"\xff" * 65536)
+        self.assertIn("system.sd.export ok", out)
+        cat = [l[8:] for l in out.splitlines() if l.startswith("@sd_cat:")]
+        self.assertEqual(cat[1], "[96ELN]")
+        self.assertIn('FILE_v10 = "gain.out.1=111"', cat)
+        self.assertTrue(any(l.startswith('FILE_v10 = "mixer.position=') for l in cat))
+        self.assertIn('FILE_v10 = "biquad.1.2.calc=[1,1000,60,1414,0,128]"', cat)
+        self.assertFalse([l for l in cat if "[255," in l or '""' in l])          # unwritten storage left out
+        self.assertFalse([l for l in cat if "<" in l or "!" in l or "#" in l[1:]])
+        self.assertNotIn("gain.out.1 ok", out.split("system.sd.export ok")[1])   # own file: not loaded back
+        self.assertIn("system.sd.export command out of range", out)
+        self.assertIn("system.sd.x unknown command", out)
+        # the exported file loads on another device
+        text = "\n".join(cat) + "\n"
+        out, ee, o = self.run_sd(f, [("preset_1.cfg", text, (2026, 11, 13, 12, 0))], ["#sd_card=1", "#sd_init", "#sd_load"],
+                                 at24=b"\xff" * 65536)
+        self.assertIn("*.1 gain.out.1 ok", out)
+        self.assertIn("biquad.1.2.calc ok", out)
+        # only what get reports but set refuses: mixer.position 0 of the empty harness state and
+        # delay.in.7/8 (get lists 8 input delays, set takes 1..6; c45b3 restore-tuning sees the same)
+        errs = sorted(set(re.findall(r"!\.1 (\S+) ", out)))
+        self.assertEqual(errs, ["delay.in.7", "delay.in.8", "mixer.position"])
+
     def test_other_model_and_no_card(self):
         f = "V40-96ELN"
         cfg = '[96LN]\nFILE_v10 = "gain.out.1=111"\n'

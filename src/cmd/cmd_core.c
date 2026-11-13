@@ -563,6 +563,8 @@ void cmd_answer_header(void)
 			s = w1 == 0x6761 ? ".scale" : ".scan";
 		} else if (w3 == 0x6669 && w2 == 0x7364) {
 			s = ".files";  /* PORT (#24): system.sd.files */
+		} else if (w3 == 0x6578 && w2 == 0x7364) {
+			s = ".export";  /* PORT (#24): system.sd.export */
 		} else {
 			s = lookup(names_three, w3);
 		}

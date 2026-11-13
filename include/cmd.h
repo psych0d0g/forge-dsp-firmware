@@ -146,6 +146,7 @@ void out_str(const char *s);
 void out_chr(char c);
 void out_u16(uint16_t v);       /* print of a numeric variable / str() */
 void out_u32(uint32_t v);
+extern void (*out_capture)(char c);  /* PORT (#24): non-NULL = answers go there */
 void out_i16(int16_t v);
 void out_crlf(void);
 

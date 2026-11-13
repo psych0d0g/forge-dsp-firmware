@@ -41,6 +41,7 @@ void host_i2c_block(uint8_t bus, uint8_t addr);
 #include "tick.h"
 #include "ir.h"
 #include "sd.h"
+#include "ff.h"
 void host_sd_card(int on);
 int host_sd_image(const char *path, unsigned mb);
 int host_sd_put(const char *name, const char *hostfile, int y, int mo, int d, int h, int mi);
@@ -243,6 +244,15 @@ static void store_cmd(const char *l)
 	} else if (!strcmp(l, "#sd_init")) {
 		sd_init();
 		printf("@sd_ready:%u\n", sd_ready);
+	} else if (!strncmp(l, "#sd_cat=", 8)) {      /* PORT (#24): print a file of the mounted card */
+		FIL f;
+		char line[200];
+		if (f_open(&f, l + 8, FA_READ) == FR_OK) {
+			while (f_gets(line, sizeof line, &f))
+				printf("@sd_cat:%s", line);
+			f_close(&f);
+		} else
+			printf("@sd_cat: no file\n");
 	} else if (!strcmp(l, "#sd_load")) {
 		sd_preset_load_init();
 		printf("@sd_loaded preset=%u\n", store_preset);

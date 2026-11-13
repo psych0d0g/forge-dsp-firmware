@@ -175,3 +175,128 @@ void cmd_get_system_sd(void)
 	out_chr(']');
 	out_crlf();
 }
+
+/* PORT extension (#24): set system.sd.export=N writes the loaded preset and the device settings
+ * as preset_N.cfg (N 1..9) in the format the loader above and the GUI read: the get commands of
+ * c45b3 export-tuning run internally, their answer lines become  FILE_v10 = "<register>=<value>".
+ * Values of never written storage are left out, stored biquads are written as .calc (the
+ * device recomputes them). The file date goes to the EEPROM, so the next start does not load the
+ * file back; a file changed on the PC is loaded as before. */
+static const char *const export_queries[] = {
+	"mixer.position", "mixer.*", "gain.in.*", "gain.spdif.*", "gain.out.*", "mute.out.*",
+	"phase.out.*", "delay.*", "delay.in.*", "system.channel.name.*", "extender.ir.custom.*",
+	"modc.*", "biquad.*",
+};
+static FIL *xf;
+static char xline[cmd_req_value_size + 64];
+static uint8_t xn, xover, xerr;
+
+static uint8_t x_blank(const char *reg, const char *v)
+{
+	if (!strncmp(reg, "biquad.", 7))
+		return !strncmp(v, "[255,", 5);
+	if (!strncmp(reg, "modc.", 5))
+		return 0;
+	return !strcmp(v, "255") || !strcmp(v, "32767") || !strcmp(v, "65535") || !strcmp(v, "\"\"");
+}
+
+static void x_line(void)
+{
+	char *p = xline;
+	while (*p == ' ')
+		p++;
+	if (*p != '<')
+		return;  /* errors, events, info */
+	p = strchr(p, ' ');
+	if (!p)
+		return;
+	p++;
+	char *eq = strchr(p, '=');
+	if (!eq)
+		return;
+	*eq = 0;
+	const char *v = eq + 1;
+	if (!strcmp(p, "biquad") || !strcmp(p, "modc.enable") || x_blank(p, v))
+		return;
+	/* biquad.C.B -> biquad.C.B.calc */
+	uint8_t dots = 0;
+	for (const char *q = p; *q; q++)
+		dots += *q == '.';
+	f_puts("FILE_v10 = \"", xf);
+	f_puts(p, xf);
+	if (!strncmp(p, "biquad.", 7) && dots == 2)
+		f_puts(".calc", xf);
+	f_putc('=', xf);
+	f_puts(v, xf);
+	if (f_puts("\"\n", xf) < 0)
+		xerr = 1;
+}
+
+static void x_chr(char c)
+{
+	if (c == '\r')
+		return;
+	if (c == '\n') {
+		xline[xn] = 0;
+		if (!xover)
+			x_line();
+		xn = xover = 0;
+		iface_hook_watchdog();
+		return;
+	}
+	if (xn < sizeof xline - 1)
+		xline[xn++] = c;
+	else
+		xover = 1;
+}
+
+void cmd_set_system_sd(void)
+{
+	uint8_t n = (uint8_t)cmd_reg_var_integers[1];
+	if (req_w(cmd_req_word_three) != 0x6578 || req_w(cmd_req_word_four) != 0x0000) {
+		cmd_error_unknown();
+		return;
+	}
+	if (n < 1 || n > BAS_MODUL_MAX_PRESET || n > 9) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	if (sd_card_present() && !sd_ready)
+		sd_init();
+	if (!sd_card_present() || !sd_ready) {
+		cmd_error_unknown();
+		return;
+	}
+	char name[] = "preset_x.cfg";
+	name[7] = (char)('0' + n);
+	static FIL f;
+	if (f_open(&f, name, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) {
+		cmd_error_unknown();
+		return;
+	}
+	xf = &f;
+	xn = xover = xerr = 0;
+	f_puts("; exported by the Forge port firmware (set system.sd.export)\n[", &f);
+	f_puts(identity_model(), &f);
+	f_puts("]\n", &f);
+	/* the answers of the internal requests go into the file; the request itself was parsed into
+	 * the shared request buffer, so keep its answer header for the end */
+	static uint8_t req[sizeof cmd_mem];
+	memcpy(req, cmd_mem, sizeof req);
+	out_capture = x_chr;
+	for (uint8_t i = 0; i < sizeof export_queries / sizeof export_queries[0]; i++) {
+		char q[40] = "get ";
+		strcat(q, export_queries[i]);
+		cmd_run_line(q);
+	}
+	out_capture = 0;
+	memcpy(cmd_mem, req, sizeof req);
+	uint8_t ok = f_close(&f) == FR_OK && !xerr;
+	char dt[DT_LEN + 1];
+	if (ok && file_datetime(name, dt))
+		eram_write_str(DT_ADDR(n), DT_LEN + 1, dt);
+	if (ok)
+		cmd_answer_ok();
+	else
+		cmd_error_unknown();
+}

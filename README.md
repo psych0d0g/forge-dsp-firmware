@@ -54,6 +54,7 @@ Ausführlich mit allen Unterschieden: **[docs/port-changes.md](docs/port-changes
 - **Ausgangspegel** (`get.1 system.vu.out`): Effektivpegel der Ausgänge 1–8 nach Gain und Laufzeit, gleiche Skala wie `system.vu` (#52).
 - **Befehlsliste** (`get.1 system.help`): alle `get`/`set system.*`-Befehle der Firmware, erzeugt aus den Verteiltabellen.
 - **microSD prüfen** (`get.1 system.sd`, `get.1 system.sd.files`): Karte, Dateisystem, Größe und Dateien, nur lesend (#24).
+- **Preset auf die microSD exportieren** (`set.1 system.sd.export=N`): schreibt `preset_N.cfg` im GUI-Format, das der Vorlader beim Start wieder liest (#24).
 - **Namen der Eingänge** im Gerät (`set.1 system.channel.in.N="…"`), wie es sie für die Ausgänge schon gab (#55).
 - **Grenzen lesbar** (`get.1 system.limits.*`): Wertebereiche, Filtertypen und Laufzeit-Speicher je DSP, damit eine GUI
   nichts fest einbauen muss (#54).
