@@ -60,6 +60,8 @@ static void set_baud(USART_t *u, uint32_t baud)
 	case 19200:  bsel = 103;  break;
 	case 57600:  bsel = 2158; bscale = -6; break;
 	case 115200: bsel = 2094; bscale = -7; break;
+	case 230400: bsel = 983;  bscale = -7; break;  /* PORT (#62): 0.01 % */
+	case 460800: bsel = 428;  bscale = -7; break;  /* PORT (#62): 0.08 % */
 	default:     bsel = 51;   break;  /* 38400 */
 	}
 	u->BAUDCTRLA = bsel & 0xFF;
@@ -154,4 +156,27 @@ void iface_flush(uint8_t buart)
 		;
 	while (!(u->STATUS & USART_TXCIF_bm))
 		;
+}
+
+/* PORT extension (#62): the USB-COM faster on request, for the GUI. Not stored: after a restart and
+ * after USB_IDLE_MS without a line on it, it falls back to 38400, so the original GUI and the
+ * bootloader tools always find it. */
+#include "tick.h"
+#define USB_IDLE_MS 30000u
+static uint8_t usb_fast;
+static uint16_t usb_last;
+void iface_usb_baud(uint32_t baud)
+{
+	iface_flush(0);  /* the answer leaves at the old rate */
+	set_baud(chans[0].u, baud);
+	usb_fast = baud != 38400;
+	usb_last = tick_ms();
+}
+void iface_usb_line(void) { usb_last = tick_ms(); }
+void iface_usb_poll(void)
+{
+	if (usb_fast && (uint16_t)(tick_ms() - usb_last) > USB_IDLE_MS) {
+		set_baud(chans[0].u, 38400);
+		usb_fast = 0;
+	}
 }

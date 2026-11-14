@@ -28,6 +28,10 @@ void iface_init(void);
 uint8_t iface_copy2buffer(uint8_t ch, uint8_t *buffer);
 void iface_putc(uint8_t buart, char c);
 void iface_flush(uint8_t buart);
+/* PORT (#62): USB-COM rate on request (not stored), back to 38400 after a restart or 30 s idle */
+void iface_usb_baud(uint32_t baud);
+void iface_usb_line(void);            /* a line arrived on the USB-COM */
+void iface_usb_poll(void);            /* main loop: fall back when idle */
 
 /* hooks used by the router, provided by the board/event code */
 uint8_t iface_hook_ir_master_online(void);  /* registers(reg_ext_irsetup).irreceiver_state_on */

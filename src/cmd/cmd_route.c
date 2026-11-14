@@ -54,6 +54,7 @@ static void cmd_dec1receiver(void)
 
 void cmd_check4buffer(void)
 {
+	iface_usb_poll();
 	cmd_from_slave_receiver = iface_buart_channel[iface_ch_usb];
 	if (!iface_hook_ir_master_online() && iface_hook_usb_dtr() == 0)
 		cmd_from_slave_receiver = iface_buart_channel[iface_ch_master];
@@ -68,6 +69,8 @@ void cmd_check4buffer(void)
 				print_buffer();
 			} else {
 				buart_channel = iface_buart_channel[count];
+				if (count == iface_ch_usb)
+					iface_usb_line();
 				cmd_default_parse(cmd_buffer, size);
 				if (cmd_req_chksum_state == cmd_chksum_state_err) {
 					cmd_error_chksum();

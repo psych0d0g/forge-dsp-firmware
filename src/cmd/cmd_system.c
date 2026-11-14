@@ -18,6 +18,7 @@
 #include "level.h"
 #include "dsp_pool.h"
 #include "i2c.h"
+#include "iface.h"
 #include "supply.h"
 #include "store.h"
 #include "tas3108.h"
@@ -62,6 +63,22 @@ static void cmd_set_system_boot(void)
 
 static void cmd_set_system_baud(void)
 {
+	/* PORT extension (#62): set system.baud.usb=N (N = rate / 1200: 32, 96, 192, 384), only from
+	 * the USB-COM; the answer comes at the old rate, then it switches (not stored) */
+	if (req_w(cmd_req_word_three) == 0x7573 && req_w(cmd_req_word_four) == 0x0000) {
+		int16_t n = cmd_reg_var_integers[1];
+		if (buart_channel != iface_buart_channel[iface_ch_usb]) {
+			cmd_error_unknown_para();
+			return;
+		}
+		if (n != 32 && n != 96 && n != 192 && n != 384) {
+			cmd_error_cmd_oor();
+			return;
+		}
+		cmd_answer_ok();
+		iface_usb_baud((uint32_t)n * 1200u);
+		return;
+	}
 	uint8_t v = (uint8_t)cmd_reg_var_integers[1];
 	if (REQ_B(8) != cmd_req_number) {
 		cmd_error_unknown();
@@ -667,7 +684,7 @@ static void sys_help(const char *spec, uint8_t n, const char *verb, uint8_t *fir
 
 static void cmd_set_system_errors(void);
 #define SYS_SET(X) \
-	X("baud|.N", cmd_set_system_baud) \
+	X("baud|.N|.usb", cmd_set_system_baud) /* .usb: PORT extension (#62) */ \
 	X("biquads|.K", cmd_set_system_biquads) /* PORT extension (#47) */ \
 	X("boot", cmd_set_system_boot) \
 	X("cfg|.change", cmd_set_system_cfg) \

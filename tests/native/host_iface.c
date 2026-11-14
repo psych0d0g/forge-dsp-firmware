@@ -534,6 +534,10 @@ void iface_putc(uint8_t buart, char c)
 }
 
 void iface_flush(uint8_t buart) { (void)buart; }
+/* PORT (#62): the rate switch is printed */
+void iface_usb_baud(uint32_t baud) { printf("@usb_baud:%lu\n", (unsigned long)baud); }
+void iface_usb_line(void) {}
+void iface_usb_poll(void) {}
 
 /* start as after power-on with the EEPROM in eeprom[] (0xFF everywhere: sysinit) */
 static __attribute__((unused)) void host_boot(void)

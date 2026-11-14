@@ -565,6 +565,8 @@ void cmd_answer_header(void)
 			goto word_four;
 		} else if (w3 == 0x7363) {
 			s = w1 == 0x6761 ? ".scale" : ".scan";
+		} else if (w1 == 0x7379 && w2 == 0x6261 && w3 == 0x7573) {
+			s = ".usb";  /* PORT (#62): system.baud.usb */
 		} else if ((w2 == 0x7364 || w2 == 0x6473) && w1 == 0x7379) {
 			/* PORT (#24, #59): system.sd.<files|export|open|read|…>, the word as typed */
 			out_chr('.');

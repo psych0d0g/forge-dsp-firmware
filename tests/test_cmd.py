@@ -981,6 +981,21 @@ class LinesMixin:
         return [l for l in p.stdout.splitlines() if not l.startswith(("@pin", "--"))]
 
 
+@unittest.skipUnless(available("V40-96ELN"), "native harness not built")
+class UsbBaudTest(LinesMixin, unittest.TestCase):
+    """#62: set system.baud.usb=N switches the USB-COM after the answer (N = rate / 1200)."""
+
+    def test_switch_and_limits(self):
+        out = "\n".join(self.lines("V40-96ELN", ["1|set.1 system.baud.usb=96", "1|set.1 system.baud.usb=384",
+                                                 "1|set.1 system.baud.usb=50", "3|set.1 system.baud.usb=96"]))
+        # the answer first (at the old rate), then the switch
+        self.assertRegex(out, r"system\.baud\.usb ok\\r\\n\s*@usb_baud:115200")
+        self.assertIn("@usb_baud:460800", out)
+        self.assertIn("system.baud.usb command out of range", out)
+        self.assertIn("system.baud.usb unknown para", out)              # only from the USB-COM
+        self.assertEqual(out.count("@usb_baud"), 2)
+
+
 @unittest.skipUnless(all(available(f) for f in FLAVOURS), "native harness not built")
 class AudioCmdTest(LinesMixin, unittest.TestCase):
     """cmd_gain, cmd_mute, cmd_phase (libs/cmd/v20/common/subs)."""

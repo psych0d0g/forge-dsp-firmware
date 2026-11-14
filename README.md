@@ -97,6 +97,9 @@ Ausführlich mit allen Unterschieden und Befehlen: **[docs/port-changes.md](docs
 
 ### Update, Start, Bedienung
 
+- **USB-COM schneller** (`set.1 system.baud.usb=384`): bis 460800 Baud auf Anfrage, zurück auf 38400 nach Neustart oder 30 s
+  Ruhe; die Web-GUI liest damit in rund 2,5 statt 9,4 s ein (#62).
+
 - **Firmware-Update ohne Taster:** `set.1 system.boot` bringt den Forge direkt in den Bootloader. Grundlage ist eine
   Analyse des ausgelesenen Bootloaders ([docs/bootloader.md](docs/bootloader.md), #22). Update aus VS Code, mit
   `c45b3` oder im Browser über die Web-GUI.
