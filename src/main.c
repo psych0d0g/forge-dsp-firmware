@@ -171,6 +171,7 @@ int main(void)
 	for (;;) {
 		watchdog_reset();
 		uint16_t now = tick_ms();
+		boot_uptime_ms();  /* PORT: keeps the 64-s RTC count in the uptime */
 #if FORGE_BRINGUP && FLAVOUR_SYSTEMINIT_COMPLETE
 		loopcall(loopcall_take());
 #else

@@ -2222,6 +2222,12 @@ class StartupTest(LinesMixin, unittest.TestCase):
         self.assertIn("system.startup.time=[" + ",".join(want) + "]", out[-2])
         self.assertEqual(out[-1], out[-2])                # the first time counts
 
+    def test_uptime(self):
+        out = [l for l in self.lines("V40-96ELN", ["#ms=1500", "1|get.1 system.uptime", "#ms=60000", "#ms=5000",
+                                                   "1|get.1 system.uptime"]) if "uptime" in l]
+        self.assertIn("<.1 system.uptime=[1,500]", out[0])
+        self.assertIn("<.1 system.uptime=[66,500]", out[1])
+
     def test_bootloader_magic_cleared(self):
         """#67: AA 55 from system.boot is cleared by the next start of the firmware, once"""
         f = "V40-96ELN"

@@ -83,7 +83,7 @@ Ausführlich mit allen Unterschieden und Befehlen: **[docs/port-changes.md](docs
 - **Start schneller und messbar** (`get.1 system.startup.time`): Zeit bis zu jeder Startphase und im Bootloader davor; die
   Prüfung der DSP-Programme und das erste Preset lesen erst und schreiben nur, was abweicht. Nach einem Update blieb bis
   2.3.0 die Bootloader-Sequenz im EEPROM stehen, jeder Kaltstart wartete dann 58,6 s im Bootloader; jetzt wird sie
-  gelöscht. Am 96ELN kalt rund 68 s → 9,6 s bis Ton (#67).
+  gelöscht. Am 96ELN kalt rund 68 s → 9,6 s bis Ton (#67). Laufzeit seit dem Einschalten: `get.1 system.uptime`.
 - **Fehlerzähler zurücksetzen** (`set.1 system.errors=0`), im Original nur per Werks-Reset.
 - **I2C-Diagnose**: Bausteine direkt lesen und schreiben (`i2c.B.A.…`, `set.1 i2c.B.A.buffer=[…]`), damit z. B. den
   DSP-Speicher per PEEK (#51).

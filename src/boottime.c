@@ -13,6 +13,18 @@
 
 static uint16_t at[BT_COUNT];  /* 0 = not reached (a phase at 0 ms counts as 1 ms) */
 
+static uint32_t up_ms;     /* since clock_init, in RTC counts (1/1024 s) on the device */
+static uint16_t up_last;
+
+static uint16_t raw_now(void)
+{
+#ifdef __AVR__
+	return RTC.CNT;
+#else
+	return tick_ms();
+#endif
+}
+
 void boot_time_start(void)
 {
 #ifdef __AVR__
@@ -29,6 +41,22 @@ void boot_time_start(void)
 	RTC.CNT = 0;
 	RTC.CTRL = RTC_PRESCALER_DIV1_gc;
 #endif
+	up_ms = 0;
+	up_last = raw_now();
+}
+
+uint32_t boot_uptime_ms(void)
+{
+	uint16_t c = raw_now();
+	up_ms += (uint16_t)(c - up_last);  /* the counter wraps after 64 s */
+	up_last = c;
+	uint16_t bl = boot_time_ms(BT_BOOTLOADER);
+#ifdef __AVR__
+	uint32_t app = (uint32_t)(((uint64_t)up_ms * 1000u) >> 10);
+#else
+	uint32_t app = up_ms;
+#endif
+	return app + (bl == 0xFFFF ? 0 : (uint32_t)(bl - 1));
 }
 
 static uint16_t now_ms(void)

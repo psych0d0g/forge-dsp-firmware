@@ -37,4 +37,5 @@ void boot_time_start(void);
 uint8_t boot_magic_clear(void);    /* PORT (#67): EEPROM 0/1 = AA 55 left by system.boot -> 0xFF; 1 = it was set */
 void boot_mark(uint8_t phase);       /* first time only */
 uint16_t boot_time_ms(uint8_t phase); /* 0xFFFF = not reached */
+uint32_t boot_uptime_ms(void);        /* PORT: since power-on (bootloader + application), call it at least every 60 s */
 #endif

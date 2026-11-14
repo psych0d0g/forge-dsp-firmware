@@ -356,6 +356,20 @@ static void startup_time(void)
 	out_crlf();
 }
 
+/* PORT extension: get system.uptime = s since power-on (bootloader included), ms as [s, ms] */
+static void cmd_get_system_uptime(void)
+{
+	if (req_w(cmd_req_word_three) != 0x0000) { cmd_error_unknown(); return; }
+	uint32_t ms = boot_uptime_ms();
+	cmd_answer_header();
+	out_chr('[');
+	out_u32(ms / 1000u);
+	out_chr(',');
+	out_u16((uint16_t)(ms % 1000u));
+	out_chr(']');
+	out_crlf();
+}
+
 static void cmd_get_system_startup(void)
 {
 	if (req_w(cmd_req_word_three) == 0x7469 && req_w(cmd_req_word_four) == 0x0000) {
@@ -1238,6 +1252,7 @@ static void cmd_get_system_help(void);
 	X("startup|.N|.*|.time", cmd_get_system_startup) /* PORT extension (#40, #67) */ \
 	X("supply||.cal|.low|.mute|.raw|.source|.vcc", cmd_get_system_supply) /* PORT extension (#46) */ \
 	X("shutdown|.hold", cmd_get_system_shutdown) /* PORT extension (#68) */ \
+	X("uptime", cmd_get_system_uptime) /* PORT extension */ \
 	X("temperature||.celsius|.fahrenheit|.kelvin", cmd_get_system_temp) \
 	X("vu||.out", cmd_get_system_vu) /* PORT extension (#52) */ \
 

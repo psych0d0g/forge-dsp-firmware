@@ -466,7 +466,7 @@ static const struct name names_two[] = {
 	{0x6B65, ".key"}, {0x6C65, ".left"}, {0x6C6F, ".loaded"}, {0x6D6F, ".monitor"},
 	{0x6D75, ".mux"}, {0x6F70, ".option"}, {0x6F75, ".out"}, {0x7069, ".ping"},
 	{0x7363, ".scale"}, {0x7365, ".select"}, {0x7368, ".shutdown"}, {0x7370, ".spdif"},
-	{0x7465, ".temperature"}, {0x7573, ".usb"}, {0x7665, ".version"}, {0, NULL}
+	{0x7465, ".temperature"}, {0x7573, ".usb"}, {0x7665, ".version"}, {0x7570, ".uptime"} /* port */, {0, NULL}
 };
 
 static const struct name names_three[] = {
