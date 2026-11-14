@@ -4,6 +4,10 @@
  *   set biquad.CH.N.calc=[...]                       store values, compute, store and send coefficients
  *   set biquad.CH.N.raw=["A2","A1","B2","B1","B0"]   hex 5.23 coefficients, store and send
  *   get biquad / biquad.* / biquad.CH / biquad.CH.N  stored values [type,f,gain,q,b,flags]
+ * PORT extension (#64): get biquad.*.used / biquad.CH.used: only the biquads in use (type not 0 and
+ * not 0xFF = never written), in
+ * the same lines, then  <.R biquad.used=[CH,length,CH,length,…]  (all channels asked), so the
+ * empty places need not cross the slow line (most of them: 17 KB of 536 lines on the 96ELN).
  * Old format (5 values): q in 1/10, gain in 1/10 dB; new format (6 values): q in 1/1000.
  * PORT: biquad.CH.N.raw splits the quoted values itself (broken in the original, see below).
  * PORT: set/get of stored values are refused while no preset is loaded (store_preset 0xFF).
@@ -274,6 +278,7 @@ static void get_bq_ch_data(void)
 	out_crlf();
 }
 
+static uint8_t only_used;  /* PORT (#64) */
 static void get_bq_ch(uint8_t ch)
 {
 	uint8_t limits = flow_bq_limit(ch);
@@ -289,7 +294,7 @@ static void get_bq_ch(uint8_t ch)
 		return;
 	}
 	uint16_t w = req_w(cmd_req_word_three);
-	if (w != 0x0000 && w != 0x002A) {
+	if (w != 0x0000 && w != 0x002A && w != 0x7573) {
 		cmd_error_unknown();
 		return;
 	}
@@ -298,9 +303,30 @@ static void get_bq_ch(uint8_t ch)
 		REQ_B(7) = i;
 		store_bq_nr = (uint16_t)(base + i);
 		store_load_bqtv();
+		if (w == 0x7573 && (buffer_bytes[1] == 0 || buffer_bytes[1] == 0xFF))
+			continue;  /* #64: an empty place (0) or never written storage (0xFF) */
 		get_bq_ch_data();
 	}
 	req_w_set(cmd_req_word_three, w);
+}
+
+/* PORT (#64): the closing line of .used: the lengths of the channels asked */
+static void used_end(uint8_t from, uint8_t to)
+{
+	out_str(" <.");
+	out_u16(REQ_B(cmd_req_receiver));
+	out_str(" biquad.used=[");
+	uint8_t first = 1;
+	for (uint8_t i = from; i <= to; i++) {
+		if (flow_bq_limit(i) == 0)
+			continue;
+		if (!first)
+			out_chr(',');
+		first = 0;
+		out_u16(i); out_chr(','); out_u16(flow_bq_limit(i));
+	}
+	out_chr(']');
+	out_crlf();
 }
 
 void cmd_get_biquad(void)
@@ -319,8 +345,11 @@ void cmd_get_biquad(void)
 		}
 		if (i > BAS_FLOW_MAX_CHANNELS || flow_bq_limit(i) == 0)
 			cmd_error_cmd_oor();
-		else
+		else {
 			get_bq_ch(i);
+			if (req_w(cmd_req_word_three) == 0x7573)
+				used_end(i, i);
+		}
 		return;
 	}
 	switch (req_w(cmd_req_word_two)) {
@@ -340,6 +369,11 @@ void cmd_get_biquad(void)
 			cmd_error_cmd_oor();
 			break;
 		}
+		only_used = req_w(cmd_req_word_three) == 0x7573;
+		if (req_w(cmd_req_word_three) != 0x0000 && !only_used) {
+			cmd_error_unknown();
+			break;
+		}
 		REQ_B(6) = cmd_req_number;
 		for (uint8_t i = 1; i <= BAS_FLOW_MAX_CHANNELS; i++) {
 			if (flow_bq_limit(i) > 0) {
@@ -347,6 +381,8 @@ void cmd_get_biquad(void)
 				get_bq_ch(i);
 			}
 		}
+		if (only_used)
+			used_end(1, BAS_FLOW_MAX_CHANNELS);
 		break;
 	default: cmd_error_unknown();
 	}

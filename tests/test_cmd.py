@@ -1229,6 +1229,18 @@ class BiquadCmdTest(LinesMixin, unittest.TestCase):
     PRE = ["#store_init", "#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect",
            "1|set.1 preset.loaded=0", "#mainloop"]
 
+    def test_used_only(self):
+        """#64: biquad.*.used sends only the places in use, then the lengths of the channels"""
+        out = "\n".join(self.lines("V40-96ELN", ["1|set.1 biquad.3.2.calc=[1,1000,30,707,0,128]",
+                                                 "1|set.1 biquad.35.1=[2,200,0,707,0,128]",
+                                                 "1|get.1 biquad.*.used", "1|get.1 biquad.3.used", "1|get.1 biquad.*.x"]))
+        lines = [l.strip() for l in out.replace("\\r\\n", "\n").split("\n") if "biquad." in l and "<.1" in l]
+        self.assertEqual([l.split("<.1 ")[1] for l in lines], [
+            "biquad.3.2=[1,1000,30,707,0,128]", "biquad.35.1=[2,200,0,707,0,128]",
+            "biquad.used=[1,60,2,60,3,38,4,38,5,60,6,60,7,38,8,38,35,72,36,72]",
+            "biquad.3.2=[1,1000,30,707,0,128]", "biquad.used=[3,38]"])
+        self.assertIn("biquad.*.x unknown command", out)
+
     def test_values_ranges_listing(self):
         for f in FLAVOURS:
             limits = table_bytes(f, "data_flow_ch_bq_limits")
