@@ -13,6 +13,7 @@
 #include "i2c.h"
 #include "registers.h"
 #include "factory.h"
+#include "variant.h"
 
 uint8_t events_field_value[BAS_MAX_EVENTS + 1];
 uint8_t events_is_changed[BAS_MAX_EVENTS + 1];
@@ -31,6 +32,14 @@ void events_init_set(uint8_t nr, uint8_t value)
 	eram_wb(ERAM_EL(EVENTS_FIELD_INIT_ERAM, nr), value);  /* eram_wb waits for the NVM (waitms eeprom_mcu_write_delay) */
 }
 
+/* start value of field nr (1-based) */
+static uint8_t init_value(uint8_t nr)
+{
+	if (variant_v30() && nr >= 25 && nr <= 28)
+		return nr <= 26 ? 0xFF : 0x01;  /* PORT (#69): as the V30-96ELN build */
+	return BAS_LOOKUP_B(events_field_init_values, nr - 1);
+}
+
 void ctrl_events_init(void)
 {
 	/* at sysinit the defaults events_field_init_values; written to the EEPROM only with
@@ -39,8 +48,8 @@ void ctrl_events_init(void)
 	uint8_t write = factory_write();
 	for (uint8_t i = 1; i <= BAS_MAX_EVENTS; i++) {
 		if (write)
-			events_init_set(i, BAS_LOOKUP_B(events_field_init_values, i - 1));
-		events_field_value[i] = sysinit ? BAS_LOOKUP_B(events_field_init_values, i - 1) : events_init_get(i);
+			events_init_set(i, init_value(i));
+		events_field_value[i] = sysinit ? init_value(i) : events_init_get(i);
 		events_bind_modc[i] = 0;
 	}
 	events_adda_flags = 0;  /* events_overflow_ad(_da)_init */
@@ -155,16 +164,18 @@ void events_spdif_init(void) { events_spdif_ch = 0; }
 
 static void spdif_setevent(uint8_t v)
 {
+	/* PORT (#69): on a PCB 3.0 board the fields of the V30-96ELN build, no USB audio */
+	uint8_t rec1 = variant_v30() ? V30_EVENTS_FIELD_SPDIF_REC_1 : BAS_EVENTS_FIELD_SPDIF_REC_1;
 	switch (events_spdif_ch) {
 #if BAS_EXT_BT720 > 0
 	case 0x00: event_set_value(BAS_EVENTS_FIELD_SPDIF_REC_5, v); break;
 #endif
 #if BAS_EXT_USBAUDIO > 0
-	case 0x01: event_set_value(BAS_EVENTS_FIELD_SPDIF_REC_4, v); break;
+	case 0x01: if (!variant_v30()) event_set_value(BAS_EVENTS_FIELD_SPDIF_REC_4, v); break;
 #endif
-	case 0x02: event_set_value(BAS_EVENTS_FIELD_SPDIF_REC_1, v); break;
-	case 0x03: event_set_value(BAS_EVENTS_FIELD_SPDIF_REC_2, v); break;
-	case 0x04: event_set_value(BAS_EVENTS_FIELD_SPDIF_REC_3, v); break;
+	case 0x02: event_set_value(rec1, v); break;
+	case 0x03: event_set_value((uint8_t)(rec1 + 1), v); break;
+	case 0x04: event_set_value((uint8_t)(rec1 + 2), v); break;
 	}
 }
 

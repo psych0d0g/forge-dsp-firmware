@@ -42,9 +42,14 @@ uint8_t mcu_reset_flags;  /* RST.STATUS of this start (#60 log) */
 #include "version.h"
 #include "watchdog.h"
 #include "boottime.h"
+#include "variant.h"
 
 /* found by chip45boot3 CMD_READ_VERSION_FIRMWARE */
 const char fw_version_c45b3[] PROGMEM __attribute__((used)) = FW_VERSION_C45B3;
+#if VARIANT_ELN_V30
+/* PORT (#69): tells the GUI from the image that this build also runs the 96ELN with PCB 3.0 */
+const char fw_eln_pcb30[] PROGMEM __attribute__((used)) = "\0ELN-PCB30\0";
+#endif
 
 /* hooks of the generated systeminit sequence */
 void interrupts_enable(void) { sei(); }
@@ -64,6 +69,9 @@ int main(void)
 {
 	/* referenced so --gc-sections keeps the version string */
 	__asm__ __volatile__("" :: "r"(fw_version_c45b3));
+#if VARIANT_ELN_V30
+	__asm__ __volatile__("" :: "r"(fw_eln_pcb30));
+#endif
 	clock_init();
 	boot_time_start();  /* PORT (#67) */
 	{

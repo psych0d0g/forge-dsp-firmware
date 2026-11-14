@@ -65,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flavour: [V30-96LN, V30-96ELN, V4x-96ELN, V4x-96ELN-3, V30-96LN-bringup, V30-96ELN-bringup, V4x-96ELN-bringup, V4x-96ELN-3-bringup]
+        flavour: [V30-96LN, V4x-96ELN, V4x-96ELN-3, V30-96LN-bringup, V4x-96ELN-bringup, V4x-96ELN-3-bringup]  # V30-96ELN: in V4x-96ELN (#69)
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,7 +110,7 @@ jobs:
             cp "$f" "rel/$(basename "$f" | sed "s/-bringup-$v/-$v/")"
           done
           cd rel && sha256sum *.hex > SHA256SUMS && cat SHA256SUMS
-          test "$(ls *.hex | wc -l)" -eq 4
+          test "$(ls *.hex | wc -l)" -eq 3
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

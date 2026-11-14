@@ -446,8 +446,12 @@ class Si5338Test(unittest.TestCase):
                 self.assertEqual(regs[reg:reg + 10].hex(), bs.hex(), f"{mclk} {clocks} reg {reg}")
 
     def test_not_fitted(self):
-        p, _ = run("V40-CORED8", ["#si5338", "1|get.1 system.errors"], want_eeprom=True)
+        p, _ = run("V41-96ELN-3", ["#si5338", "1|get.1 system.errors"], want_eeprom=True)
         self.assertIn("system.errors=[[", p.stdout)  # si5338_rdy + offset_other
+        self.assertIn("@hw:0001", p.stdout)
+        # #69: the build for all 96ELN takes a board without Si5338 as PCB 3.0: no error
+        p, _ = run("V40-CORED8", ["#si5338", "1|get.1 system.errors"], want_eeprom=True)
+        self.assertIn("system.errors=[]", p.stdout)
         self.assertIn("@hw:0001", p.stdout)
 
 
@@ -716,9 +720,16 @@ class SysteminitTest(unittest.TestCase):
         p, _ = run(f, missing + ["#systeminit", "#hw_check", "1|get.1 system.feature.attributes.hw"],
                    eeprom=image(f), want_eeprom=True)
         self.assertIn("@hwcheck:1 mute:255", p.stdout)  # api_mute_out_on
-        # #25: a V40 build on a V30 board (no Si5338) is caught and stays muted
+        # #69: the build for all 96ELN on a V30 board (no Si5338) runs as PCB 3.0 (was muted, #25)
         no_clock = [x for x in self.ALL if x != "#i2cdev=1,E0"]
-        p, _ = run(f, no_clock + ["#systeminit", "#hw_check"], eeprom=image(f), want_eeprom=True)
+        p, _ = run(f, no_clock + ["#systeminit", "#hw_check", "1|get.1 system.feature.attributes.hw"],
+                   eeprom=image(f), want_eeprom=True)
+        self.assertIn("@hwcheck:0 mute:0", p.stdout)
+        self.assertEqual(p.stdout.split("=[")[1].split(",")[4], "125")   # expected other = 0x007D as V30
+        # the 96ELN-3 has no PCB 3.0: without its clock generator it stays muted
+        g = "V41-96ELN-3"
+        all3 = [x for x in self.ALL if x != "#i2cdev=1,E0"]
+        p, _ = run(g, all3 + ["#systeminit", "#hw_check"], eeprom=image(g), want_eeprom=True)
         self.assertIn("@hwcheck:1 mute:255", p.stdout)
         f = "V30-96ELN"
         p, _ = run(f, ["1|get.1 system.feature.attributes.hw"], eeprom=image(f), want_eeprom=True)
@@ -1745,13 +1756,18 @@ class ModcStoreTest(unittest.TestCase):
     def test_mainclock(self):
         f = "V40-96ELN"
         clk = table_words(f, "data_modc_mainclock")
-        p, ee = run(f, ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init", "#modc_init",
-                        "1|set.1 modc.9=[1,68,00000000,0,0,0,0,F4010300]", "#modc"],
-                    eeprom=image(f), want_eeprom=True)
+        lines = ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init", "#modc_init",
+                 "1|set.1 modc.9=[1,68,00000000,0,0,0,0,F4010300]", "#modc", "1|get.1 modc.version.attributes.aa"]
+        p, ee = run(f, ["#i2cdev=1,E0", "#si5338"] + lines, eeprom=image(f), want_eeprom=True)
         fine = self.addr(f, "SI5338_CUSTOM_MCLK_FINE_TUNE")
         out = self.addr(f, "SI5338_OUT_CLOCK_ERAM") + 3 * 4
         self.assertEqual(int.from_bytes(ee[fine:fine + 2], "little"), 0x01F4)
         self.assertEqual(int.from_bytes(ee[out:out + 4], "little"), clk[6] | clk[7] << 16)  # index 3
+        self.assertIn("=[20,20,20,20,20,", p.stdout)                   # type 68 & 0x3F = 4: version 20
+        # #69: on a PCB 3.0 board (no Si5338) the block does nothing and is not offered
+        p, ee2 = run(f, ["#si5338"] + lines, eeprom=image(f), want_eeprom=True)
+        self.assertEqual(ee2[fine:fine + 2], image(f)[fine:fine + 2])
+        self.assertIn("=[20,20,20,20,0,", p.stdout)
 
     def test_ess9038pro(self):
         f = "V41-96ELN-3"
@@ -1848,9 +1864,14 @@ class FactoryResetTest(unittest.TestCase):
 
     def test_internal_defaults(self):
         f = "V40-96ELN"
-        p, ee = run(f, ["#factory=1", "#events_init", "#modc_init", "#ir_init", "#sys_init_init"], want_eeprom=True)
+        p, ee = run(f, ["#i2cdev=1,E0", "#si5338", "#factory=1", "#events_init", "#modc_init", "#ir_init", "#sys_init_init"],
+                    want_eeprom=True)
         a = self.eram(f, "EVENTS_FIELD_INIT_ERAM")
         self.assertEqual(ee[a:a + 128], table_bytes(f, "events_field_init_values"))
+        # #69: on a PCB 3.0 board the start values of the V30-96ELN build
+        _, ee3 = run(f, ["#si5338", "#factory=1", "#events_init"], want_eeprom=True)
+        a3 = layout("V30-96ELN")["events_field_init_eram"][0]          # and where the V30 build keeps them
+        self.assertEqual(ee3[a3:a3 + 128], table_bytes("V30-96ELN", "events_field_init_values"))
         a = self.eram(f, "MODC_TYPE_ERAM")
         self.assertEqual(ee[a:a + 32], table_bytes(f, "modc_type_default"))
         a = self.eram(f, "MODC_SETS_ERAM")
@@ -2227,6 +2248,34 @@ class StartupTest(LinesMixin, unittest.TestCase):
                                                    "1|get.1 system.uptime"]) if "uptime" in l]
         self.assertIn("<.1 system.uptime=[1,500]", out[0])
         self.assertIn("<.1 system.uptime=[66,500]", out[1])
+
+    def test_v30_board_eeprom_layout(self):
+        """#69: the build for all 96ELN on a PCB 3.0 board reads and writes the EEPROM of the V30
+        build: same control blocks, IR codes and event start values, nothing moved"""
+        import random
+        rnd = random.Random(69)
+        ee = bytearray(image("V30-96ELN"))
+        L = layout("V30-96ELN")
+        lo = L["dsp_1_eeprom_chksum_eram"][0]
+        hi = L["dbg_eram"][0]
+        for i in range(lo, hi):                       # the moved area with distinct content
+            ee[i] = rnd.randrange(256)
+        for blk in range(32):                         # valid blocks: enable 0/1, known types
+            ee[L["modc_enable_eram"][0] + blk] = rnd.randrange(2)
+        ee = bytes(ee)
+        q = ["#modc_init", "1|get.1 modc.*", "1|get.1 modc.32.sets"]
+        v30, _ = run("V30-96ELN", ["#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init"] + q, eeprom=ee, want_eeprom=True)
+        v40, ee2 = run("V40-96ELN", ["#si5338", "#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_init"] + q +
+                       ["1|set.1 modc.5.sets.2=7"], eeprom=ee, want_eeprom=True)
+        grab = lambda p: [l for l in p.stdout.splitlines() if "modc." in l]
+        self.assertEqual(grab(v30), grab(v40)[:len(grab(v30))])
+        # a write lands where the V30 build has it, the bytes of the Si5338 area stay
+        sets2 = L["modc_set2_eram"][0] + 4
+        self.assertEqual(ee2[sets2], 7)
+        self.assertEqual(ee2[lo:sets2] + ee2[sets2 + 1:], ee[lo:sets2] + ee[sets2 + 1:])   # below lo: boot counter
+        # with a Si5338 (PCB 4.0) the V40 layout as before
+        _, ee3 = run("V40-96ELN", ["#i2cdev=1,E0", "#si5338", "1|set.1 modc.5.sets.2=7"], eeprom=ee, want_eeprom=True)
+        self.assertEqual(ee3[layout("V40-96ELN")["modc_set2_eram"][0] + 4], 7)
 
     def test_bootloader_magic_cleared(self):
         """#67: AA 55 from system.boot is cleared by the next start of the firmware, once"""

@@ -14,15 +14,17 @@ im EEPROM, der Upload übernimmt sie aus der bisherigen Firmware.
 | Gerät | PCB | `system.key.info` | Port-Firmware (Umgebung) | Original 1.11.6000 (Release [0.0.1116000](https://github.com/psych0d0g/forge-dsp-firmware/releases/tag/0.0.1116000)) | Am Gerät getestet |
 |---|---|---|---|---|---|
 | Forge DSP 96LN | 3.0 | `96LN-3.0` | `V30-96LN` | `forge-dsp-V30-96LN-bascom-1.11.6000.hex` | – |
-| Forge DSP 96ELN | 3.0 | `96ELN-4.0` (sic, Quelltext) | `V30-96ELN` | `forge-dsp-V30-96ELN-bascom-1.11.6000.hex` | – |
+| Forge DSP 96ELN | 3.0 | `96ELN-4.0` (sic, Quelltext) | `V4x-96ELN` (ab #69, vorher `V30-96ELN`) | `forge-dsp-V30-96ELN-bascom-1.11.6000.hex` | – |
 | Forge DSP 96ELN | 4.0 | `96ELN-4.0` | `V4x-96ELN` | `forge-dsp-V40-96ELN-bascom-1.11.6000.hex` | ja (DEV-Gerät, #39) |
 | ETON CORE D8 | 4.0 | `CORED8-4.0` | `V4x-96ELN` | `forge-dsp-V40-CORED8-bascom-1.11.6000.hex` | – |
 | ETON CORE D8 | 4.1 | `CORED8-4.1` | `V4x-96ELN` | `forge-dsp-V41-CORED8-bascom-1.11.6000.hex` | – |
 | Forge DSP 96ELN-3 | 4.0 | `96ELN3-4.0` | `V4x-96ELN-3` | `forge-dsp-V40-96ELN-3-bascom-1.11.6000.hex` | – |
 | Forge DSP 96ELN-3 | 4.1 | `96ELN3-4.1` | `V4x-96ELN-3` | `forge-dsp-V41-96ELN-3-bascom-1.11.6000.hex` | – |
 
-Achtung: Forge 96ELN mit PCB 3.0 und 4.0 melden beide `96ELN-4.0` (#10). Die Firmwares sind verschieden
-(PCB 4.0 hat den Taktgenerator Si5338 und USB-Audio). Die Umgebung bitte nach der Platine wählen.
+Forge 96ELN mit PCB 3.0 und 4.0 melden beide `96ELN-4.0` (#10). Seit #69 läuft auf beiden derselbe Build
+`V4x-96ELN`: Er erkennt die PCB 3.0 beim Start am fehlenden Taktgenerator Si5338 und nutzt dann deren EEPROM-Aufteilung
+(Einstellungen bleiben beim Update erhalten). Die Umgebung `V30-96ELN` bleibt für die Entwicklung und den Rückweg zum
+Original, im Release ist sie nicht mehr.
 
 Alle: ATxmega256A3U, interner 32-MHz-Takt.
 
@@ -156,7 +158,7 @@ Lizenz: CC BY-NC-SA 4.0 (`LICENSE.txt`), wie das Original. `lib/fatfs`: FatFs R0
 2. `upload_port` in `platformio.ini` fest auf den CP2102 des Forge setzen (`/dev/serial/by-id/usb-Silicon_Labs_CP2102…`).
 3. *PlatformIO: Upload*. Ablauf:
    - `get.1 system.key.info`: Modell und PCB des angeschlossenen Forge müssen zur Umgebung passen, sonst Abbruch.
-     V30-96ELN und V40-96ELN melden beide `96ELN-4.0`, hier die Umgebung bitte selbst richtig wählen.
+     Für jeden 96ELN (PCB 3.0 und 4.0) und den CORE D8 ist das die Umgebung `V4x-96ELN` (#69).
    - **Bootloader:** Läuft schon die Port-Firmware, schickt das Tool `set.1 system.boot` und der Forge geht von selbst
      in den Bootloader (kein Taster). Mit der Original-Firmware startet er dabei nur neu: dann während der Wartezeit
      (60 s) den Forge ausschalten, den Taster neben dem USB-Port halten, einschalten, halten bis die orange LED blinkt.

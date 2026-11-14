@@ -11,6 +11,7 @@
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "hwcheck.h"
+#include "variant.h"
 #include "api.h"
 #include "flavour.h"
 #include "store.h"
@@ -27,6 +28,8 @@ uint16_t hw_check_expected_other(void)
 #if BAS_MODUL_SI5338 == 0 && (BAS_CHK_HARDWARE_OTHER == 0x0871)
 	return 0x007D;  /* V30-96ELN, see above */
 #else
+	if (variant_v30())
+		return V30_EXPECTED_OTHER;  /* PORT (#69): the build for all 96ELN on a PCB 3.0 board */
 	return BAS_CHK_HARDWARE_OTHER;
 #endif
 }

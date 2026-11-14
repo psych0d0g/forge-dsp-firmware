@@ -6,6 +6,7 @@
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
 #include "modc.h"
+#include "variant.h"
 #include "level.h"
 #include "api.h"
 #include "bas_data.h"
@@ -711,6 +712,8 @@ static void modc_gain_irrc(void)
 static void modc_mainclock(void)
 {
 #if BAS_MODC_VERSION_MAINCLOCK == 20
+	if (variant_v30())
+		return;  /* PORT (#69): no clock generator */
 	uint16_t fine = (uint16_t)(SET(1) | SET(2) << 8);
 	if (eram_rw(ERAM_SI5338_CUSTOM_MCLK_FINE_TUNE) != fine)
 		eram_ww(ERAM_SI5338_CUSTOM_MCLK_FINE_TUNE, fine);
@@ -758,6 +761,8 @@ uint8_t modc_type_version(uint8_t t)
 		return 20;  /* PORT extension: mono (#14) */
 	if (t == (MODC_TYPE_MIXER & 0x3F))
 		return 20;  /* PORT extension: mixer (#16) */
+	if (t == (BAS_MODC_TYPE_MAINCLOCK & 0x3F) && variant_v30())
+		return 0;  /* PORT (#69): 96ELN PCB 3.0 has no clock generator */
 	return BAS_LOOKUP_B(data_mods_versions, t);
 }
 

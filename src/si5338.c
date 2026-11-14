@@ -7,6 +7,7 @@
  * needs for awkward values.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "variant.h"
 #include "boottime.h"
 #include "flavour.h"
 #if BAS_MODUL_SI5338 > 0
@@ -237,12 +238,16 @@ static void si5338_detect_and_init_body(void)
 			if (i2c_err == 0) {
 				si5338_adr = 0xE2;
 				hardware_other |= 1u << BAS_SI5338_RDY;
-			} else {
+			} else if (!VARIANT_ELN_V30) {
+				/* PORT (#69): in the build for all 96ELN a missing Si5338 is a PCB 3.0 board */
 				errorcount((uint8_t)(BAS_SI5338_RDY + BAS_ERRORCOUNT_OFFSET_OTHER));
 			}
 		}
 		twi_stop(BUS);
 	}
+	eram_v30 = variant_v30();  /* PORT (#69): from here on the EEPROM layout of the V30 build */
+	if (variant_v30())
+		return;  /* PORT (#69): 96ELN PCB 3.0, no clock generator */
 	si5338_init();
 }
 

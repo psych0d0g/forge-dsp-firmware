@@ -1,6 +1,8 @@
 /* Internal EEPROM access (config eeprom = mapped). License: CC BY-NC-SA 4.0 */
 #include "eram.h"
 
+uint8_t eram_v30;  /* PORT (#69): EEPROM layout of the V30-96ELN build, see eram.h */
+
 void eram_read_str(uint16_t a, uint8_t size, char *dst)
 {
 	uint8_t i;
