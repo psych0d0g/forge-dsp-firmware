@@ -478,6 +478,7 @@ static const struct name names_three[] = {
 	{0x6F75, ".out"}, {0x7061, ".panes"}, {0x7365, ".sets"}, {0x7374, ".state"},
 	{0x7479, ".type"}, {0x7570, ".update"}, {0x7661, ".value"}, {0x7665, ".version"},
 	/* port #46: system.supply.* */ {0x736F, ".source"}, {0x6361, ".cal"}, {0x7261, ".raw"}, {0x6C6F, ".low"}, {0x6D75, ".mute"}, {0x7663, ".vcc"},
+	/* port #68 */ {0x686F, ".hold"},
 	{0, NULL}
 };
 

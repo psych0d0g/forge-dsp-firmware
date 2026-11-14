@@ -1514,16 +1514,36 @@ class ModcTest(LinesMixin, unittest.TestCase):
     def test_shutdown_block(self):
         for f in FLAVOURS:
             sets = table_bytes(f, "modc_sets_default")
-            s2, s3, s4 = sets[32 + 31], sets[64 + 31], sets[96 + 31]
-            out = self.lines(f, self.PRE + ["#modc"] * 3 + ["#pin=PIN_CPU_POWER_CTRL_IN,0", "#events_poll"] +
-                             ["#modc"] * (s2 + 2))
+            s2, s4 = sets[32 + 31], sets[96 + 31]
+            out = self.lines(f, self.PRE + ["#modc"] * 3 + ["#pin=PIN_CPU_POWER_CTRL_IN,0", "#events_poll", "#modc",
+                             "#mutesys"] + ["#modc"] * (s2 + 2) + ["#ms=4900", "#modc", "#mutesys", "#ms=200", "#modc"])
             txt = "\n".join(out)
+            mute = [l for l in out if l.startswith("@mutesys:")]
+            self.assertEqual(mute, ["@mutesys:255", "@mutesys:255"], f)   # #68: muted at once, during the hold
             self.assertEqual(txt.count("@shutdown:"), 1, f)
-            self.assertIn(f"@shutdown:{s3},{s4}", txt, f)       # waits before remote off / power off
-            self.assertIn("#.1 system.shutdown=ok", txt, f)
+            self.assertIn(f"@shutdown:0,{s4}", txt, f)          # remote out off after the hold (5 s), then set 4
+            self.assertLess(txt.index("#.1 system.shutdown=ok"), txt.index("@shutdown:"), f)
             # power in stays high: nothing
             out = self.lines(f, self.PRE + ["#modc"] * 10)
             self.assertNotIn("@shutdown", "\n".join(out), f)
+
+    def test_shutdown_acc_back_during_hold(self):
+        """#68: ACC back while remote out is held: unmute, no shutdown; the hold is adjustable"""
+        f = "V40-96ELN"
+        s2 = table_bytes(f, "modc_sets_default")[32 + 31]
+        out = self.lines(f, self.PRE + ["1|get.1 system.shutdown.hold", "1|set.1 system.shutdown.hold=1200",
+                         "1|get.1 system.shutdown.hold", "1|set.1 system.shutdown.hold=30000", "#modc",
+                         "#pin=PIN_CPU_POWER_CTRL_IN,0", "#events_poll"] + ["#modc"] * (s2 + 2) +
+                         ["#ms=1000", "#modc", "#mutesys", "#pin=PIN_CPU_POWER_CTRL_IN,1", "#events_poll", "#modc",
+                          "#mutesys", "#ms=5000", "#modc", "#modc"])
+        txt = "\n".join(out)
+        self.assertIn("<.1 system.shutdown.hold=5000", txt)
+        self.assertIn("*.1 system.shutdown.hold ok", txt)
+        self.assertIn("<.1 system.shutdown.hold=1200", txt)
+        self.assertIn("command out of range", txt)
+        self.assertEqual([l for l in out if l.startswith("@mutesys:")], ["@mutesys:255", "@mutesys:0"])
+        self.assertNotIn("@shutdown", txt)
+        self.assertNotIn("system.shutdown=ok", txt)
 
     def test_logic_toggle_select_compare_calculator_limiter(self):
         f = "V41-96ELN-3"

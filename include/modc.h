@@ -27,6 +27,8 @@ void modc_set_flags(uint8_t nr, uint8_t value);
 void modc_set_event(uint8_t nr, uint8_t value);
 void modc_set_set(uint8_t nr, uint8_t value);
 uint8_t modc_shutdown_enabled(void);
+uint16_t modc_shutdown_hold_ms(void);         /* PORT (#68): remote out on after ACC off, muted */
+uint8_t modc_set_shutdown_hold_ms(uint16_t ms); /* 0..25400, 100 ms steps; 0 = refused */
 /* port extension (M6, #6): MODC type 0x6C loudness, declared in the original (modc_type_loudness) */
 #define MODC_TYPE_LOUDNESS 0x6C
 /* port extension (#17): MODC type 0x60 mux_I (input switch), declared in the original */

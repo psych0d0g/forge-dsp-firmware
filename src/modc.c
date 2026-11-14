@@ -255,14 +255,48 @@ static void modc_preset(void) {}
 
 static const uint16_t shutdown_event[cmd_req_words_max] = {0x0104, 0x7379, 0x7368, 0x0000, 0x0000};
 
+/* PORT extension (#68): how long remote out (the amplifiers) stays on after ACC is gone, while the
+ * outputs are already muted; ACC back in that time = unmute, no restart. Replaces set 3 of the
+ * shutdown block on the way down (set 3 stays the wait after remote out on at the start).
+ * EEPROM byte 0x0F12 in 100 ms, 0xFF = 5 s. */
+#define SHUTDOWN_HOLD_ADDR 0x0F12
+#define SHUTDOWN_HOLD_DEFAULT 50
+uint16_t modc_shutdown_hold_ms(void)
+{
+	uint8_t v = eram_rb(SHUTDOWN_HOLD_ADDR);
+	return (uint16_t)(v == 0xFF ? SHUTDOWN_HOLD_DEFAULT : v) * 100u;
+}
+uint8_t modc_set_shutdown_hold_ms(uint16_t ms)
+{
+	if (ms > 25400)
+		return 0;
+	uint8_t v = (uint8_t)((ms + 50) / 100);
+	eram_wb(SHUTDOWN_HOLD_ADDR, v == SHUTDOWN_HOLD_DEFAULT ? 0xFF : v);
+	return 1;
+}
+
 #if BAS_MODC_VERSION_SHUTDOWN == 20
+static uint8_t sd_muted, sd_holding;
+static uint16_t sd_hold_since;
+
 static void modc_shutdown(void)
 {
 	if (EV(EVENT(1)) > 0) {
+		if (!sd_muted) {
+			/* PORT (#68): mute at the first edge, before the debounce (the original muted after it) */
+			sd_muted = 1;
+			api_set_out_mute_prio(api_mute_out_prio_system, api_mute_out_on);
+		}
 		if (SET(2) > OUT_VALUE) {
 			delay_ms(50);
 			out((uint8_t)(OUT_VALUE + 1));
 			CHG |= 1u << BAS_MODC_BIT_EVENTS;
+		} else if (!sd_holding) {
+			sd_holding = 1;  /* PORT (#68): the main loop goes on, ACC may come back */
+			sd_hold_since = tick_ms();
+			CHG |= 1u << BAS_MODC_BIT_RUN;
+		} else if ((uint16_t)(tick_ms() - sd_hold_since) < modc_shutdown_hold_ms()) {
+			CHG |= 1u << BAS_MODC_BIT_RUN;
 		} else {
 #if BAS_FEATURE_MCU_TEMP > 0
 			uint16_t t = events_adc_values[3];  /* peak MCU temperature since the start */
@@ -276,10 +310,13 @@ static void modc_shutdown(void)
 			cmd_sendevent();
 			out(0x00);
 			CHG = 0x00;
-			api_set_out_mute_prio(api_mute_out_prio_system, api_mute_out_on);
-			power_shutdown(SET(3), SET(4));
+			sd_holding = 0;
+			power_shutdown(0, SET(4));  /* the hold replaced set 3 */
 		}
 	} else {
+		if (sd_muted)  /* PORT (#68): ACC back during debounce or hold */
+			api_set_out_mute_prio(api_mute_out_prio_system, api_mute_out_off);
+		sd_muted = sd_holding = 0;
 		out(0x00);
 		CHG = 0x00;
 	}

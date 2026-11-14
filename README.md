@@ -78,6 +78,8 @@ Ausführlich mit allen Unterschieden und Befehlen: **[docs/port-changes.md](docs
   EEPROM neu geschrieben und richtig zurückgelesen wurde, auch für den Start vor einem DSP-Neustart (#45, #57).
 - **Versorgungsspannung überwachen** (`get.1 system.supply`): 3,3-V-Schiene, Bordspannung über einen GVOL-Eingang,
   Ereignis und auf Wunsch Stummschalten bei Unterspannung ([docs/supply.md](docs/supply.md), #46).
+- **ACC aus** (`system.shutdown.hold`): sofort stumm, Endstufen bleiben einstellbar lange an (Vorgabe 5 s); kommt ACC
+  vorher zurück, läuft der Ton ohne Neustart weiter (#68).
 - **Start schneller und messbar** (`get.1 system.startup.time`): Zeit bis zu jeder Startphase; die Prüfung der
   DSP-Programme und das erste Preset lesen erst und schreiben nur, was abweicht. Am 96ELN 18,5 → 10,5 s bis Ton (#67).
 - **Fehlerzähler zurücksetzen** (`set.1 system.errors=0`), im Original nur per Werks-Reset.

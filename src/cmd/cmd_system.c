@@ -21,6 +21,7 @@
 #include "i2c.h"
 #include "iface.h"
 #include "supply.h"
+#include "modc.h"
 #include "store.h"
 #include "tas3108.h"
 #include "factory.h"
@@ -609,6 +610,23 @@ static void cmd_get_system_supply(void)
 	}
 }
 
+/* PORT extension (#68): system.shutdown.hold = ms remote out stays on after ACC off (muted) */
+static void cmd_set_system_shutdown(void)
+{
+	int16_t a = cmd_reg_var_integers[1];
+	if (req_w(cmd_req_word_three) != 0x686F) { cmd_error_unknown(); return; }
+	if (a < 0 || !modc_set_shutdown_hold_ms((uint16_t)a)) { cmd_error_cmd_oor(); return; }
+	cmd_answer_ok();
+}
+
+static void cmd_get_system_shutdown(void)
+{
+	if (req_w(cmd_req_word_three) != 0x686F) { cmd_error_unknown(); return; }
+	cmd_answer_header();
+	out_u16(modc_shutdown_hold_ms());
+	out_crlf();
+}
+
 static void cmd_set_system_supply(void)
 {
 	int16_t a = cmd_reg_var_integers[1];
@@ -721,6 +739,7 @@ static void cmd_set_system_errors(void);
 	X("sd|.backup.N|.backup.eeprom|.backup.flash|.backup.preset|.restore.N|.restore.eeprom|.restore.preset|.close|.create|.delete|.export|.open|.seek|.write", cmd_set_system_sd) /* PORT extension (#24, #61) */ \
 	X("startup|.N", cmd_set_system_startup) /* PORT extension (#40) */ \
 	X("supply|.cal|.low|.mute|.source|.vcc", cmd_set_system_supply) /* PORT extension (#46) */ \
+	X("shutdown|.hold", cmd_set_system_shutdown) /* PORT extension (#68) */ \
 
 static const char sys_set_spec[] PROGMEM = SYS_SET(SYS_SPEC_STR);
 static const sys_fn sys_set_fn[] PROGMEM = { SYS_SET(SYS_FN) };
@@ -1216,6 +1235,7 @@ static void cmd_get_system_help(void);
 	X("sd||.backup|.files|.read", cmd_get_system_sd) /* PORT extension (#24, #61) */ \
 	X("startup|.N|.*|.time", cmd_get_system_startup) /* PORT extension (#40, #67) */ \
 	X("supply||.cal|.low|.mute|.raw|.source|.vcc", cmd_get_system_supply) /* PORT extension (#46) */ \
+	X("shutdown|.hold", cmd_get_system_shutdown) /* PORT extension (#68) */ \
 	X("temperature||.celsius|.fahrenheit|.kelvin", cmd_get_system_temp) \
 	X("vu||.out", cmd_get_system_vu) /* PORT extension (#52) */ \
 

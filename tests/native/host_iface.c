@@ -387,6 +387,8 @@ static void store_cmd(const char *l)
 	} else if (!strcmp(l, "#bqramp")) {             /* #44: one clickless step */
 		bqramp_mainloop();
 		printf("@bqramp:%u\n", bqramp_active());
+	} else if (!strcmp(l, "#mutesys")) {            /* PORT (#68): mute priority "system" (shutdown) */
+		printf("@mutesys:%u\n", api_get_out_mute_prio(api_mute_out_prio_system));
 	} else if (!strcmp(l, "#mutechg")) {            /* mute priority "change" (auto unmute) */
 		printf("@mutechg:%u\n", api_get_out_mute_prio(api_mute_out_prio_change));
 	} else if (!strncmp(l, "#mixval=", 8)) {         /* #14: effective mixer value c,g */
