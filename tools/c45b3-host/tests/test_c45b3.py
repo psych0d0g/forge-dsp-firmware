@@ -178,6 +178,14 @@ class Scenarios:
         b.start_application()
         self.finish(port)
 
+    def test_start_clears_bootloader_magic(self):
+        """#67: AA 55 from system.boot goes back to FF FF before the start, the rest stays"""
+        port = self.make(flash=b"\x0c\x94" * 100, eeprom=b"\xaa\x55\x12" + b"\xff" * (0x1000 - 3))
+        b = self.bl(port)
+        b.start_application()
+        _, ee, _ = self.finish(port)
+        self.assertEqual(ee[:3], b"\xff\xff\x12")
+
     def test_firmware_version_absent(self):
         port = self.make(flash=b"\x0c\x94" * 100)
         b = self.bl(port)

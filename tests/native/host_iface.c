@@ -1,3 +1,4 @@
+#include "boottime.h"
 #include <math.h>
 /*
  * Host harness for the protocol code (src/cmd): feeds lines from stdin into the four
@@ -213,6 +214,8 @@ static void store_cmd(const char *l)
 		for (unsigned i = 0; i < n; i++)
 			printf("%02X", b ? b[i] : 0);
 		printf("\n");
+	} else if (!strcmp(l, "#boot_magic")) {         /* PORT (#67): clear a bootloader magic left behind */
+		printf("@boot_magic:%u\n", boot_magic_clear());
 	} else if (!strcmp(l, "#bq_forget")) {          /* PORT (#67): as after a start, the DSP keeps its content */
 		dsp_bq_forget();
 	} else if (!strcmp(l, "#bq_count")) {           /* PORT (#66): biquad writes done / saved */

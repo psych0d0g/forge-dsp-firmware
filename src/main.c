@@ -87,6 +87,7 @@ int main(void)
 	_delay_ms(250);
 	errorcount_init();
 	registers_load();
+	boot_magic_clear();  /* PORT (#67): else every power-on after an update waits 58.6 s in the bootloader */
 	boot_mark(BT_REGISTERS);
 	sysinit_check(PIN_READ(PIN_DBG_INIT_FINEST));
 	mcuid_init();

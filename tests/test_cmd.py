@@ -2222,6 +2222,15 @@ class StartupTest(LinesMixin, unittest.TestCase):
         self.assertIn("system.startup.time=[" + ",".join(want) + "]", out[-2])
         self.assertEqual(out[-1], out[-2])                # the first time counts
 
+    def test_bootloader_magic_cleared(self):
+        """#67: AA 55 from system.boot is cleared by the next start of the firmware, once"""
+        f = "V40-96ELN"
+        p, ee = run(f, ["#boot_magic"], eeprom=bytes([0xAA, 0x55]) + image(f)[2:], want_eeprom=True)
+        self.assertIn("@boot_magic:1", p.stdout)
+        self.assertEqual(ee[:2], b"\xff\xff")
+        p, _ = run(f, ["#boot_magic"], eeprom=ee, want_eeprom=True)
+        self.assertIn("@boot_magic:0", p.stdout)
+
     def test_delete(self):
         f = "V40-96ELN"
         out = self.lines(f, ['1|set.1 system.startup.1="set.1 gain.out.2:150"', '1|set.1 system.startup.1=""',

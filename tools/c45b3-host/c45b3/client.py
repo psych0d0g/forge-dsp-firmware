@@ -195,6 +195,13 @@ class Bootloader:
         self._retry(bytes([CMD_SET_ADDRESS]) + address.to_bytes(4, "big"))
 
     def start_application(self):
+        # EEPROM 0/1 (AA 55 from system.boot) back to FF FF first: the bootloader clears them only
+        # when it times out, so after an update every power-on waited 58.6 s there (#67). Best
+        # effort, the port firmware clears them on its start as well.
+        try:
+            self.write_eeprom(b"\xff\xff", start=0)
+        except Exception:
+            pass
         self.transact(bytes([CMD_START_APPLICATION]))
         self.connected = False
 

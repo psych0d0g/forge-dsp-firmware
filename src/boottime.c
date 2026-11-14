@@ -3,6 +3,8 @@
  * License: CC BY-NC-SA 4.0
  */
 #include "boottime.h"
+#include "eram.h"
+#include "flavour_eram.h"
 #ifdef __AVR__
 #include <avr/io.h>
 #else
@@ -45,6 +47,18 @@ void boot_mark(uint8_t phase)
 		uint16_t t = now_ms();
 		at[phase] = t == 0 ? 1 : t == 0xFFFF ? 0xFFFE : t;
 	}
+}
+
+/* chip45boot3 stays in the bootloader while EEPROM 0/1 = AA 55 (system.boot writes it) and clears
+ * it only when it times out (58.6 s without a host), not when the host starts the application after
+ * an update. Left set, the next power-on waited the full 58.6 s before the firmware ran. */
+uint8_t boot_magic_clear(void)
+{
+	if (eram_rb(ERAM_EEPROM_BOOTLOADER_SEQ_1) != 0xAA || eram_rb(ERAM_EEPROM_BOOTLOADER_SEQ_2) != 0x55)
+		return 0;
+	eram_wb(ERAM_EEPROM_BOOTLOADER_SEQ_1, 0xFF);
+	eram_wb(ERAM_EEPROM_BOOTLOADER_SEQ_2, 0xFF);
+	return 1;
 }
 
 uint16_t boot_time_ms(uint8_t phase) { return phase < BT_COUNT && at[phase] ? at[phase] : 0xFFFF; }
