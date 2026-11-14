@@ -12,14 +12,14 @@
 #include "watchdog.h"
 
 /* PORT (#66): bus clock as a build option, 100 kHz as the original (BAUD 155). Transfers that are
- * checked (DSP writes read back, EEPROM reads with a checksum) run at FORGE_I2C_FAST_KHZ: at 400 kHz
+ * checked (DSP writes read back, EEPROM reads with a checksum) can run at FORGE_I2C_FAST_KHZ: at 400 kHz
  * the DEV unit saw a read-back difference about once in 16000 DSP writes, at 100 kHz none in 43000;
  * a checked transfer repeats, an unchecked one (configuration of DAC, clock, receiver) stays slow. */
 #ifndef FORGE_I2C_KHZ
 #define FORGE_I2C_KHZ 100
 #endif
 #ifndef FORGE_I2C_FAST_KHZ
-#define FORGE_I2C_FAST_KHZ 400
+#define FORGE_I2C_FAST_KHZ 100   /* user decision 14.11.2026: 100 everywhere; 400 as an option (see above) */
 #endif
 #define TWI_BAUDVAL ((F_CPU / (2UL * 1000UL * FORGE_I2C_KHZ)) - 5)
 #define TWI_BAUDFAST ((F_CPU / (2UL * 1000UL * FORGE_I2C_FAST_KHZ)) - 5)
