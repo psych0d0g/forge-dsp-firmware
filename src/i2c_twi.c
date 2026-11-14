@@ -11,11 +11,19 @@
 #include "i2c.h"
 #include "watchdog.h"
 
-/* PORT (#66): bus clock as a build option, 100 kHz as the original (BAUD 155); 400 kHz = BAUD 35 */
+/* PORT (#66): bus clock as a build option, 100 kHz as the original (BAUD 155). Transfers that are
+ * checked (DSP writes read back, EEPROM reads with a checksum) run at FORGE_I2C_FAST_KHZ: at 400 kHz
+ * the DEV unit saw a read-back difference about once in 16000 DSP writes, at 100 kHz none in 43000;
+ * a checked transfer repeats, an unchecked one (configuration of DAC, clock, receiver) stays slow. */
 #ifndef FORGE_I2C_KHZ
 #define FORGE_I2C_KHZ 100
 #endif
+#ifndef FORGE_I2C_FAST_KHZ
+#define FORGE_I2C_FAST_KHZ 400
+#endif
 #define TWI_BAUDVAL ((F_CPU / (2UL * 1000UL * FORGE_I2C_KHZ)) - 5)
+#define TWI_BAUDFAST ((F_CPU / (2UL * 1000UL * FORGE_I2C_FAST_KHZ)) - 5)
+
 #define TIMEOUT 40000u
 
 uint8_t i2c_err;
@@ -23,6 +31,11 @@ static uint8_t pending_start[3], reading[3];
 
 static TWI_t *twi(uint8_t bus) { return bus == 1 ? &TWIC : &TWIE; }
 static PORT_t *port(uint8_t bus) { return bus == 1 ? &PORTC : &PORTE; }
+
+void i2c_speed(uint8_t bus, uint8_t fast)
+{
+	twi(bus)->MASTER.BAUD = fast ? TWI_BAUDFAST : TWI_BAUDVAL;   /* between transfers only */
+}
 
 void delay_ms(uint16_t ms)
 {

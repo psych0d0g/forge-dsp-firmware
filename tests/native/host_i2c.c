@@ -11,9 +11,9 @@ uint8_t i2c_err;
 int host_i2c_log;
 uint8_t at24[65536];
 /* further 24xx512: DSP program EEPROMs (1,A0), (2,A0), (2,A2) */
-struct ee { uint8_t bus, addr; uint8_t *mem; uint32_t writes; };
+struct ee { uint8_t bus, addr; uint8_t *mem; uint32_t writes; uint8_t stuck; };
 uint8_t dspee[3][65536];
-struct ee ees[4] = { {1, 0xA8, at24, 0}, {1, 0xA0, dspee[0], 0}, {2, 0xA0, dspee[1], 0}, {2, 0xA2, dspee[2], 0} };
+struct ee ees[4] = { {1, 0xA8, at24, 0, 0}, {1, 0xA0, dspee[0], 0, 0}, {2, 0xA0, dspee[1], 0, 0}, {2, 0xA2, dspee[2], 0, 0} };
 static struct ee *cur_ee[3];
 static uint16_t eptr[3];
 struct dspboot_diag dspboot_diag[3];
@@ -63,6 +63,7 @@ static int logged[3];
 
 void delay_ms(uint16_t ms) { (void)ms; }
 void i2c_bus_init(uint8_t bus) { channel_open |= 1u << (4 + bus); }
+void i2c_speed(uint8_t bus, uint8_t fast) { (void)bus; (void)fast; }
 uint8_t twi_sda(uint8_t bus) { (void)bus; return 1; }
 uint8_t twi_scl_out(uint8_t bus) { (void)bus; return 1; }
 uint8_t twi_master_status(uint8_t bus) { (void)bus; return 0x01; }  /* bus state idle */
@@ -120,7 +121,8 @@ void twi_wbyte(uint8_t bus, uint8_t b)
 	case 1: eptr[bus] = (uint16_t)(b << 8); state[bus] = 2; break;
 	case 2: eptr[bus] |= b; state[bus] = 3; break;
 	case 3:
-		cur_ee[bus]->mem[eptr[bus]] = b;
+		if (!cur_ee[bus]->stuck)   /* #66: "#ee_stuck": writes get lost (a disturbed bus) */
+			cur_ee[bus]->mem[eptr[bus]] = b;
 		cur_ee[bus]->writes++;
 		eptr[bus] = (uint16_t)((eptr[bus] & ~0x7F) | ((eptr[bus] + 1) & 0x7F));  /* page wrap */
 		break;
@@ -167,4 +169,12 @@ const uint8_t *host_i2c_blockdata(uint8_t bus, uint8_t addr, uint8_t reg)
 {
 	struct regdev *d = find(bus, addr);
 	return d ? d->blocks[reg] : NULL;
+}
+
+/* #66: the EEPROM at bus/addr loses every write (verification test) */
+void host_ee_stuck(uint8_t bus, uint8_t addr, uint8_t on)
+{
+	for (int i = 0; i < 4; i++)
+		if (ees[i].bus == bus && ees[i].addr == addr)
+			ees[i].stuck = on;
 }

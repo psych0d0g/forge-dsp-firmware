@@ -4,6 +4,7 @@
  */
 #include "i2c.h"
 #include "bas_data.h"
+#include "registers.h"
 
 uint8_t buffer_bytes[BAS_BUFFER_BYTES_MAX + 1];
 uint8_t i2c_device_addr;
@@ -77,11 +78,25 @@ void i2c_wbyte_eeprom(uint8_t bus)
 	delay_ms(BAS_EEPROM_PAGE_WRITE_DELAY);
 }
 
-/* page writes of the 24xx512: a new write cycle at every 128-byte boundary */
-void i2c_wbuffer_eeprom(uint8_t bus)
+/* PORT (#66): len bytes from addr of a 24xx512 into dst (forward); 1 = the chip answered */
+uint8_t i2c_ee_read(uint8_t bus, uint8_t dev, uint16_t addr, uint8_t *dst, uint8_t len)
 {
-	if (!OPEN(bus))
-		return;
+	twi_start(bus);
+	twi_wbyte(bus, dev);
+	twi_wbyte(bus, (uint8_t)(addr >> 8));
+	twi_wbyte(bus, (uint8_t)addr);
+	twi_repstart(bus);
+	twi_wbyte(bus, (uint8_t)(dev + 1));
+	uint8_t ok = i2c_err == 0;
+	for (uint8_t i = 0; i < len; i++)
+		dst[i] = twi_rbyte(bus, (uint8_t)(i + 1 < len));
+	twi_stop(bus);
+	return ok;
+}
+
+/* page writes of the 24xx512: a new write cycle at every 128-byte boundary */
+static void wbuffer_eeprom(uint8_t bus)
+{
 	twi_start(bus);
 	twi_wbyte(bus, i2c_device_addr);
 	twi_wbyte(bus, i2c_reg_h);
@@ -105,6 +120,35 @@ void i2c_wbuffer_eeprom(uint8_t bus)
 	}
 	twi_stop(bus);
 	delay_ms(BAS_EEPROM_PAGE_WRITE_DELAY);
+}
+
+/* PORT (#66): every write into an EEPROM is read back and repeated on a difference (twice at most);
+ * a bit error would otherwise stay in the stored tuning. The buffer goes out backwards: address
+ * a + i holds buffer_bytes(size - i). */
+void i2c_wbuffer_eeprom(uint8_t bus)
+{
+	if (!OPEN(bus))
+		return;
+	const uint8_t dev = i2c_device_addr, size = i2c_size;
+	const uint16_t addr = i2c_addr;
+	for (uint8_t attempt = 0; attempt < 3; attempt++) {
+		i2c_device_addr = dev; i2c_addr = addr; i2c_size = size;
+		wbuffer_eeprom(bus);
+		uint8_t back[32], same = 1;
+		for (uint8_t off = 0; off < size && same; off += sizeof back) {
+			uint8_t left = (uint8_t)(size - off), n = left < (uint8_t)sizeof back ? left : (uint8_t)sizeof back;
+			if (!i2c_ee_read(bus, dev, (uint16_t)(addr + off), back, n))
+				same = 0;
+			for (uint8_t k = 0; k < n && same; k++)
+				same = back[k] == buffer_bytes[size - (off + k)];
+		}
+		if (same)
+			goto done;
+		i2c_reset(bus);
+	}
+	errorcount(BAS_ERRORCOUNT_SW_EEPROM);
+done:
+	i2c_device_addr = dev; i2c_addr = addr; i2c_size = 0;
 }
 
 void i2c_rbyte(uint8_t bus)

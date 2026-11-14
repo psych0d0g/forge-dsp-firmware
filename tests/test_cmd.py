@@ -1229,6 +1229,15 @@ class BiquadCmdTest(LinesMixin, unittest.TestCase):
     PRE = ["#store_init", "#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#dsp_detect",
            "1|set.1 preset.loaded=0", "#mainloop"]
 
+    def test_eeprom_write_verified(self):
+        """#66: a write into the preset EEPROM is read back; lost writes are repeated, then counted (33)"""
+        f = "V40-96ELN"
+        ok = "\n".join(self.lines(f, self.PRE + ["1|set.1 biquad.3.2=[1,1000,30,707,0,128]", "1|get.1 system.errors"]))
+        self.assertNotIn("[33,", ok)
+        bad = "\n".join(self.lines(f, self.PRE + ["#ee_stuck=1,A8,1", "1|set.1 biquad.3.2=[1,1000,30,707,0,128]",
+                                                  "1|get.1 system.errors"]))
+        self.assertIn("[33,1]", bad)      # three attempts, then counted once
+
     def test_used_only(self):
         """#64: biquad.*.used sends only the places in use, then the lengths of the channels"""
         out = "\n".join(self.lines("V40-96ELN", ["1|set.1 biquad.3.2.calc=[1,1000,30,707,0,128]",

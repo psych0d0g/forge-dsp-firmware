@@ -117,6 +117,12 @@ static void store_cmd(const char *l)
 		fclose(f);
 	} else if (!strncmp(l, "#at24out=", 9)) {
 		at24_out = strdup(l + 9);
+	} else if (!strncmp(l, "#ee_stuck=", 10)) {   /* #ee_stuck=<bus>,<addr hex>,<0|1> (#66) */
+		unsigned b, a, on;
+		if (sscanf(l + 10, "%u,%x,%u", &b, &a, &on) == 3) {
+			void host_ee_stuck(uint8_t bus, uint8_t addr, uint8_t on);
+			host_ee_stuck((uint8_t)b, (uint8_t)a, (uint8_t)on);
+		}
 	} else if (!strncmp(l, "#i2cnack=", 9)) {  /* #i2cnack=<bus>,<addr hex>,<n>: NACK the next n addressings */
 		unsigned bus, addr, n;
 		void host_i2c_nack(uint8_t bus, uint8_t addr, uint8_t n);

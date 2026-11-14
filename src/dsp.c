@@ -63,11 +63,10 @@ void dsp_calc_reg(void) { dsp_reg = flow_bq_reg(dsp_bq_virt_nr); }
 
 /* PORT (#66): wait after a write into the DSP as a build option (the original: dsp_writedelay = 16 ms);
  * every write is read back and repeated on a difference anyway */
-#ifdef FORGE_DSP_WRITEDELAY
-#define DSP_WRITEDELAY FORGE_DSP_WRITEDELAY
-#else
-#define DSP_WRITEDELAY BAS_DSP_WRITEDELAY
+#ifndef FORGE_DSP_WRITEDELAY
+#define FORGE_DSP_WRITEDELAY 2   /* the original: BAS_DSP_WRITEDELAY = 16; 2 ms tested without a read-back error */
 #endif
+#define DSP_WRITEDELAY FORGE_DSP_WRITEDELAY
 
 /* i2cN_wbuffer_verify: read back (twice at most), count differences */
 static void wbuffer_verify(const struct core *c, uint8_t size, const uint8_t *expect)
@@ -93,7 +92,15 @@ static void wbuffer_verify(const struct core *c, uint8_t size, const uint8_t *ex
 }
 
 /* write buffer_bytes(1..size) and verify, as dsp_N_set_vol / dsp_N_set_biquad; 1 = verified */
+static uint8_t verified_write_(const struct core *c, uint8_t size);
 static uint8_t verified_write(const struct core *c, uint8_t size)
+{
+	i2c_speed(c->bus, 1);   /* PORT (#66): read back and repeated, so at the fast clock */
+	uint8_t ok = verified_write_(c, size);
+	i2c_speed(c->bus, 0);
+	return ok;
+}
+static uint8_t verified_write_(const struct core *c, uint8_t size)
 {
 	uint8_t copy[BAS_DSP_REG_SIZE_BIQUAD + 1];
 	memcpy(copy, buffer_bytes, (size_t)size + 1);  /* iface_verify_copy2verify */

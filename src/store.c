@@ -24,6 +24,7 @@ uint8_t storage_flags, storage_flags_check;
 #define BUS 1  /* #5 */
 
 static void address(uint16_t a);
+static void save_frame(uint16_t a);
 void eeprom_init(void);
 
 void at24c512_detect(void)
@@ -134,7 +135,28 @@ void store_save_values_all(void)
 	storage_non_biquadvalues[BAS_STORAGE_CHKSUM_BASE] = crc & 0xFF;
 	storage_non_biquadvalues[BAS_STORAGE_CHKSUM_BASE + 1] = crc >> 8;
 #endif
-	uint16_t a = BAS_LOOKUP_W(data_store_addr_values, store_preset);
+	const uint16_t a0 = BAS_LOOKUP_W(data_store_addr_values, store_preset);
+	/* PORT (#66): read back and write again on a difference (twice at most) */
+	for (uint8_t attempt = 0; attempt < 3; attempt++) {
+		save_frame(a0);
+		uint8_t back[32], same = 1;
+		for (uint16_t off = 0; off < BAS_STORAGE_FRAMESIZE && same; off += sizeof back) {
+			uint16_t left = (uint16_t)(BAS_STORAGE_FRAMESIZE - off);
+			uint8_t n = left < (uint16_t)sizeof back ? (uint8_t)left : (uint8_t)sizeof back;
+			if (!i2c_ee_read(BUS, BAS_EEPROM_ADR_W, (uint16_t)(a0 + off), back, n))
+				same = 0;
+			for (uint8_t k = 0; k < n && same; k++)
+				same = back[k] == storage_non_biquadvalues[off + k + 1];
+		}
+		if (same)
+			return;
+		i2c_reset(BUS);
+	}
+	errorcount(BAS_ERRORCOUNT_SW_EEPROM);
+}
+
+static void save_frame(uint16_t a)
+{
 	twi_start(BUS);
 	twi_wbyte(BUS, BAS_EEPROM_ADR_W);
 	address(a);
@@ -161,6 +183,7 @@ void store_load_values_all(void)
 	if (!STORE_RDY)
 		return;
 	uint16_t a = BAS_LOOKUP_W(data_store_addr_values, store_preset);
+	i2c_speed(BUS, 1);   /* PORT (#66): checked by the CRC, read again by store_load_preset */
 	twi_start(BUS);
 	twi_wbyte(BUS, BAS_EEPROM_ADR_W);
 	address(a);
@@ -173,6 +196,7 @@ void store_load_values_all(void)
 	} while (count != BAS_STORAGE_FRAMESIZE);
 	storage_non_biquadvalues[count] = twi_rbyte(BUS, 0);
 	twi_stop(BUS);
+	i2c_speed(BUS, 0);
 #if BAS_FEATURE_DATA_CHKSUM > 0
 	uint16_t crc = bas_crc16(&storage_non_biquadvalues[1], BAS_STORAGE_CHKSUM_BASE - 1);
 	if (storage_chksum_get() != crc) {
@@ -215,11 +239,14 @@ void store_load_bq(void)
 	w = (uint16_t)(w * BAS_DSP_REG_SIZE_BIQUAD_CHKSUM);
 	i2c_addr = (uint16_t)(BAS_LOOKUP_W(data_store_addr_bq, store_preset) + w);
 	i2c_size = BAS_DSP_REG_SIZE_BIQUAD_CHKSUM;
+	const uint8_t bus = storage == 1 ? 1 : 2;
+	i2c_speed(bus, 1);   /* PORT (#66): checked by the CRC below, read again by the caller */
 	switch (storage) {
 	case 1: i2c_device_addr = 0xA0; i2c_rbuffer_highreg(1); break;  /* dsp_1_eeprom_adr_w */
 	case 2: i2c_device_addr = 0xA0; i2c_rbuffer_highreg(2); break;  /* dsp_2_eeprom_adr_w */
 	default: i2c_device_addr = 0xA2; i2c_rbuffer_highreg(2); break; /* dsp_3_eeprom_adr_w */
 	}
+	i2c_speed(bus, 0);
 	uint16_t crc = bas_crc16(&buffer_bytes[1], BAS_DSP_REG_SIZE_BIQUAD);
 	if ((buffer_bytes[21] | (uint16_t)buffer_bytes[22] << 8) != crc) {  /* buffer_words(11) */
 		store_chksum_error++;
