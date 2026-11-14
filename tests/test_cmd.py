@@ -2849,6 +2849,48 @@ class PresetLoadTest(unittest.TestCase):
     """api_preset_load (modc_load_preset): biquads from the DSP EEPROMs, values frame from the
     24xx512, applied to DSPs and DAC; remote out stays off (FORGE_AUDIO=0)."""
 
+    def test_unchanged_biquads_not_written_again(self):
+        """#66: a preset change writes only the biquad places whose coefficients differ"""
+        import random
+        import tempfile
+        f = "V41-96ELN-3"
+        rnd = random.Random(7)
+        fs, cb = consts(f, "STORAGE_FRAMESIZE", "STORAGE_CHKSUM_BASE")
+        core_t = table_bytes(f, "data_flow_dsp_bq_core")
+        offs = table_words(f, "data_flow_bq_storage_offset")
+        at24 = bytearray(b"\xff" * 65536)
+        dspee = {n: bytearray(b"\xff" * 65536) for n in (1, 2, 3)}
+        bases, bqtvs = table_words(f, "data_store_addr_values"), table_words(f, "data_store_addr_bqtv")
+        bqbase = table_words(f, "data_store_addr_bq")[0]
+        for p in (0, 1):                                   # valid values frames, all biquads empty (type 0)
+            frame = bytearray(fs); frame[0] = 1
+            frame[cb - 1:cb + 1] = xmodem(frame[:cb - 1]).to_bytes(2, "little")
+            at24[bases[p]:bases[p] + fs] = frame
+            for nr in range(1, 565):
+                at24[bqtvs[p] + (nr + 1) * 10 - 1] = 0
+        for nr in (1, 200, 536):                           # three bands in preset 0 only
+            at24[bqtvs[0] + (nr + 1) * 10 - 1] = 1
+            data = bytes(rnd.randrange(256) for _ in range(20))
+            a = bqbase + (nr - offs[core_t[nr]]) * 22
+            dspee[core_t[nr]][a:a + 22] = xmodem(data[::-1]).to_bytes(2, "big") + data
+        with tempfile.TemporaryDirectory() as d:
+            lines = [f"#at24={pathlib.Path(d, 'at24.bin')}"]
+            pathlib.Path(d, "at24.bin").write_bytes(bytes(at24))
+            for n in (1, 2, 3):
+                pathlib.Path(d, f"dsp{n}.bin").write_bytes(bytes(dspee[n]))
+                lines.append(f"#dspee={n},{pathlib.Path(d, f'dsp{n}.bin')}")
+            lines += ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#i2cdev=2,90", "#dsp_detect", "#dac_init",
+                      "#preset_load=0", "#bq_count", "#preset_load=1", "#bq_count", "#preset_load=0", "#bq_count"]
+            p, _ = run(f, lines, eeprom=image(f), want_eeprom=True)
+        counts = [tuple(int(x.split("=")[1]) for x in l.split(":")[1].split()) for l in p.stdout.splitlines()
+                  if l.startswith("@bq_count:")]
+        (w0, s0), (w1, s1), (w2, s2) = counts
+        self.assertGreater(w0, 500)                        # the first load writes every place
+        self.assertEqual(s0, 0)
+        self.assertEqual(w1 - w0, 3)                       # to preset 1: only the three bands change
+        self.assertEqual(s1 - s0, w0 - 3)
+        self.assertEqual(w2 - w1, 3)                       # and back
+
     def test_96eln3_preset_0(self):
         import random
         import tempfile

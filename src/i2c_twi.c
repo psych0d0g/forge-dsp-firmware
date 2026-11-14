@@ -11,7 +11,11 @@
 #include "i2c.h"
 #include "watchdog.h"
 
-#define TWI_BAUDVAL ((F_CPU / (2UL * 100000UL)) - 5)  /* 155 */
+/* PORT (#66): bus clock as a build option, 100 kHz as the original (BAUD 155); 400 kHz = BAUD 35 */
+#ifndef FORGE_I2C_KHZ
+#define FORGE_I2C_KHZ 100
+#endif
+#define TWI_BAUDVAL ((F_CPU / (2UL * 1000UL * FORGE_I2C_KHZ)) - 5)
 #define TIMEOUT 40000u
 
 uint8_t i2c_err;

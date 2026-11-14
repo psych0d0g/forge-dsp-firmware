@@ -16,6 +16,7 @@
 #include "eram.h"
 #include "flavour_data.h"
 #include "dsp_pool.h"
+#include "dsp.h"
 #include "store.h"
 
 #ifndef FORGE_DSP_OPT
@@ -31,6 +32,7 @@
 
 #ifdef DSP_POOL
 /* the stored values of the spare biquads must fit the preset areas of the original */
+_Static_assert(DSP_POOL_EXTRA <= DSP_BQ_EXTRA_MAX, "dsp.c keeps the biquad places up to DSP_BQ_EXTRA_MAX spares (#66)");
 _Static_assert((BAS_FLOW_MAX_DSP_BIQUADS + DSP_POOL_EXTRA + 1) * BAS_STORAGE_BQTV_VALUES_FRAMESIZE <= BAS_LIMIT_STORE_ADDR_BQTV,
                "bqtv area too small for the spare biquads");
 /* 393: data_flow_bq_storage_offset of core 1 in all pool flavours */

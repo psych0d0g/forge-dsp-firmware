@@ -12,7 +12,10 @@ extern uint16_t iface_verify_error_count;
 
 void dsp_calc_core(void);           /* dsp_core = lookup(dsp_bq_virt_nr, data_flow_dsp_bq_core) */
 void dsp_calc_reg(void);            /* dsp_reg  = lookup(dsp_bq_virt_nr, data_flow_dsp_bq_reg) */
-void dsp_set_biquad(const uint32_t raw[6]);  /* raw[1..5] -> buffer_dwords(1..5) */
+void dsp_set_biquad(const uint32_t raw[6]);  /* raw[1..5] -> buffer_dwords(1..5); skips a place that holds them (#66) */
+#define DSP_BQ_EXTRA_MAX 32                  /* PORT (#66): spare places of the pools at most (DSP_POOL_EXTRA) */
+void dsp_bq_forget(void);                    /* the DSPs were reloaded: nothing known about their places */
+extern uint16_t dsp_bq_skipped, dsp_bq_written;
 void dsp_get_biquad(uint32_t raw[6]);
 void dsp_set_vol_out(int32_t vol_calc);      /* buffer_long = dsp_vol_calc, verified write */
 void dsp_set_mux(uint32_t state);

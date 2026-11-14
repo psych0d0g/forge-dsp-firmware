@@ -100,8 +100,16 @@ static inline void rx(uint8_t b)
 	struct chan *c = &chans[b];
 	uint8_t d = c->u->DATA;
 	uint8_t n = (uint8_t)(c->head + 1);
-	if (n == c->tail)
-		return;  /* full: drop */
+	if (n == c->tail) {
+		/* PORT (#66): full. Without a line end in it (noise, a wrong rate) it would stay full and the
+		 * channel deaf until a restart (the original drops the new byte, also every line end); the
+		 * buffer is emptied instead, a following line arrives again. */
+		if (iface_todo[ch_of_buart[b]] == 0) {
+			c->tail = c->head;
+			return;
+		}
+		return;  /* full of lines not yet read: drop */
+	}
 	c->buf[c->head] = d;
 	c->head = n;
 	if (d == 0x0A)  /* bytematch = 10 -> SerialXcharmatch: incr iface_todo */

@@ -7,6 +7,7 @@
  */
 #include <string.h>
 #include "bas_data.h"
+#include "cmd.h"
 #include "dsp.h"
 #include "flavour.h"
 #include "flavour_data.h"
@@ -60,6 +61,14 @@ static uint32_t get32(uint8_t at)
 void dsp_calc_core(void) { dsp_core = flow_bq_core(dsp_bq_virt_nr); }  /* PORT (#47): with the spares */
 void dsp_calc_reg(void) { dsp_reg = flow_bq_reg(dsp_bq_virt_nr); }
 
+/* PORT (#66): wait after a write into the DSP as a build option (the original: dsp_writedelay = 16 ms);
+ * every write is read back and repeated on a difference anyway */
+#ifdef FORGE_DSP_WRITEDELAY
+#define DSP_WRITEDELAY FORGE_DSP_WRITEDELAY
+#else
+#define DSP_WRITEDELAY BAS_DSP_WRITEDELAY
+#endif
+
 /* i2cN_wbuffer_verify: read back (twice at most), count differences */
 static void wbuffer_verify(const struct core *c, uint8_t size, const uint8_t *expect)
 {
@@ -83,8 +92,8 @@ static void wbuffer_verify(const struct core *c, uint8_t size, const uint8_t *ex
 	}
 }
 
-/* write buffer_bytes(1..size) and verify, as dsp_N_set_vol / dsp_N_set_biquad */
-static void verified_write(const struct core *c, uint8_t size)
+/* write buffer_bytes(1..size) and verify, as dsp_N_set_vol / dsp_N_set_biquad; 1 = verified */
+static uint8_t verified_write(const struct core *c, uint8_t size)
 {
 	uint8_t copy[BAS_DSP_REG_SIZE_BIQUAD + 1];
 	memcpy(copy, buffer_bytes, (size_t)size + 1);  /* iface_verify_copy2verify */
@@ -94,18 +103,19 @@ static void verified_write(const struct core *c, uint8_t size)
 		i2c_reg = dsp_reg;
 		i2c_size = size;
 		i2c_wbuffer(c->bus);
-		delay_ms(BAS_DSP_WRITEDELAY);
+		delay_ms(DSP_WRITEDELAY);
 #if BAS_FEATURE_DATA_VERIFY > 0
 		wbuffer_verify(c, size, copy);
 		if (ec == iface_verify_error_count)
-			return;
+			return 1;
 		i2c_reset(c->bus);
 		memcpy(buffer_bytes, copy, (size_t)size + 1);  /* iface_verify_copy2buffer */
 #else
 		(void)ec;
-		return;
+		return 1;
 #endif
 	}
+	return 0;
 }
 
 static void plain_write(const struct core *c, uint8_t reg, uint8_t size, uint8_t wait)
@@ -115,7 +125,7 @@ static void plain_write(const struct core *c, uint8_t reg, uint8_t size, uint8_t
 	i2c_size = size;
 	i2c_wbuffer(c->bus);
 	if (wait)
-		delay_ms(BAS_DSP_WRITEDELAY);
+		delay_ms(DSP_WRITEDELAY);
 }
 
 /* PORT (#58): buffer_bytes(1..size) to dsp_core/dsp_reg, verified as the biquads */
@@ -126,6 +136,16 @@ void dsp_set_reg(uint8_t size)
 		verified_write(c, size);
 }
 
+/* PORT (#66): what each biquad place of the DSPs holds, as CRC-16 of its coefficients (0 = not known).
+ * A place that already holds the coefficients is not written again: a preset change rewrites all
+ * places, most of them the same (empty in both presets), and each write costs dsp_writedelay
+ * (16 ms) plus the read back. Starts empty (RAM after every reset); every DSP restart is a reset
+ * of the MCU. Indexed by the virtual biquad number (dsp_bq_virt_nr), which all callers set. */
+#define BQ_PLACES (BAS_FLOW_MAX_DSP_BIQUADS + DSP_BQ_EXTRA_MAX + 1)  /* the pools' spares included */
+static uint16_t bq_held[BQ_PLACES];
+uint16_t dsp_bq_skipped, dsp_bq_written;  /* since the start (diagnostics, tests) */
+void dsp_bq_forget(void) { memset(bq_held, 0, sizeof bq_held); }
+
 void dsp_set_biquad(const uint32_t raw[6])
 {
 	const struct core *c = cur();
@@ -133,7 +153,16 @@ void dsp_set_biquad(const uint32_t raw[6])
 		return;
 	for (uint8_t i = 1; i <= 5; i++)
 		put32((uint8_t)((i - 1) * 4 + 1), raw[i]);  /* buffer_dwords(i) */
-	verified_write(c, BAS_DSP_REG_SIZE_BIQUAD);
+	uint16_t crc = (uint16_t)(bas_crc16(&buffer_bytes[1], BAS_DSP_REG_SIZE_BIQUAD) | 1u);  /* never 0 */
+	uint16_t n = dsp_bq_virt_nr;
+	if (n < BQ_PLACES && bq_held[n] == crc) {
+		dsp_bq_skipped++;
+		return;
+	}
+	dsp_bq_written++;
+	uint8_t ok = verified_write(c, BAS_DSP_REG_SIZE_BIQUAD);
+	if (n < BQ_PLACES)
+		bq_held[n] = ok ? crc : 0;
 }
 
 void dsp_get_biquad(uint32_t raw[6])
