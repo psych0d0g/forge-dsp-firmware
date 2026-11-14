@@ -19,5 +19,6 @@ void sd_file_get(void);            /* get system.sd.read */
 /* PORT (#61): backup before an update (sd_backup.c) */
 void sd_backup_get(void);          /* get system.sd.backup */
 void sd_backup_set(void);          /* set system.sd.backup.flash/.eeprom/.preset/.N=slot */
+void sd_restore_set(void);         /* PORT (#65): set system.sd.restore.eeprom/.preset/.N=slot */
 uint8_t sd_file_set(void);         /* set system.sd.open/create/seek/write/close/delete, 0 = not ours */    /* libs/file/preset_load: preset_N.cfg -> preset N-1 */
 #endif

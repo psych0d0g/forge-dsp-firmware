@@ -7,6 +7,12 @@
  *   set system.sd.backup.N=S        DSPN_S.BIN    EEPROM of DSP core N (program and biquads, 64 KB)
  *   get system.sd.backup            = [flash bytes, EEPROM bytes, preset EEPROM bytes (0: none),
  *                                      DSP cores]
+ * Every backup command also writes INFO_S.TXT: "MODEL-PCB", the firmware version, a line.
+ * PORT extension (#65), the way back (not the flash: that is the bootloader's):
+ *   set system.sd.restore.eeprom=S / .preset=S / .N=S
+ * writes the file into the memory, reads it back (CRC-16) and restarts the Forge. Refused (unknown
+ * para) without INFO_S.TXT or when it names another model or PCB; a file of the wrong size: out
+ * of range.
  * S = slot 1..9. The answer comes after the read back: ok when the file has the size and the
  * CRC-16 of what was read from the memory, otherwise an error (the file stays, damaged).
  * The main loop waits meanwhile (flash and MCU EEPROM a few seconds, a 64 KB EEPROM on I2C
@@ -22,6 +28,9 @@
 #include "iface.h"
 #include "sd.h"
 #include "store.h"
+#include "identity.h"
+#include "power.h"
+#include "version.h"
 
 #ifdef __AVR__
 #include <avr/io.h>
@@ -69,6 +78,28 @@ static uint8_t read_eeprom(uint32_t a, uint8_t n)
 		buf[i] = eram_hw_read((uint16_t)(a + i));
 	return 1;
 }
+/* n bytes of buf to offset a; I2C: one page (a aligned to 128, n <= 128) */
+static uint8_t (*write_part)(uint32_t a, uint8_t n);
+static uint8_t write_eeprom(uint32_t a, uint8_t n)
+{
+	for (uint8_t i = 0; i < n; i++)
+		eram_wb((uint16_t)(a + i), buf[i]);   /* only bytes that differ */
+	return 1;
+}
+static uint8_t write_i2c(uint32_t a, uint8_t n)
+{
+	twi_start(src_bus);
+	twi_wbyte(src_bus, src_dev);
+	twi_wbyte(src_bus, (uint8_t)(a >> 8));
+	twi_wbyte(src_bus, (uint8_t)a);
+	uint8_t ok = i2c_err == 0;
+	for (uint8_t i = 0; i < n; i++)
+		twi_wbyte(src_bus, buf[i]);
+	twi_stop(src_bus);
+	delay_ms(BAS_EEPROM_PAGE_WRITE_DELAY);
+	return ok;
+}
+
 static uint8_t read_i2c(uint32_t a, uint8_t n)
 {
 	twi_start(src_bus);
@@ -142,42 +173,140 @@ void sd_backup_get(void)
 	out_crlf();
 }
 
-void sd_backup_set(void)
+/* the part named by word four and its file name with slot S; 0 = not a part (error answered) */
+static uint8_t pick(int16_t slot, char *name, uint32_t *size, uint8_t for_restore)
 {
-	int16_t slot = cmd_reg_var_integers[1];
 	uint16_t w4 = req_w(cmd_req_word_four);
-	char name[13];
-	uint32_t size = I2C_EE_BYTES;
+	*size = I2C_EE_BYTES;
 	if (slot < 1 || slot > 9) {
 		cmd_error_cmd_oor();
-		return;
+		return 0;
 	}
-	if (w4 == W_FLASH) {
-		strcpy(name, "FLASH_x.BIN"); read_part = read_flash; size = APP_BYTES;
+	if (w4 == W_FLASH && !for_restore) {
+		strcpy(name, "FLASH_x.BIN"); read_part = read_flash; write_part = 0; *size = APP_BYTES;
 	} else if (w4 == W_EEPROM) {
-		strcpy(name, "EEPROM_x.BIN"); read_part = read_eeprom; size = EE_BYTES;
+		strcpy(name, "EEPROM_x.BIN"); read_part = read_eeprom; write_part = write_eeprom; *size = EE_BYTES;
 	} else if (w4 == W_PRESET) {
-		strcpy(name, "PRESET_x.BIN"); read_part = read_i2c; src_bus = 1; src_dev = 0xA8;
+		strcpy(name, "PRESET_x.BIN"); read_part = read_i2c; write_part = write_i2c; src_bus = 1; src_dev = 0xA8;
 	} else if (REQ_B(10) == cmd_req_number && REQ_B(9) >= 1 && REQ_B(9) <= 3) {
 		uint8_t core = REQ_B(9);
 		if (core > cores()) {
 			cmd_error_cmd_oor();
-			return;
+			return 0;
 		}
-		strcpy(name, "DSPx_x.BIN"); name[3] = (char)('0' + core); read_part = read_i2c;
+		strcpy(name, "DSPx_x.BIN"); name[3] = (char)('0' + core); read_part = read_i2c; write_part = write_i2c;
 		src_bus = core == 1 ? 1 : 2; src_dev = core == 3 ? 0xA2 : 0xA0;   /* tas3108.h */
 	} else {
 		cmd_error_unknown();
-		return;
+		return 0;
 	}
 	strchr(name, '_')[1] = (char)('0' + slot);
 	if (read_part == read_i2c && !ee_present(src_bus, src_dev)) {
 		cmd_error_cmd_oor();
-		return;
+		return 0;
 	}
-	if (!sd_mounted() || copy(name, size)) {
+	return 1;
+}
+
+/* INFO_S.TXT: which device and firmware the backup of slot S comes from */
+static void info_name(char *n, int16_t slot) { strcpy(n, "INFO_x.TXT"); n[5] = (char)('0' + slot); }
+static uint8_t write_info(int16_t slot)
+{
+	static FIL f;
+	char n[13];
+	info_name(n, slot);
+	if (f_open(&f, n, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK)
+		return 0;
+	f_puts(identity_model(), &f); f_putc('-', &f); f_puts(identity_board(), &f); f_putc('\n', &f);
+	f_puts(FW_VERSION_STR, &f); f_putc('\n', &f);
+	return f_close(&f) == FR_OK;
+}
+static uint8_t info_fits(int16_t slot)
+{
+	static FIL f;
+	char n[13], line[24], want[24];
+	info_name(n, slot);
+	if (f_open(&f, n, FA_READ) != FR_OK)
+		return 0;
+	uint8_t ok = f_gets(line, sizeof line, &f) != 0;
+	f_close(&f);
+	strcpy(want, identity_model()); strcat(want, "-"); strcat(want, identity_board()); strcat(want, "\n");
+	return ok && !strcmp(line, want);
+}
+
+void sd_backup_set(void)
+{
+	int16_t slot = cmd_reg_var_integers[1];
+	char name[13];
+	uint32_t size;
+	if (!pick(slot, name, &size, 0))
+		return;
+	if (!sd_mounted() || copy(name, size) || !write_info(slot)) {
 		cmd_error_unknown();
 		return;
 	}
 	cmd_answer_ok();
+}
+
+/* the file back into the memory and checked; 0 = ok */
+static uint8_t restore(const char *name, uint32_t size)
+{
+	static FIL f;
+	UINT br;
+	uint16_t crc = 0, back = 0;
+	if (f_open(&f, name, FA_READ) != FR_OK)
+		return 1;
+	if (f_size(&f) != size) {
+		f_close(&f);
+		return 2;
+	}
+	uint8_t err = 0;
+	for (uint32_t a = 0; a < size && !err; a += sizeof buf) {
+		if (f_read(&f, buf, sizeof buf, &br) != FR_OK || br != sizeof buf)
+			err = 1;
+		else if (!write_part(a, sizeof buf))
+			err = 3;
+		crc = bas_crc16_more(crc, buf, sizeof buf);
+		if ((a & 0x7FF) == 0)
+			iface_hook_watchdog();
+	}
+	f_close(&f);
+	if (err)
+		return err;
+	for (uint32_t a = 0; a < size; a += sizeof buf) {
+		if (!read_part(a, sizeof buf))
+			return 3;
+		back = bas_crc16_more(back, buf, sizeof buf);
+		if ((a & 0xFFF) == 0)
+			iface_hook_watchdog();
+	}
+	return back == crc ? 0 : 4;
+}
+
+void sd_restore_set(void)
+{
+	int16_t slot = cmd_reg_var_integers[1];
+	char name[13];
+	uint32_t size;
+	if (!pick(slot, name, &size, 1))
+		return;
+	if (!sd_mounted()) {
+		cmd_error_unknown();
+		return;
+	}
+	if (!info_fits(slot)) {
+		cmd_error_unknown_para();   /* no INFO_S.TXT, or another model or PCB */
+		return;
+	}
+	uint8_t e = restore(name, size);
+	if (e == 2) {
+		cmd_error_cmd_oor();
+		return;
+	}
+	if (e) {
+		cmd_error_unknown();
+		return;
+	}
+	cmd_answer_ok();
+	mcu_reset_delayed();   /* the running state came from the old contents */
 }

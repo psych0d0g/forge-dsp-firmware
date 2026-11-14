@@ -301,6 +301,10 @@ void cmd_set_system_sd(void)
 		sd_backup_set();  /* backup (sd_backup.c, #61) */
 		return;
 	}
+	if (req_w(cmd_req_word_three) == 0x7265) {
+		sd_restore_set();  /* restore (sd_backup.c, #65) */
+		return;
+	}
 	if (req_w(cmd_req_word_three) != 0x6578 || req_w(cmd_req_word_four) != 0x0000) {
 		cmd_error_unknown();
 		return;

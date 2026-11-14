@@ -695,7 +695,7 @@ static void cmd_set_system_errors(void);
 	X("hardware|.memory.eram", cmd_set_system_hardware) \
 	X("key|.info", cmd_set_system_key) \
 	X("reinit", cmd_set_system_reinit) \
-	X("sd|.backup.N|.backup.eeprom|.backup.flash|.backup.preset|.close|.create|.delete|.export|.open|.seek|.write", cmd_set_system_sd) /* PORT extension (#24, #61) */ \
+	X("sd|.backup.N|.backup.eeprom|.backup.flash|.backup.preset|.restore.N|.restore.eeprom|.restore.preset|.close|.create|.delete|.export|.open|.seek|.write", cmd_set_system_sd) /* PORT extension (#24, #61) */ \
 	X("startup|.N", cmd_set_system_startup) /* PORT extension (#40) */ \
 	X("supply|.cal|.low|.mute|.source|.vcc", cmd_set_system_supply) /* PORT extension (#46) */ \
 

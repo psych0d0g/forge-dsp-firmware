@@ -94,6 +94,8 @@ Ausführlich mit allen Unterschieden und Befehlen: **[docs/port-changes.md](docs
 - **Sicherung vor dem Update** (`set.1 system.sd.backup.flash|eeprom|preset|N=S`, Platz S = 1…9): Die Firmware kopiert
   Anwendungs-Flash, MCU-EEPROM, Preset-EEPROM und die EEPROMs der DSP-Kerne (Programm und Biquads) selbst auf die Karte
   (`FLASH_S.BIN`, `EEPROM_S.BIN`, `PRESET_S.BIN`, `DSPN_S.BIN`) und prüft jede Datei durch Zurücklesen (#61).
+- **Sicherung zurückspielen** (`set.1 system.sd.restore.eeprom|preset|N=S`): EEPROMs aus Platz S zurück, geprüft und mit
+  Neustart; nur für dasselbe Modell und PCB (`INFO_S.TXT`) (#65).
 
 ### Update, Start, Bedienung
 

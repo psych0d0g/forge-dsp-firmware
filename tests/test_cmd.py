@@ -1982,6 +1982,30 @@ class SdPresetTest(unittest.TestCase):
         self.assertIn("system.sd.backup=[262144,4096,65536,2]", out)
         self.assertIn("system.sd.backup.3 command out of range", out)
 
+    def test_restore(self):
+        """#65: system.sd.restore.* writes a backup back, checked by INFO_S.TXT, size and read-back,
+        then restarts (the harness ends there)"""
+        f = "V40-96ELN"
+        at24 = bytes((i * 13 + 7) & 0xFF for i in range(65536))
+        ans_of = lambda out: [m.strip() for m in re.findall(r"^@0: (.*?)\\r\\n", out, re.M)]
+        out, _, o = self.run_sd(f, [], [
+            "#sd_card=1", "#sd_init", "1|set.1 system.sd.backup.preset=2", "#sd_cat=INFO_2.TXT",
+            "1|set.1 preset.erase=1",                                         # the preset EEPROM changes
+            "1|set.1 system.sd.restore.preset=5",                             # no INFO_5.TXT
+            "1|set.1 system.sd.restore.flash=2",                              # the flash: not from here
+            "1|set.1 system.sd.restore.preset=2"], at24=at24)
+        ans = ans_of(out)
+        self.assertIn("@sd_cat:96ELN-4.0", out)                               # INFO: model-PCB
+        self.assertIn("system.sd.restore.preset unknown para", " ".join(ans))
+        self.assertIn("system.sd.restore.flash unknown command", " ".join(ans))
+        self.assertEqual(ans[-1], "*.1 system.sd.restore.preset ok")
+        self.assertEqual(o, at24)                                             # the erased preset is back
+        out, ee, _ = self.run_sd(f, [], [
+            "#sd_card=1", "#sd_init", "1|set.1 system.sd.backup.eeprom=3",
+            '1|set.1 system.channel.name.1="CHANGED"', "1|set.1 system.sd.restore.eeprom=3"], at24=at24)
+        self.assertEqual(ans_of(out)[-1], "*.1 system.sd.restore.eeprom ok")
+        self.assertNotIn(b"CHANGED", ee)                                      # the MCU EEPROM as before
+
     def test_file_transfer(self):
         """#59: files to and from the card over the command line, in blocks with CRC-16/XMODEM"""
         def crc16(b):
