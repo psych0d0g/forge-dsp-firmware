@@ -2216,8 +2216,8 @@ class StartupTest(LinesMixin, unittest.TestCase):
         out = self.lines(f, ["1|get.1 system.startup.time", "#ms=1200", "#store_init", "#ms=300", "#dac_init",
                              "1|get.1 system.startup.time", "#ms=100", "#store_init", "1|get.1 system.startup.time"])
         out = [l for l in out if "startup.time=" in l]
-        self.assertIn("system.startup.time=[" + ",".join(["-1"] * 20) + "]", out[0])
-        want = ["-1"] * 20
+        self.assertIn("system.startup.time=[" + ",".join(["-1"] * 20 + ["0"]) + "]", out[0])   # last: bootloader
+        want = ["-1"] * 20 + ["0"]
         want[2], want[4] = "1200", "1500"                 # BT_STORE (3), BT_DAC (5)
         self.assertIn("system.startup.time=[" + ",".join(want) + "]", out[-2])
         self.assertEqual(out[-1], out[-2])                # the first time counts

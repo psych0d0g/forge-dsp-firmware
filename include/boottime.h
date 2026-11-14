@@ -29,6 +29,7 @@ enum {
 	BT_PRESET,         /* first preset in the DSPs */
 	BT_REMOTE_ON,      /* remote out on (after modc.32 set 1) */
 	BT_UNMUTED,        /* outputs free (after modc.32 set 3) */
+	BT_BOOTLOADER,     /* time in the bootloader before the application (its RTC count), 0 = direct */
 	BT_COUNT
 };
 

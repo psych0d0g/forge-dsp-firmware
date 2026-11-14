@@ -335,7 +335,7 @@ static void print_startup(uint8_t i)
 }
 
 /* PORT extension (#67): get system.startup.time = ms from the clock start to each start phase
- * (include/boottime.h, BT_REGISTERS … BT_UNMUTED), -1 = not reached */
+ * (include/boottime.h, BT_REGISTERS … BT_UNMUTED), -1 = not reached; last: ms in the bootloader before */
 static void startup_time(void)
 {
 	out_str(" <.");
@@ -345,7 +345,9 @@ static void startup_time(void)
 		if (i > 1)
 			out_chr(',');
 		uint16_t t = boot_time_ms(i);
-		if (t == 0xFFFF)
+		if (i == BT_BOOTLOADER)
+			out_u16(t == 0xFFFF ? 0 : t - 1);  /* stored + 1 (0 = never set) */
+		else if (t == 0xFFFF)
 			out_str("-1");
 		else
 			out_u16(t);

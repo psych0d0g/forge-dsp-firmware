@@ -14,6 +14,11 @@ static uint16_t at[BT_COUNT];  /* 0 = not reached (a phase at 0 ms counts as 1 m
 void boot_time_start(void)
 {
 #ifdef __AVR__
+	/* chip45boot3 runs the RTC at 1.024 kHz while it waits for a host (up to 60000 counts) and only
+	 * stops it when it starts the application: the count is the time spent there (0 = jumped
+	 * directly, the RTC is never started on that path) */
+	uint16_t bl = RTC.CNT;
+	at[BT_BOOTLOADER] = (uint16_t)((((uint32_t)bl * 1000u) >> 10) + 1);
 	/* the 32.768 kHz RC runs (clock_init); RTC source: its 1.024 kHz output */
 	CLK.RTCCTRL = CLK_RTCSRC_RCOSC_gc | CLK_RTCEN_bm;
 	while (RTC.STATUS & RTC_SYNCBUSY_bm)
