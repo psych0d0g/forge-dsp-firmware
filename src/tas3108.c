@@ -8,6 +8,7 @@
  * sums are equal and nothing is written.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "boottime.h"
 #include "flavour.h"
 #include "bas_data.h"
 #include "eram.h"
@@ -202,7 +203,7 @@ static void bus_release(const struct dsp_def *d, struct dsp_boot_core *r)
 	i2c_reset(d->bus);  /* clears only if SDA is low */
 }
 
-void dsp_eeprom_init(uint8_t n)
+static void dsp_eeprom_init_body(uint8_t n)
 {
 	if (n < 1 || n > sizeof dsps / sizeof dsps[0])
 		return;
@@ -220,7 +221,14 @@ void dsp_eeprom_init(uint8_t n)
 		return;
 	uint16_t size = data_size(d);
 	uint16_t data_chksum = data_get_chksum(d);
+	/* PORT (#67): read at FORGE_I2C_CHECK_KHZ (7.7 s -> about 2 s for three programs); a wrong
+	 * sum is read once more at the base clock, only that one decides about writing */
+	i2c_speed(d->bus, I2C_CHECK);
 	uint16_t eeprom_chksum = eeprom_get_chksum(d, size);
+	i2c_speed(d->bus, 0);
+	if (data_chksum != eeprom_chksum) {
+		eeprom_chksum = eeprom_get_chksum(d, size);
+	}
 	if (data_chksum != eeprom_chksum) {
 		struct dsp_boot_core *r = &dsp_boot_now.core[d->core - 1];
 		/* PORT (#57): read the written program back; one more try if the sum is wrong */
@@ -239,7 +247,13 @@ void dsp_eeprom_init(uint8_t n)
 	bus_release(d, &dsp_boot_now.core[d->core - 1]);
 }
 
-void dsp_core_init(uint8_t n)
+void dsp_eeprom_init(uint8_t n)
+{
+	dsp_eeprom_init_body(n);
+	boot_mark((uint8_t)(BT_DSP_EEPROM1 + n - 1));
+}
+
+static void dsp_core_init_body(uint8_t n)
 {
 	if (n < 1 || n > sizeof dsps / sizeof dsps[0])
 		return;
@@ -288,4 +302,10 @@ void dsp_core_init(uint8_t n)
 		errorcount(BAS_ERRORCOUNT_SW_DSP);
 		dsp_state_error = 1;  /* PORT (#47): hw_check_dsp_restart restarts once */
 	}
+}
+
+void dsp_core_init(uint8_t n)
+{
+	dsp_core_init_body(n);
+	boot_mark((uint8_t)(n == 1 ? BT_DSP_CORE1 : n == 2 ? BT_DSP_CORE2 : BT_DSP_CORE3));
 }

@@ -2,6 +2,7 @@
  * Port of libs/api (functions.bas, mute/functions.bas, mix/functions.bas) and the load
  * sequence of modc_load_preset. License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware).
  */
+#include "boottime.h"
 #include "log.h"
 #include <math.h>
 #include "api.h"
@@ -558,6 +559,7 @@ void api_startup_delay(void)
 #if FORGE_AUDIO
 		PIN_SET(PIN_CPU_POWER_CTRL_OUT);  /* remote out: amplifiers on */
 #endif
+		boot_mark(BT_REMOTE_ON);
 		event_set_value(BAS_EVENTS_FIELD_REMOTEOUT, BAS_EVENTS_STATE_TRUE);
 		a = modc_sets[2 * BAS_MAX_MODC + BAS_MAX_MODC];      /* modc_set3(max_modc) */
 		if (a > 0)
@@ -596,8 +598,10 @@ void api_preset_load(uint8_t preset)
 	for (uint8_t ch = 1; ch <= BAS_FLOW_MAX_OUT_CHANNEL; ch++)
 		api_set_out_vol(ch, api_get_out_vol(ch));
 	api_store = 1;
+	boot_mark(BT_PRESET);
 	api_startup_delay();  /* "first unmute must check for remote.out delay" */
 	api_set_out_mute();   /* api_restore_out_mute */
+	boot_mark(BT_UNMUTED);
 	sys_init_preset_loaded();  /* PORT (#40): start commands after the first preset load */
 	log_event(LOG_INFO, LOGM_PRESET, LOGE_PRESET_LOADED, store_preset, 0);  /* PORT (#60) */
 	static const uint16_t ev[cmd_req_words_max] = {0x0104, 0x7072, 0x6C6F, 0x0000, 0x0000};

@@ -7,6 +7,7 @@
  * needs for awkward values.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "boottime.h"
 #include "flavour.h"
 #if BAS_MODUL_SI5338 > 0
 #include "bas_data.h"
@@ -220,7 +221,7 @@ static void si5338_init(void)
 	si5338_load();
 }
 
-void si5338_detect_and_init(void)
+static void si5338_detect_and_init_body(void)
 {
 	if (channel_open & (1u << (4 + BUS))) {
 		twi_start(BUS);
@@ -243,5 +244,11 @@ void si5338_detect_and_init(void)
 		twi_stop(BUS);
 	}
 	si5338_init();
+}
+
+void si5338_detect_and_init(void)
+{
+	si5338_detect_and_init_body();
+	boot_mark(BT_CLOCK);
 }
 #endif

@@ -150,7 +150,7 @@ void dsp_set_reg(uint8_t size)
  * of the MCU. Indexed by the virtual biquad number (dsp_bq_virt_nr), which all callers set. */
 #define BQ_PLACES (BAS_FLOW_MAX_DSP_BIQUADS + DSP_BQ_EXTRA_MAX + 1)  /* the pools' spares included */
 static uint16_t bq_held[BQ_PLACES];
-uint16_t dsp_bq_skipped, dsp_bq_written;  /* since the start (diagnostics, tests) */
+uint16_t dsp_bq_skipped, dsp_bq_written, dsp_bq_read_same;  /* since the start (diagnostics, tests) */
 void dsp_bq_forget(void) { memset(bq_held, 0, sizeof bq_held); }
 
 void dsp_set_biquad(const uint32_t raw[6])
@@ -165,6 +165,26 @@ void dsp_set_biquad(const uint32_t raw[6])
 	if (n < BQ_PLACES && bq_held[n] == crc) {
 		dsp_bq_skipped++;
 		return;
+	}
+	if (n < BQ_PLACES && bq_held[n] == 0) {
+		/* PORT (#67): not known yet (after the start): read the place first, at FORGE_I2C_CHECK_KHZ.
+		 * Reading is a third of a verified write; most places of the first preset hold already
+		 * what the program put there. A wrong read only means the place is written. */
+		uint8_t want[BAS_DSP_REG_SIZE_BIQUAD + 1];
+		memcpy(want, buffer_bytes, sizeof want);
+		i2c_speed(c->bus, I2C_CHECK);
+		i2c_device_addr = c->adr;
+		i2c_reg = dsp_reg;
+		i2c_size = BAS_DSP_REG_SIZE_BIQUAD;
+		i2c_rbuffer(c->bus);
+		i2c_speed(c->bus, 0);
+		uint8_t same = i2c_err == 0 && memcmp(&buffer_bytes[1], &want[1], BAS_DSP_REG_SIZE_BIQUAD) == 0;
+		memcpy(buffer_bytes, want, sizeof want);
+		if (same) {
+			bq_held[n] = crc;
+			dsp_bq_read_same++;
+			return;
+		}
 	}
 	dsp_bq_written++;
 	uint8_t ok = verified_write(c, BAS_DSP_REG_SIZE_BIQUAD);

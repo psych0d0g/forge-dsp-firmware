@@ -959,8 +959,10 @@ class DspWriteTest(unittest.TestCase):
             lines = [l for l in p.stdout.splitlines() if l.startswith(("@i2c", "@dsp"))]
             raw = bq_reference(f, 1, 1000, 35, 1414, 0, 0x80)  # A2, A1, B2, B1, B0
             data = b"".join(v.to_bytes(4, "big") for v in reversed(raw))  # B0 first, MSB first
-            self.assertEqual(lines[0], f"@i2c{bus}: S {adr:02X} {reg:02X} " + " ".join(f"{x:02X}" for x in data) + " P", nr)
-            self.assertTrue(lines[1].startswith(f"@i2c{bus}: S {adr:02X} {reg:02X} Sr {adr + 1:02X}"), nr)
+            # #67: the place is not known yet: read first (empty here, so it is written)
+            self.assertTrue(lines[0].startswith(f"@i2c{bus}: S {adr:02X} {reg:02X} Sr {adr + 1:02X}"), nr)
+            self.assertEqual(lines[1], f"@i2c{bus}: S {adr:02X} {reg:02X} " + " ".join(f"{x:02X}" for x in data) + " P", nr)
+            self.assertTrue(lines[2].startswith(f"@i2c{bus}: S {adr:02X} {reg:02X} Sr {adr + 1:02X}"), nr)
             self.assertEqual(lines[-1], f"@dsp: core={core} reg={reg:02X} verify_errors=0", nr)
 
     def test_verify_error_is_counted_and_limited(self):
@@ -2188,6 +2190,18 @@ class StartupTest(LinesMixin, unittest.TestCase):
         self.assertIn("mute.out.1=1", b[8])
         self.assertEqual(b[9:12], ["", "", ""])           # second preset load: not again
 
+    def test_time(self):
+        """#67: ms of each start phase, -1 = not reached"""
+        f = "V40-96ELN"
+        out = self.lines(f, ["1|get.1 system.startup.time", "#ms=1200", "#store_init", "#ms=300", "#dac_init",
+                             "1|get.1 system.startup.time", "#ms=100", "#store_init", "1|get.1 system.startup.time"])
+        out = [l for l in out if "startup.time=" in l]
+        self.assertIn("system.startup.time=[" + ",".join(["-1"] * 20) + "]", out[0])
+        want = ["-1"] * 20
+        want[2], want[4] = "1200", "1500"                 # BT_STORE (3), BT_DAC (5)
+        self.assertIn("system.startup.time=[" + ",".join(want) + "]", out[-2])
+        self.assertEqual(out[-1], out[-2])                # the first time counts
+
     def test_delete(self):
         f = "V40-96ELN"
         out = self.lines(f, ['1|set.1 system.startup.1="set.1 gain.out.2:150"', '1|set.1 system.startup.1=""',
@@ -2889,16 +2903,21 @@ class PresetLoadTest(unittest.TestCase):
                 pathlib.Path(d, f"dsp{n}.bin").write_bytes(bytes(dspee[n]))
                 lines.append(f"#dspee={n},{pathlib.Path(d, f'dsp{n}.bin')}")
             lines += ["#i2cdsp=1,68", "#i2cdsp=2,68", "#i2cdsp=2,6A", "#i2cdev=2,90", "#dsp_detect", "#dac_init",
-                      "#preset_load=0", "#bq_count", "#preset_load=1", "#bq_count", "#preset_load=0", "#bq_count"]
+                      "#preset_load=0", "#bq_count", "#preset_load=1", "#bq_count", "#preset_load=0", "#bq_count",
+                      "#bq_forget", "#preset_load=1", "#bq_count"]
             p, _ = run(f, lines, eeprom=image(f), want_eeprom=True)
         counts = [tuple(int(x.split("=")[1]) for x in l.split(":")[1].split()) for l in p.stdout.splitlines()
                   if l.startswith("@bq_count:")]
-        (w0, s0), (w1, s1), (w2, s2) = counts
-        self.assertGreater(w0, 500)                        # the first load writes every place
+        (w0, s0, m0), (w1, s1, m1), (w2, s2, m2), (w3, s3, m3) = counts
+        self.assertGreater(w0, 500)                        # the first load writes every place (the host DSP is empty)
         self.assertEqual(s0, 0)
+        self.assertEqual(m0, 0)
         self.assertEqual(w1 - w0, 3)                       # to preset 1: only the three bands change
         self.assertEqual(s1 - s0, w0 - 3)
         self.assertEqual(w2 - w1, 3)                       # and back
+        # #67: cache unknown (as after a start), the DSP holds preset 0: read, only the three are written
+        self.assertEqual(w3 - w2, 3)
+        self.assertEqual(m3, w0 - 3)
 
     def test_96eln3_preset_0(self):
         import random

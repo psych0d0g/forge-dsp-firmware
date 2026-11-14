@@ -4,6 +4,7 @@
  * poti, temperature, reinit and hardware.memory.eram (both only with FORGE_FACTORY_RESET).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "boottime.h"
 #include <math.h>
 #ifdef __AVR__
 #include <avr/pgmspace.h>
@@ -332,9 +333,31 @@ static void print_startup(uint8_t i)
 	out_crlf();
 }
 
+/* PORT extension (#67): get system.startup.time = ms from the clock start to each start phase
+ * (include/boottime.h, BT_REGISTERS … BT_UNMUTED), -1 = not reached */
+static void startup_time(void)
+{
+	out_str(" <.");
+	out_u16(REQ_B(cmd_req_receiver));
+	out_str(" system.startup.time=[");
+	for (uint8_t i = 1; i < BT_COUNT; i++) {
+		if (i > 1)
+			out_chr(',');
+		uint16_t t = boot_time_ms(i);
+		if (t == 0xFFFF)
+			out_str("-1");
+		else
+			out_u16(t);
+	}
+	out_chr(']');
+	out_crlf();
+}
+
 static void cmd_get_system_startup(void)
 {
-	if (req_w(cmd_req_word_three) == 0x002A) {
+	if (req_w(cmd_req_word_three) == 0x7469 && req_w(cmd_req_word_four) == 0x0000) {
+		startup_time();
+	} else if (req_w(cmd_req_word_three) == 0x002A) {
 		for (uint8_t i = 1; i <= ERAM_SYS_INIT_SETS_ERAM_COUNT; i++)
 			print_startup(i);
 	} else if (REQ_B(8) == cmd_req_number && req_w(cmd_req_word_four) == 0x0000) {
@@ -1191,7 +1214,7 @@ static void cmd_get_system_help(void);
 	X("poti|.N", cmd_get_system_poti) \
 	X("dsp|.limiter|.limiter.N|.limiter.attack|.limiter.release", cmd_get_system_dsp) /* PORT extension (#58) */ \
 	X("sd||.backup|.files|.read", cmd_get_system_sd) /* PORT extension (#24, #61) */ \
-	X("startup|.N|.*", cmd_get_system_startup) /* PORT extension (#40) */ \
+	X("startup|.N|.*|.time", cmd_get_system_startup) /* PORT extension (#40, #67) */ \
 	X("supply||.cal|.low|.mute|.raw|.source|.vcc", cmd_get_system_supply) /* PORT extension (#46) */ \
 	X("temperature||.celsius|.fahrenheit|.kelvin", cmd_get_system_temp) \
 	X("vu||.out", cmd_get_system_vu) /* PORT extension (#52) */ \

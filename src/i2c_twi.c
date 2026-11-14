@@ -4,6 +4,7 @@
  * PORT: transfers time out after ~10 ms (BASCOM waits); the error is kept in i2c_err.
  * License: CC BY-NC-SA 4.0
  */
+#include "boottime.h"
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
@@ -21,8 +22,14 @@
 #ifndef FORGE_I2C_FAST_KHZ
 #define FORGE_I2C_FAST_KHZ 100   /* user decision 14.11.2026: 100 everywhere; 400 as an option (see above) */
 #endif
+/* PORT (#67): the program check of the DSP EEPROMs at the start only reads; a wrong sum is read
+ * again at the base clock before the EEPROM is written (user decision 14.11.2026: 400 kHz there) */
+#ifndef FORGE_I2C_CHECK_KHZ
+#define FORGE_I2C_CHECK_KHZ 400
+#endif
 #define TWI_BAUDVAL ((F_CPU / (2UL * 1000UL * FORGE_I2C_KHZ)) - 5)
 #define TWI_BAUDFAST ((F_CPU / (2UL * 1000UL * FORGE_I2C_FAST_KHZ)) - 5)
+#define TWI_BAUDCHECK ((F_CPU / (2UL * 1000UL * FORGE_I2C_CHECK_KHZ)) - 5)
 
 #define TIMEOUT 40000u
 
@@ -34,7 +41,7 @@ static PORT_t *port(uint8_t bus) { return bus == 1 ? &PORTC : &PORTE; }
 
 void i2c_speed(uint8_t bus, uint8_t fast)
 {
-	twi(bus)->MASTER.BAUD = fast ? TWI_BAUDFAST : TWI_BAUDVAL;   /* between transfers only */
+	twi(bus)->MASTER.BAUD = fast == I2C_CHECK ? TWI_BAUDCHECK : fast ? TWI_BAUDFAST : TWI_BAUDVAL;   /* between transfers only */
 }
 
 void delay_ms(uint16_t ms)
@@ -138,7 +145,7 @@ ISR(PORTE_INT1_vect) { sda_count[2]++; }
 
 struct dspboot_diag dspboot_diag[3];
 
-void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s)
+static void i2c_sda_wait4silence_body(uint8_t bus, uint8_t pre, uint8_t s)
 {
 	PORT_t *p = port(bus);
 	struct dspboot_diag *d = &dspboot_diag[bus];
@@ -161,4 +168,10 @@ void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s)
 	d->quiet_ms = q;
 	d->edges = (uint16_t)(sda_count[bus] - c0);
 	p->INTCTRL &= ~PORT_INT1LVL_gm;                          /* disable PORTx_INT1 */
+}
+
+void i2c_sda_wait4silence(uint8_t bus, uint8_t pre, uint8_t s)
+{
+	i2c_sda_wait4silence_body(bus, pre, s);
+	boot_mark((uint8_t)(bus == 1 ? BT_DSP_BOOT_BUS1 : BT_DSP_BOOT_BUS2));
 }

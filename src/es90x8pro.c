@@ -2,6 +2,7 @@
  * Port of libs/da/es90x8pro (bus 2, 0x90).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "boottime.h"
 #include "bqramp.h"
 #include "flavour.h"
 #if BAS_MODUL_ES90X8PRO > 0
@@ -90,7 +91,7 @@ static void es90x8pro_init(void)
 void dac_set_mute(uint8_t mask) { es90x8pro_set_mute(mask); }
 void dac_set_phase(uint8_t v) { (void)v; }  /* 96ELN-3: phase is in the DSP */
 
-void dac_init(void)
+static void dac_init_body(void)
 {
 	if (channel_open & (1u << 6)) {
 		uint8_t tries = 0;
@@ -109,5 +110,11 @@ void dac_init(void)
 		}
 	}
 	es90x8pro_init();
+}
+
+void dac_init(void)
+{
+	dac_init_body();
+	boot_mark(BT_DAC);
 }
 #endif

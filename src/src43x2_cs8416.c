@@ -2,6 +2,7 @@
  * Port of libs/spdif/src43x2 (bus 1, 0xE0) and libs/spdif/cs8416 (bus 2, 0x20), V30-96LN.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "boottime.h"
 #include "flavour.h"
 #if BAS_MODUL_SRC43X2 > 0 || BAS_MODUL_CS8416 > 0
 #include "ct7302.h"
@@ -117,7 +118,7 @@ void cs8416_set_mux(uint8_t v)
 }
 #endif
 
-void spdif_init(void)
+static void spdif_init_body(void)
 {
 #if BAS_MODUL_SRC43X2 > 0
 	if (detect(1, 0xE0, BAS_SRC43X2_RDY))
@@ -127,5 +128,11 @@ void spdif_init(void)
 	detect(2, 0x20, BAS_CS8416_RDY);
 	cs8416_init();
 #endif
+}
+
+void spdif_init(void)
+{
+	spdif_init_body();
+	boot_mark(BT_SPDIF);
 }
 #endif

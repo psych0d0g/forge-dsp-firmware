@@ -41,6 +41,7 @@ uint8_t mcu_reset_flags;  /* RST.STATUS of this start (#60 log) */
 #include "tick.h"
 #include "version.h"
 #include "watchdog.h"
+#include "boottime.h"
 
 /* found by chip45boot3 CMD_READ_VERSION_FIRMWARE */
 const char fw_version_c45b3[] PROGMEM __attribute__((used)) = FW_VERSION_C45B3;
@@ -64,6 +65,7 @@ int main(void)
 	/* referenced so --gc-sections keeps the version string */
 	__asm__ __volatile__("" :: "r"(fw_version_c45b3));
 	clock_init();
+	boot_time_start();  /* PORT (#67) */
 	{
 		/* PORT diagnostics (#57): the record of the start before a DSP restart survives only a
 		 * software reset */
@@ -85,6 +87,7 @@ int main(void)
 	_delay_ms(250);
 	errorcount_init();
 	registers_load();
+	boot_mark(BT_REGISTERS);
 	sysinit_check(PIN_READ(PIN_DBG_INIT_FINEST));
 	mcuid_init();
 	tick_init();
@@ -101,7 +104,9 @@ int main(void)
 	/* libs/api/init.bas, then the preset load of modc_load_preset (MODC itself follows) */
 	api_init();
 	api_init_mute();
+	boot_mark(BT_API);
 	sd_init();            /* libs/dos dos_init: microSD (FatFs) if a card is inserted */
+	boot_mark(BT_SD);
 	irreceiver_init();    /* libs/extender/ir-receiver init (+ CUSTOM) */
 	ir_custom_init();
 	{
@@ -155,6 +160,7 @@ int main(void)
 		mcu_reset_delayed();
 	}
 #endif
+	boot_mark(BT_INIT_DONE);
 	/* end of main.bas: "system.boot=ok" to COM master/USB */
 	static const uint16_t bootrdy_event[cmd_req_words_max] = {0x0104, 0x7379, 0x626F, 0x0000, 0x0000};
 	cmd_load_header(bootrdy_event);

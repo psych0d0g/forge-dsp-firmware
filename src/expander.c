@@ -2,6 +2,7 @@
  * Port of libs/expander/pca9554/{41,4F} and pca9555/4F (init.bas + functions.bas).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "boottime.h"
 #include "expander.h"
 #include "flavour.h"
 #include "i2c.h"
@@ -144,7 +145,7 @@ void pca9555_4F_set_output(void)
 void pca9555_4F_set_output(void) {}
 #endif
 
-void expander_init(void)
+static void expander_init_body(void)
 {
 	/* order of libs/expander/init.bas: pca9554 (41, 4F), then pca9555 (4F) */
 #if BAS_MODUL_PCA9554 == 1 && BAS_MODUL_PCA9554_41 == 1
@@ -159,4 +160,10 @@ void expander_init(void)
 	pca9555_xF_adr = detect(BAS_PCA9555_4F_ADR_W, BAS_PCA9555_7F_ADR_W, BAS_PCA9555_4F_RDY);
 	pca9555_4F_init_register();
 #endif
+}
+
+void expander_init(void)
+{
+	expander_init_body();
+	boot_mark(BT_EXPANDER);
 }

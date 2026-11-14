@@ -2,6 +2,7 @@
  * Port of libs/store/cores/functions.bas and libs/eeprom/at24c512/init.bas.
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "boottime.h"
 #include "cmd.h"
 #include "flavour_data.h"
 #include "i2c.h"
@@ -97,7 +98,7 @@ void eeprom_init(void)
 	}
 }
 
-void store_init(void)
+static void store_init_body(void)
 {
 	storage_flags = 0;
 	storage_flags_check = 0;
@@ -112,6 +113,12 @@ void store_init(void)
 		store_set_preset();
 	}
 	store_preset = 0xFF;  /* preset not loaded */
+}
+
+void store_init(void)
+{
+	store_init_body();
+	boot_mark(BT_STORE);
 }
 
 uint16_t storage_chksum_get(void)

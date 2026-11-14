@@ -213,8 +213,10 @@ static void store_cmd(const char *l)
 		for (unsigned i = 0; i < n; i++)
 			printf("%02X", b ? b[i] : 0);
 		printf("\n");
+	} else if (!strcmp(l, "#bq_forget")) {          /* PORT (#67): as after a start, the DSP keeps its content */
+		dsp_bq_forget();
 	} else if (!strcmp(l, "#bq_count")) {           /* PORT (#66): biquad writes done / saved */
-		printf("@bq_count:written=%u skipped=%u\n", dsp_bq_written, dsp_bq_skipped);
+		printf("@bq_count:written=%u skipped=%u same=%u\n", dsp_bq_written, dsp_bq_skipped, dsp_bq_read_same);
 	} else if (!strncmp(l, "#preset_load=", 13)) {
 		store_init();  /* store_preset = 0xFF: nothing loaded */
 		api_init();

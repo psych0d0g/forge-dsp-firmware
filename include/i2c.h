@@ -22,6 +22,7 @@ extern uint16_t i2c_addr;                                /* i2c_regs(1..2) */
 extern uint8_t i2c_size;
 uint8_t i2c_ee_read(uint8_t bus, uint8_t dev, uint16_t addr, uint8_t *dst, uint8_t len);  /* PORT (#66) */
 void i2c_speed(uint8_t bus, uint8_t fast);  /* PORT (#66): FORGE_I2C_FAST_KHZ for checked transfers, else the base clock */
+#define I2C_CHECK 2  /* PORT (#67): i2c_speed(bus, I2C_CHECK) = FORGE_I2C_CHECK_KHZ, only for reads checked against a sum */
 extern uint16_t channel_open;                            /* bit 5 = bus 1, bit 6 = bus 2 */
 extern uint8_t i2c_err;                                  /* BASCOM "err" of the last transfer */
 

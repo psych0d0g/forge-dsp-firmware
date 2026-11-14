@@ -2,6 +2,7 @@
  * Port of libs/spdif/ct7302 (functions.bas, 20/, 22/).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "boottime.h"
 #include "flavour.h"
 #if BAS_MODUL_CT7302 > 0
 #include "ct7302.h"
@@ -68,7 +69,7 @@ static uint8_t detect(uint8_t adr, uint8_t rdy)
 	return 1;
 }
 
-void spdif_init(void)
+static void spdif_init_body(void)
 {
 #if BAS_MODUL_CT7302_20 == 1
 	detect(0x20, BAS_CT7302_20_RDY);
@@ -85,6 +86,12 @@ void spdif_init(void)
 		ct7302_init_sub();
 	}
 #endif
+}
+
+void spdif_init(void)
+{
+	spdif_init_body();
+	boot_mark(BT_SPDIF);
 }
 
 void ct7302_20_set_mux(uint8_t channel)

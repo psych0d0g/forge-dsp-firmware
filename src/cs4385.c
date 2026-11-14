@@ -2,6 +2,7 @@
  * Port of libs/da/cs4385 (V30-96LN, bus 2, 0x30).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "boottime.h"
 #include "bqramp.h"
 #include "flavour.h"
 #if BAS_MODUL_CS4385 > 0
@@ -74,7 +75,7 @@ void cs4385_set_phase(uint8_t v)
 void dac_set_mute(uint8_t mask) { cs4385_set_mute(mask); }
 void dac_set_phase(uint8_t v) { cs4385_set_phase(v); }
 
-void dac_init(void)
+static void dac_init_body(void)
 {
 	if (channel_open & (1u << 6)) {
 		twi_start(BUS);
@@ -96,5 +97,11 @@ void dac_init(void)
 		i2c_reg = BAS_CS4385_REG_ID_REVISION;
 		i2c_rbyte(BUS);  /* id/revision, only for the debug output in BASCOM */
 	}
+}
+
+void dac_init(void)
+{
+	dac_init_body();
+	boot_mark(BT_DAC);
 }
 #endif

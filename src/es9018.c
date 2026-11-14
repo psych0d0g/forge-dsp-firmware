@@ -2,6 +2,7 @@
  * Port of libs/da/es9018 (bus 2, 0x90).
  * License: CC BY-NC-SA 4.0 (derived from the Forge DSP firmware, Mark Duprau).
  */
+#include "boottime.h"
 #include "bqramp.h"
 #include "flavour.h"
 #if BAS_MODUL_ES9018 > 0
@@ -81,7 +82,7 @@ static void es9018_init(void)
 void dac_set_mute(uint8_t mask) { es9018_set_mute(mask); }
 void dac_set_phase(uint8_t v) { es9018_set_phase(v); }
 
-void dac_init(void)
+static void dac_init_body(void)
 {
 	if (channel_open & (1u << 6)) {
 		uint8_t tries = 0;
@@ -100,5 +101,11 @@ void dac_init(void)
 		}
 	}
 	es9018_init();
+}
+
+void dac_init(void)
+{
+	dac_init_body();
+	boot_mark(BT_DAC);
 }
 #endif
